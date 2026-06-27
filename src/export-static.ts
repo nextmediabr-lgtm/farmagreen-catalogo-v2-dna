@@ -19,6 +19,7 @@ const c = await catalog();
 await fs.writeFile(path.join(OUT, "index.html"), indexRedirect());
 await fs.writeFile(path.join(OUT, "catalogo", "index.html"), catalogPage(c), "utf8");
 await fs.writeFile(path.join(OUT, "404.html"), notFound(), "utf8");
+await fs.writeFile(path.join(OUT, "logo_farmagreen.png"), await fs.readFile(path.join(ROOT, "public", "logo_farmagreen.png")));
 await fs.writeFile(path.join(OUT, "assets", "logo_farmagreen.png"), await fs.readFile(path.join(ROOT, "public", "logo_farmagreen.png")));
 await fs.writeFile(path.join(OUT, "app.js"), await fs.readFile(path.join(ROOT, "public", "app.js")));
 await fs.writeFile(path.join(OUT, "styles.css"), await fs.readFile(path.join(ROOT, "public", "styles.css")));
