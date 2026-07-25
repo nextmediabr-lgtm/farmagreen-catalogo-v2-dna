@@ -1,0 +1,258 @@
+/* V6.6: flujo único y tarjetas informativas. V6.5 se mantiene sin cambios. */
+:root{
+  --v66-blue:#1557ff;
+  --v66-brand:#20c4b6;
+  --v66-category:#ffb35b;
+  --v66-control-radius:11px;
+  --v66-card-shadow:0 12px 30px rgba(27,35,31,.09);
+  --v66-media-shadow:0 14px 25px rgba(27,35,31,.1),0 2px 7px rgba(27,35,31,.06);
+}
+
+body.v66{overflow-x:hidden}
+body.v66 main{max-width:1780px;padding-top:14px}
+body.v66 #buscar-v66,
+body.v66 #marcas-v66,
+body.v66 #productos-v66{scroll-margin-top:96px}
+
+/* El menú refleja el contexto real y no deja Ofertas marcado para siempre. */
+body.v66 .toplinks a:first-child{
+  background:transparent;
+  border:0;
+  color:var(--v65-muted);
+}
+body.v66 .toplinks a.is-active{
+  background:#fff;
+  border:1px solid var(--v65-line);
+  color:var(--v65-ink);
+}
+body.v66 .toplinks a,
+body.v66 .topwa,
+body.v66 .v65-actions a,
+body.v66 .v65-link-button,
+body.v66 .morebox button,
+body.v66 .cta,
+body.v66 .v66-card .v66-ask{
+  border-radius:var(--v66-control-radius);
+}
+
+/* Una sola puerta de entrada: texto, necesidad y marca. */
+body.v66 .v65-top-search{margin-bottom:18px;padding:16px 20px}
+body.v66 .v66-control-head{align-items:center;margin-bottom:8px}
+body.v66 .v66-control-head h2{font-size:clamp(28px,3vw,42px)}
+body.v66 .v66-search{display:grid;gap:6px;margin-bottom:12px}
+body.v66 .v66-search label{font-size:14px;font-weight:950;color:var(--v65-muted)}
+body.v66 .v66-search input{
+  width:100%;
+  border:1px solid var(--v65-line);
+  border-radius:14px;
+  padding:12px 17px;
+  font-size:17px;
+  background:#fff;
+}
+.v66-filter-block{display:grid;grid-template-columns:190px minmax(0,1fr);gap:14px;align-items:center;padding-top:10px;border-top:1px solid var(--v65-line)}
+.v66-filter-block+.v66-filter-block{margin-top:10px}
+.v66-filter-label{display:grid;gap:1px;min-width:0}
+.v66-filter-label strong{font-size:15px;color:var(--v65-ink)}
+.v66-filter-label span{font-size:12px;line-height:1.15;color:var(--v65-muted);font-weight:750}
+body.v66 .v66-need-row,
+.v66-brand-rail{display:flex;gap:7px;min-width:0;max-width:100%;overflow-x:auto;padding:2px 1px 4px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+body.v66 .v66-need-row button,
+.v66-brand-rail button{
+  flex:none;
+  border:0;
+  border-radius:var(--v66-control-radius);
+  color:#111;
+  cursor:pointer;
+  font-weight:950;
+  white-space:nowrap;
+}
+body.v66 .v66-need-row button{padding:9px 13px;background:var(--v66-category)}
+.v66-brand-rail button{display:flex;align-items:baseline;gap:6px;padding:9px 13px;background:var(--v66-brand)}
+.v66-brand-rail button span{font-size:14px}
+.v66-brand-rail button small{font-size:11px;font-weight:850;opacity:.68}
+body.v66 .v66-need-row button.on,
+.v66-brand-rail button.on{background:var(--v65-wa);color:#fff}
+
+/* Catálogo visible enseguida, con contexto y acciones discretas. */
+body.v66 .v65-products{padding-top:2px}
+.v66-catalog-head{align-items:end;margin-bottom:12px}
+.v66-catalog-head h1{margin:0;font-size:clamp(42px,5vw,72px);line-height:.9;letter-spacing:-.065em}
+.v66-context{margin:7px 0 0!important;font-size:14px;line-height:1.25}
+.v66-catalog-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.v66-catalog-tools p{margin:0;font-size:15px}
+.v66-empty{grid-column:1/-1;display:grid;place-items:center;min-height:260px;padding:30px;border:1px dashed var(--v65-line);border-radius:24px;background:rgba(255,255,255,.72);color:var(--v65-muted);font-size:18px;font-weight:900;text-align:center}
+
+/* Contrato de densidad: cinco fichas en escritorio. */
+body.v66 .v65-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+.v66-card{
+  position:relative;
+  display:grid;
+  grid-template-rows:auto auto 1fr;
+  min-width:0;
+  overflow:hidden;
+  background:#fff;
+  border:1px solid rgba(213,221,212,.98);
+  border-radius:22px;
+  box-shadow:var(--v66-card-shadow);
+}
+.v66-card-top{
+  position:relative;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-height:52px;
+  padding:10px 11px 7px;
+}
+.v66-media{
+  position:relative;
+  display:grid;
+  place-items:center;
+  aspect-ratio:1.05;
+  margin:0 10px;
+  background:linear-gradient(180deg,#fff 0%,#fbf9f3 100%);
+  border:1px solid var(--v65-line);
+  border-radius:17px;
+  box-shadow:var(--v66-media-shadow);
+  overflow:hidden;
+}
+.v66-media::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:4%;
+  width:54%;
+  height:8%;
+  transform:translateX(-50%);
+  border-radius:50%;
+  background:radial-gradient(ellipse at center,rgba(32,36,42,.14) 0%,rgba(32,36,42,.055) 49%,rgba(32,36,42,0) 74%);
+  filter:blur(5px);
+  pointer-events:none;
+}
+.v66-media img{position:relative;z-index:1;display:block;max-width:91%;max-height:91%;object-fit:contain}
+.v66-discount{
+  flex:none;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:76px;
+  padding:10px 13px;
+  border-radius:8px;
+  background:var(--v65-hot);
+  color:#fff;
+  font-size:19px;
+  font-weight:950;
+  line-height:1;
+  white-space:nowrap;
+  box-shadow:0 7px 16px rgba(255,92,45,.22);
+}
+.v66-card-body{
+  display:grid;
+  grid-template-rows:auto auto 1fr auto;
+  align-content:start;
+  gap:7px;
+  min-width:0;
+  padding:13px;
+}
+.v66-brand{
+  display:-webkit-box;
+  min-width:0;
+  margin:0;
+  overflow:hidden;
+  color:var(--v66-blue);
+  font-size:17px;
+  font-weight:950;
+  line-height:1.05;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+.v66-card h3{
+  display:-webkit-box;
+  min-height:3.12em;
+  margin:0;
+  overflow:hidden;
+  color:var(--v65-ink);
+  font-size:16px;
+  line-height:1.04;
+  letter-spacing:-.03em;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:3;
+}
+.v66-facts{display:grid;gap:3px;min-width:0;margin:1px 0 0}
+.v66-facts div{display:flex;align-items:baseline;gap:4px;min-width:0;font-size:11.5px;line-height:1.18}
+.v66-facts dt{flex:none;color:var(--v65-muted);font-weight:800}
+.v66-facts dt::after{content:":"}
+.v66-facts dd{min-width:0;margin:0;overflow:hidden;color:var(--v65-ink);font-weight:900;text-overflow:ellipsis;white-space:nowrap}
+.v66-price{display:flex;align-content:end;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:2px}
+.v66-price s{color:var(--v65-muted);font-size:12.5px}
+.v66-price strong{color:var(--v65-ink);font-size:22px;line-height:1;font-weight:950;letter-spacing:-.035em}
+.v66-saving{flex-basis:100%;color:var(--v65-deep);font-size:11px;font-weight:900}
+.v66-card .v66-ask{position:relative;z-index:6;display:flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:9px 10px;margin-top:2px;font-size:14px}
+
+/* Ficha individual: conserva información y la misma grilla de relacionados. */
+.v66-pdp-brand{color:var(--v66-blue)}
+.v66-pdp-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0}
+.v66-pdp-facts div{display:grid;gap:3px;padding:12px 14px;border:1px solid var(--v65-line);border-radius:16px;background:#faf8f1}
+.v66-pdp-facts dt{color:var(--v65-muted);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+.v66-pdp-facts dd{margin:0;color:var(--v65-ink);font-weight:950}
+.v66-detail-price b{border-radius:8px;white-space:nowrap}
+
+@media(max-width:980px) and (min-width:761px){
+  body.v66 .v65-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .v66-filter-block{grid-template-columns:150px minmax(0,1fr)}
+}
+
+@media(max-width:760px){
+  body.v66 #buscar-v66,body.v66 #marcas-v66,body.v66 #productos-v66{scroll-margin-top:126px}
+  body.v66 main{padding-left:9px;padding-right:9px;padding-top:10px}
+  body.v66 .v65-top-search{padding:13px;margin-bottom:13px}
+  body.v66 .v66-control-head{display:flex;align-items:center;margin-bottom:7px}
+  body.v66 .v66-control-head h2{font-size:27px}
+  body.v66 .v66-control-head .v65-k{font-size:11px;margin-bottom:4px}
+  body.v66 .v66-control-head .v65-link-button{margin:0;padding:8px 11px;font-size:12px}
+  body.v66 .topwa{border-radius:50%}
+  body.v66 .v66-search input{padding:11px 13px;font-size:15px}
+  .v66-filter-block{display:grid;grid-template-columns:1fr;gap:6px;padding-top:9px}
+  .v66-filter-block+.v66-filter-block{margin-top:7px}
+  .v66-filter-label{display:flex;align-items:baseline;gap:7px}
+  .v66-filter-label strong{font-size:14px}
+  .v66-filter-label span{font-size:11px}
+  body.v66 .v66-need-row button{padding:8px 11px;font-size:13px}
+  .v66-brand-rail button{padding:8px 11px}
+  .v66-brand-rail button span{font-size:13px}
+  .v66-brand-rail button small{font-size:10px}
+  .v66-catalog-head{display:flex;align-items:flex-end;gap:8px}
+  .v66-catalog-head h1{font-size:39px}
+  .v66-context{display:none}
+  .v66-catalog-tools{display:grid;justify-items:end;gap:5px}
+  .v66-catalog-tools p{font-size:12px}
+  .v66-catalog-tools .v65-link-button{margin:0;padding:8px 10px;font-size:11px}
+
+  /* Contrato móvil: siempre dos fichas útiles, sin margen lateral perdido. */
+  body.v66 .v65-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .v66-card{border-radius:17px}
+  .v66-card-top{gap:5px;min-height:46px;padding:7px 7px 5px}
+  .v66-media{aspect-ratio:1;margin:0 7px;border-radius:13px}
+  .v66-discount{min-width:60px;padding:8px 9px;border-radius:7px;font-size:16px}
+  .v66-card-body{gap:5px;padding:9px 8px 8px}
+  .v66-brand{font-size:14px}
+  .v66-card h3{min-height:3.18em;font-size:13px;line-height:1.06}
+  .v66-facts{gap:2px}
+  .v66-facts div{display:grid;gap:0;font-size:9.5px;line-height:1.15}
+  .v66-facts dd{font-size:10.5px}
+  .v66-price{gap:4px}
+  .v66-price s{font-size:10.5px}
+  .v66-price strong{font-size:17px}
+  .v66-saving{font-size:9.5px}
+  .v66-card .v66-ask{min-height:37px;padding:8px 5px;font-size:12px}
+  .v66-pdp-facts{grid-template-columns:1fr}
+}
+
+@media(max-width:370px){
+  body.v66 .v65-grid{gap:7px}
+  .v66-card-body{padding-left:7px;padding-right:7px}
+  .v66-brand{font-size:13px}
+  .v66-card h3{font-size:12px}
+  .v66-price strong{font-size:16px}
+}
