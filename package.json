@@ -1,1 +1,30 @@
-{"name":"farmagreen-catalogo-v2-dna","version":"2.0.0","private":true,"type":"module","scripts":{"dev":"tsx src/server.ts","dev:v67":"PORT=8099 DEFAULT_ROUTE=/catalogo-v6-7 tsx src/server.ts","build":"tsc -p tsconfig.json","export:static":"npm run build && PUBLIC_BASE_PATH=/farmagreen-catalogo-v2-dna node dist/export-static.js","export:vercel:v67":"npm run build && PUBLIC_BASE_PATH= node dist/export-v67-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v67 node scripts/prepare-vercel-static.mjs","deploy:vercel:v67:preview":"npm run export:vercel:v67 && npx vercel deploy --prebuilt --yes --scope farma-green --project farmagreen-v6-7-public-test","start":"node dist/server.js","test":"node --import tsx --test tests/*.test.ts","verify":"npm run build && npm test"},"devDependencies":{"@types/node":"^24.10.0","tsx":"^4.21.0","typescript":"^5.9.3"}}
+{
+  "name": "farmagreen-catalogo-v2-dna",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "dev:v67": "PORT=8099 DEFAULT_ROUTE=/catalogo-v6-7 tsx src/server.ts",
+    "dev:v68": "V68_LOCAL_PREVIEW=1 PORT=8100 DEFAULT_ROUTE=/catalogo-v6-8 tsx src/server.ts",
+    "build:data:v68": "node scripts/build-v68-data.mjs",
+    "build": "tsc -p tsconfig.json",
+    "export:static": "npm run build && PUBLIC_BASE_PATH=/farmagreen-catalogo-v2-dna node dist/export-static.js",
+    "export:vercel:v67": "npm run build && PUBLIC_BASE_PATH= node dist/export-v67-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v67 node scripts/prepare-vercel-static.mjs",
+    "export:vercel:v68": "npm run verify && PUBLIC_ORIGIN=https://farmagreen-v6-8-public-test.vercel.app node dist/export-v68-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v68 VERCEL_STATIC_CONFIG=dist/vercel-v68-config.json node scripts/prepare-vercel-static.mjs",
+    "deploy:vercel:v67:preview": "npm run export:vercel:v67 && npx vercel deploy --prebuilt --yes --scope farma-green --project farmagreen-v6-7-public-test",
+    "deploy:vercel:v68:public-test": "npm run export:vercel:v68 && npx --yes vercel@58.0.0 deploy --prebuilt --yes --prod --scope farma-green --project farmagreen-v6-8-public-test",
+    "start": "node dist/server.js",
+    "test": "npm run test:unit",
+    "test:unit": "node --import tsx --test tests/*.test.ts",
+    "test:layout:v68": "node --test tests/v68-layout.e2e.mjs",
+    "verify": "npm run build:data:v68 && npm run build && npm run test:unit",
+    "verify:release:v68": "npm run verify && npm run test:layout:v68"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "playwright-core": "^1.62.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
