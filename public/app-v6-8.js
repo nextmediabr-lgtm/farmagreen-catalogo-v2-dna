@@ -309,6 +309,30 @@ function wireImageFallbacks() {
   });
 }
 
+let contextualActionObserver;
+const visibleContextualActions = new Set();
+
+function syncFloatingWhatsAppGuard() {
+  const floatingAction = $(".float");
+  if (!floatingAction || !("IntersectionObserver" in window)) return;
+  if (!contextualActionObserver) {
+    contextualActionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) visibleContextualActions.add(entry.target);
+          else visibleContextualActions.delete(entry.target);
+        });
+        floatingAction.classList.toggle("is-cta-visible", visibleContextualActions.size > 0);
+      },
+      { threshold: 0.1 },
+    );
+  }
+  contextualActionObserver.disconnect();
+  visibleContextualActions.clear();
+  floatingAction.classList.remove("is-cta-visible");
+  $$(".v66-ask, .cta").forEach((action) => contextualActionObserver.observe(action));
+}
+
 function writeUrl() {
   const params = new URLSearchParams();
   if (S.scope !== "ofertas") params.set("scope", S.scope);
@@ -358,6 +382,7 @@ function render() {
   sync("[data-need]", "need", S.need);
   syncFilterMenuSummaries(items.length);
   writeUrl();
+  syncFloatingWhatsAppGuard();
 }
 
 function showAll() {
@@ -492,3 +517,4 @@ function boot() {
 
 wireImageFallbacks();
 boot();
+syncFloatingWhatsAppGuard();

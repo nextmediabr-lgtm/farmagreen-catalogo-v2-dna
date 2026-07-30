@@ -180,6 +180,28 @@ test("V6.8 verifica el contrato renderizado 5 desktop / 2 mobile y el PDP largo"
       fact: Number.parseFloat(getComputedStyle(card.querySelector(".v66-facts dd")).fontSize),
     }));
     assert.ok(mobileHierarchy.fact < mobileHierarchy.title, JSON.stringify(mobileHierarchy));
+    await page.locator("#gridV68 .v66-ask").nth(1).scrollIntoViewIfNeeded();
+    await page.waitForTimeout(250);
+    const floatingInterception = await page.evaluate(() => {
+      const floating = document.querySelector(".float");
+      if (!floating) return false;
+      const floatRect = floating.getBoundingClientRect();
+      const style = getComputedStyle(floating);
+      const interactive = style.pointerEvents !== "none" && Number.parseFloat(style.opacity) > 0.1;
+      return (
+        interactive &&
+        [...document.querySelectorAll("#gridV68 .v66-ask")]
+          .map((action) => action.getBoundingClientRect())
+          .filter((rect) => rect.bottom > 0 && rect.top < innerHeight)
+          .some(
+            (rect) =>
+              Math.max(0, Math.min(floatRect.right, rect.right) - Math.max(floatRect.left, rect.left)) *
+                Math.max(0, Math.min(floatRect.bottom, rect.bottom) - Math.max(floatRect.top, rect.top)) >
+              1,
+          )
+      );
+    });
+    assert.equal(floatingInterception, false);
 
     await page.locator('[data-filter-menu-trigger="brand"]').click();
     await page.locator('[data-brand="ISDIN"]').click();

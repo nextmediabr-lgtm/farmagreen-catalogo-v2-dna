@@ -256,6 +256,9 @@ test("V6.8 conserva 5 fichas desktop, 2 mobile y compacta filtros/PDP", async ()
   assert.match(app68, /syncFilterMenuSummaries\(items\.length\)/);
   assert.match(app68, /function availabilityMeta\(product\)/);
   assert.match(app68, /Consultar disponibilidad/);
+  assert.match(app68, /function syncFloatingWhatsAppGuard\(\)/);
+  assert.match(app68, /IntersectionObserver/);
+  assert.match(app68, /is-cta-visible/);
   assert.doesNotMatch(app68, /if \(S\.scope === "ofertas"\) value \+= 20/);
   assert.doesNotMatch(app68, /return "Unidad"/);
 });
