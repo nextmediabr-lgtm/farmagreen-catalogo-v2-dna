@@ -1,0 +1,377 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import {
+  GPS_SOURCES_V69,
+  crawlSource,
+  normalizeGpsImagePath,
+  normalizeGpsProductUrl,
+  parseListingProducts,
+  parseNextPageUrl,
+  runCommercialSync,
+  sourceStartUrl,
+  synchronizeCatalog,
+  trustedGpsUrl,
+  writeJsonAtomically,
+} from "../scripts/sync-catalog-commerce-v69.mjs";
+
+const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
+const PAGE_1 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-1.html"), "utf8");
+const PAGE_2 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-2.html"), "utf8");
+const EUCERIN = GPS_SOURCES_V69.find((source) => source.id === "5930");
+
+test("declara exactamente las 11 fuentes comerciales de V6.9", () => {
+  assert.equal(GPS_SOURCES_V69.length, 11);
+  assert.deepEqual(
+    GPS_SOURCES_V69.map((source) => source.id),
+    ["5930", "5808", "5751", "6048", "6301", "6023", "5756", "5697", "5911", "9100", "revitalift"],
+  );
+});
+
+test("parser de listing conserva URL confiable y calcula oferta/descuento", () => {
+  const products = parseListingProducts(PAGE_1, EUCERIN);
+  assert.equal(products.length, 1);
+  assert.equal(products[0].sourceName, "Sérum Eucerin Demo x 30 ml");
+  assert.equal(products[0].sourceBrand, "Eucerin");
+  assert.equal(products[0].listPrice, 10000);
+  assert.equal(products[0].offerPrice, 7000);
+  assert.equal(products[0].savingAmount, 3000);
+  assert.equal(products[0].discountPercent, 30);
+  assert.equal(
+    normalizeGpsImagePath(products[0].imageUrl),
+    "/media/catalog/product/demo/serum-30.jpg",
+  );
+  assert.equal(
+    normalizeGpsProductUrl(products[0].sourceUrl),
+    "gpsfarma.com/eucerin-serum-demo-30-ml.html",
+  );
+});
+
+test("parser acepta precio regular y detecta el enlace siguiente", () => {
+  const products = parseListingProducts(PAGE_2, EUCERIN);
+  assert.equal(products.length, 1);
+  assert.equal(products[0].listPrice, 12500.5);
+  assert.equal(products[0].offerPrice, 12500.5);
+  assert.equal(products[0].discountPercent, 0);
+  assert.match(parseNextPageUrl(PAGE_1), /[?&]p=2(?:&|$)/);
+  assert.equal(parseNextPageUrl(PAGE_2), null);
+});
+
+test("la frontera HTTPS rechaza host, protocolo y credenciales ajenos", () => {
+  assert.match(trustedGpsUrl("/categorias.html"), /^https:\/\/gpsfarma\.com\//);
+  assert.throws(() => trustedGpsUrl("http://gpsfarma.com/categorias.html"), /no permitido/i);
+  assert.throws(() => trustedGpsUrl("https://evil.example/categorias.html"), /no permitido/i);
+  assert.throws(() => trustedGpsUrl("https://user:pass@gpsfarma.com/"), /no permitido/i);
+});
+
+test("crawl sigue todo el paginado y termina sin duplicar productos", async () => {
+  const firstUrl = sourceStartUrl(EUCERIN);
+  const requested = [];
+  const result = await crawlSource(EUCERIN, {
+    delayMs: 0,
+    fetchHtml: async (url) => {
+      requested.push(url);
+      return url === firstUrl ? PAGE_1 : PAGE_2;
+    },
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.pages.length, 2);
+  assert.equal(result.products.length, 2);
+  assert.equal(requested.length, 2);
+});
+
+test("crawl falla visiblemente ante loop de URL o página repetida", async () => {
+  const selfLoop = PAGE_1.replace(/href="https:\/\/gpsfarma\.com\/categorias\.html\?[^"]+"/, `href="${sourceStartUrl(EUCERIN).replaceAll("&", "&amp;")}"`);
+  await assert.rejects(
+    crawlSource(EUCERIN, { delayMs: 0, fetchHtml: async () => selfLoop }),
+    /Bucle de paginación/i,
+  );
+
+  const pageTwoWithNext = PAGE_1.replaceAll(
+    "eucerin-serum-demo-30-ml",
+    "eucerin-serum-demo-30-ml",
+  );
+  let calls = 0;
+  await assert.rejects(
+    crawlSource(EUCERIN, {
+      delayMs: 0,
+      fetchHtml: async () => {
+        calls += 1;
+        return calls === 1 ? PAGE_1 : pageTwoWithNext;
+      },
+    }),
+    /Página repetida/i,
+  );
+});
+
+test("sincroniza URL primero, título confiable después y no autoagrega candidatos", () => {
+  const description = "Texto médico estructurado que debe permanecer exactamente igual.";
+  const taxonomy = { reasonerVersion: "v68-test", selected: [{ need: "hidratacion" }] };
+  const base = {
+    version: 6.8,
+    syncedAt: "2026-07-25T06:39:05.518Z",
+    totalProducts: 4,
+    products: [
+      product("p-url", "Sérum Eucerin Demo x 30 ml", {
+        source: { url: "https://gpsfarma.com/eucerin-serum-demo-30-ml.html" },
+        description,
+        taxonomy,
+      }),
+      product("p-out", "Producto Eucerin Retirado x 40 ml", {
+        source: { url: "https://gpsfarma.com/categorias/producto-retirado-40-ml.html" },
+      }),
+      product("p-title", "Crema Eucerin Demo x 50 ml"),
+      product("p-unknown", "Producto Eucerin sin vínculo x 77 ml"),
+    ],
+  };
+  const result = synchronizeCatalog(
+    base,
+    [
+      {
+        id: "5930",
+        catalogBrandId: "5930",
+        catalogBrandName: "Eucerin",
+        status: "completed",
+        pages: [{ page: 1 }],
+        products: [
+          ...parseListingProducts(PAGE_1, EUCERIN),
+          ...parseListingProducts(PAGE_2, EUCERIN),
+          {
+            sourceId: "5930",
+            catalogBrandId: "5930",
+            catalogBrandName: "Eucerin",
+            sourceUrl: "https://gpsfarma.com/candidato-nuevo.html",
+            sourceName: "Producto Eucerin Nuevo x 90 ml",
+            sourceBrand: "Eucerin",
+            listPrice: 5000,
+            offerPrice: 4500,
+            savingAmount: 500,
+            discountPercent: 10,
+          },
+        ],
+      },
+    ],
+    {
+      completedAt: "2026-07-30T12:00:00.000Z",
+      minCoverage: 0.5,
+      minPriceCoverage: 0.8,
+      expectedSourceIds: ["5930"],
+    },
+  );
+
+  assert.equal(result.version, 6.9);
+  assert.equal(result.products.length, 4);
+  assert.equal(result.products[0].availability, "limited");
+  assert.equal(result.products[0].offerPrice, 7000);
+  assert.equal(result.products[0].description, description);
+  assert.deepEqual(result.products[0].taxonomy, taxonomy);
+  assert.equal(result.products[1].availability, "out_of_stock");
+  assert.equal(result.products[2].availability, "limited");
+  assert.equal(result.products[2].offerPrice, 12500.5);
+  assert.equal(result.products[3].availability, "unknown");
+  assert.equal(result.products[3].availabilityCheckedAt, null);
+  assert.deepEqual(result.commerceSync.metrics, {
+    catalogProducts: 4,
+    listedProducts: 3,
+    matchedByUrl: 1,
+    matchedByImage: 0,
+    matchedByTitle: 1,
+    available: 2,
+    unavailable: 1,
+    unverified: 1,
+    verified: 3,
+    pricesUpdated: 2,
+    newCandidates: 1,
+    coverage: 0.75,
+    priceCoverage: 1,
+  });
+});
+
+test("una URL migrada conserva disponibilidad si imagen o título identifican el producto", () => {
+  const result = synchronizeCatalog(
+    {
+      version: 6.8,
+      products: [
+        product("p-moved", "Sérum Eucerin Demo x 30 ml", {
+          source: { url: "https://gpsfarma.com/url-anterior-serum-demo.html" },
+          images: {
+            card: "https://gpsfarma.com/media/catalog/product/anterior.jpg",
+            detail: "https://gpsfarma.com/media/catalog/product/anterior.jpg",
+            original: "https://gpsfarma.com/media/catalog/product/anterior.jpg",
+          },
+        }),
+      ],
+    },
+    [
+      {
+        id: "5930",
+        catalogBrandId: "5930",
+        catalogBrandName: "Eucerin",
+        status: "completed",
+        pages: [{ page: 1 }],
+        products: parseListingProducts(PAGE_1, EUCERIN),
+      },
+    ],
+    {
+      completedAt: "2026-07-30T12:00:00.000Z",
+      minCoverage: 1,
+      minPriceCoverage: 1,
+      expectedSourceIds: ["5930"],
+    },
+  );
+
+  assert.equal(result.products[0].availability, "limited");
+  assert.equal(
+    normalizeGpsProductUrl(result.products[0].source.url),
+    "gpsfarma.com/eucerin-serum-demo-30-ml.html",
+  );
+  assert.equal(result.commerceSync.metrics.matchedByTitle, 1);
+  assert.equal(result.commerceSync.metrics.unavailable, 0);
+});
+
+test("una fuente incompleta o una cobertura baja abortan el dataset", () => {
+  const base = {
+    version: 6.8,
+    products: [product("p1", "Sérum Eucerin Demo x 30 ml")],
+  };
+  assert.throws(
+    () =>
+      synchronizeCatalog(base, [
+        {
+          id: "5930",
+          catalogBrandId: "5930",
+          catalogBrandName: "Eucerin",
+          status: "failed",
+          pages: [],
+          products: [],
+        },
+      ]),
+    /incompleta/i,
+  );
+  assert.throws(
+    () =>
+      synchronizeCatalog(
+        base,
+        [
+          {
+            id: "5930",
+            catalogBrandId: "5930",
+            catalogBrandName: "Eucerin",
+            status: "completed",
+            pages: [{ page: 1 }],
+            products: [
+              {
+                sourceUrl: "https://gpsfarma.com/otro-producto.html",
+                sourceName: "Otro producto x 99 ml",
+                sourceBrand: "Eucerin",
+                listPrice: 100,
+                offerPrice: 100,
+              },
+            ],
+          },
+        ],
+        { minCoverage: 0.9, minPriceCoverage: 0, expectedSourceIds: ["5930"] },
+      ),
+    /Cobertura comercial insuficiente/i,
+  );
+});
+
+test("rechaza una corrida que no complete exactamente el conjunto esperado de fuentes", () => {
+  const source = {
+    id: "5930",
+    catalogBrandId: "5930",
+    catalogBrandName: "Eucerin",
+    status: "completed",
+    pages: [{ page: 1 }],
+    products: parseListingProducts(PAGE_1, EUCERIN),
+  };
+  assert.throws(
+    () =>
+      synchronizeCatalog(
+        { version: 6.8, products: [product("p1", "Sérum Eucerin Demo x 30 ml")] },
+        [source],
+        { expectedSourceIds: ["5930", "5808"], minCoverage: 0, minPriceCoverage: 0 },
+      ),
+    /exactamente 2 fuentes/i,
+  );
+});
+
+test("dry-run es el default operativo y no llama a la escritura", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "fg-v69-sync-test-"));
+  await fs.mkdir(path.join(rootDir, "data"));
+  await fs.writeFile(
+    path.join(rootDir, "data", "catalog-v68.json"),
+    JSON.stringify({
+      version: 6.8,
+      products: [
+        product("p1", "Sérum Eucerin Demo x 30 ml", {
+          source: { url: "https://gpsfarma.com/categorias/eucerin-serum-demo-30-ml.html" },
+        }),
+      ],
+    }),
+  );
+  let writes = 0;
+  try {
+    const result = await runCommercialSync({
+      rootDir,
+      sources: [EUCERIN],
+      fetchHtml: async () => PAGE_1.replace(/<ul class="items pages-items">[\s\S]*?<\/ul>/, ""),
+      minCoverage: 1,
+      minPriceCoverage: 1,
+      now: () => new Date("2026-07-30T12:00:00.000Z"),
+      onProgress: () => {},
+      writeCatalog: async () => {
+        writes += 1;
+      },
+    });
+    assert.equal(result.mode, "dry-run");
+    assert.equal(result.written, false);
+    assert.equal(writes, 0);
+    await assert.rejects(fs.access(path.join(rootDir, "data", "catalog-v69.json")));
+  } finally {
+    await fs.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("escritura JSON atómica deja un archivo completo sin temporales", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "fg-v69-atomic-test-"));
+  const output = path.join(rootDir, "data", "catalog-v69.json");
+  try {
+    await writeJsonAtomically(output, { version: 6.9, products: [{ publicId: "p1" }] });
+    assert.deepEqual(JSON.parse(await fs.readFile(output, "utf8")), {
+      version: 6.9,
+      products: [{ publicId: "p1" }],
+    });
+    assert.deepEqual(
+      (await fs.readdir(path.dirname(output))).filter((name) => name.endsWith(".tmp")),
+      [],
+    );
+  } finally {
+    await fs.rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+function product(publicId, name, overrides = {}) {
+  return {
+    publicId,
+    slug: `${publicId}-slug`,
+    name,
+    brand: { id: "5930", slug: "eucerin", name: "Eucerin", aliases: ["eucerin"] },
+    line: "Eucerin",
+    primaryCategory: "rostro",
+    categorySlugs: ["rostro"],
+    needs: ["hidratacion"],
+    aliases: [],
+    description: "Descripción original.",
+    listPrice: 1000,
+    offerPrice: 900,
+    savingAmount: 100,
+    discountPercent: 10,
+    availability: "unknown",
+    images: { card: "/card.jpg", detail: "/detail.jpg", original: "/original.jpg" },
+    ...overrides,
+  };
+}

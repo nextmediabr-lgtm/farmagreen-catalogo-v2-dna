@@ -6,6 +6,7 @@ import { catalog, product, similar } from "./data.js";
 import { catalogPage, notFound, productPage } from "./render.js";
 import { catalogPageV67, catalogV67, notFoundPageV67, productPageV67, productV67, similarV67 } from "./render-v67.js";
 import { handleV68Request, headersV68, type Environment } from "./server-v68.js";
+import { handleV69Request } from "./server-v69.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = path.join(ROOT, "public");
@@ -23,9 +24,11 @@ const PUBLIC_ASSETS = new Set([
   "/styles-v6-6.css",
   "/styles-v6-7.css",
   "/styles-v6-8.css",
+  "/styles-v6-9.css",
   "/app.js",
   "/app-v6-7.js",
   "/app-v6-8.js",
+  "/app-v6-9.js",
   "/logo_farmagreen.png",
 ]);
 
@@ -39,6 +42,7 @@ export function app(environment: Environment = process.env) {
         sendRedirect(response, DEFAULT_ROUTE);
         return;
       }
+      if (await handleV69Request(response, url, pathname, environment)) return;
       if (await handleV68Request(response, url, pathname, environment)) return;
 
       if (pathname === "/catalogo-v6-7") {
