@@ -18,6 +18,11 @@ import {
   readResponseBodyWithinLimit,
   sourceImageBridgeEnabled,
 } from "../src/server-v68.js";
+import {
+  upstreamOriginV68,
+  upstreamRoutesV68,
+  verifyPreparedRoutesV68,
+} from "../src/vercel-config-v68.js";
 
 const EXPECTED_BRANDS: Record<string, number> = {
   Eucerin: 86,
@@ -449,11 +454,15 @@ test("el exportador público V6.8 usa artefacto, configuración y proyecto propi
   assert.match(exporter, /publicCatalogV68/);
   assert.match(exporter, /isPrivateSourceImageV68/);
   assert.match(exporter, /V68_UPSTREAM_ORIGIN/);
-  assert.match(exporter, /api\/catalog-v6-8\/health/);
   assert.doesNotMatch(exporter, /internal\/catalog-v6-8\/refresh/);
   assert.doesNotMatch(exporter, /vercel-v67|catalogo-v6-7|producto-v6-7/);
   assert.match(preparer, /VERCEL_STATIC_CONFIG/);
   assert.match(packageJson.scripts["export:vercel:v68"], /dist\/export-v68-static\.js/);
+  assert.match(
+    packageJson.scripts["export:vercel:v68"],
+    /V68_UPSTREAM_ORIGIN=https:\/\/farmagreen-v68-preprod-[a-z0-9-]+\.southamerica-east1\.run\.app/,
+  );
+  assert.match(packageJson.scripts["export:vercel:v68"], /dist\/verify-vercel-v68-config\.js/);
   assert.match(packageJson.scripts["export:vercel:v68"], /VERCEL_STATIC_SOURCE=dist\/vercel-v68/);
   assert.match(packageJson.scripts["deploy:vercel:v68:public-test"], /vercel@58\.0\.0 deploy --prebuilt/);
   assert.match(
@@ -462,6 +471,47 @@ test("el exportador público V6.8 usa artefacto, configuración y proyecto propi
   );
   assert.match(packageJson.scripts["deploy:vercel:v68:public-test"], /--prod/);
   assert.doesNotMatch(packageJson.scripts["deploy:vercel:v68:public-test"], /farmagreen-v6-7/);
+});
+
+test("el export V6.8 exige y antepone los cuatro rewrites de sincronización", () => {
+  const upstream = "https://farmagreen-v68-preprod.example";
+  const rewrites = upstreamRoutesV68(upstream);
+  assert.deepEqual(rewrites, [
+    {
+      src: "/catalogo-v6-8/?",
+      dest: `${upstream}/catalogo-v6-8`,
+    },
+    {
+      src: "/producto-v6-8/(.*)",
+      dest: `${upstream}/producto-v6-8/$1`,
+    },
+    {
+      src: "/api/catalog-v6-8/health",
+      dest: `${upstream}/api/catalog-v6-8/health`,
+    },
+    {
+      src: "/api/catalog-v6-8$",
+      dest: `${upstream}/api/catalog-v6-8`,
+    },
+  ]);
+  assert.throws(() => upstreamOriginV68(undefined), /obligatorio/);
+  assert.throws(() => upstreamOriginV68("http://farmagreen.example"), /HTTPS/);
+  assert.throws(() => upstreamOriginV68("https://farmagreen.example/path"), /sin ruta/);
+
+  const prepared = [
+    { src: "/.*", headers: { "X-Robots-Tag": "noindex,nofollow" }, continue: true },
+    ...rewrites,
+    { handle: "filesystem" as const },
+  ];
+  assert.doesNotThrow(() => verifyPreparedRoutesV68(prepared, upstream));
+  assert.throws(
+    () => verifyPreparedRoutesV68(prepared.filter((route) => !("src" in route && route.src === "/api/catalog-v6-8$")), upstream),
+    /Falta el rewrite/,
+  );
+  assert.throws(
+    () => verifyPreparedRoutesV68([{ handle: "filesystem" }, ...rewrites], upstream),
+    /antes de filesystem/,
+  );
 });
 
 test("V6.8 no confía en Host para construir URLs públicas en producción", () => {

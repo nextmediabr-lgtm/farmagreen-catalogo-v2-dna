@@ -13,6 +13,7 @@ import {
   sourceImageV68,
 } from "./render-v68.js";
 import { readResponseBodyWithinLimit } from "./server-v68.js";
+import { upstreamRoutesV68 } from "./vercel-config-v68.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "dist", "vercel-v68");
@@ -20,7 +21,7 @@ const CONFIG = path.join(ROOT, "dist", "vercel-v68-config.json");
 const MAX_IMAGE_BYTES = 12_000_000;
 const IMAGE_CONCURRENCY = 6;
 const PUBLIC_ORIGIN = productionOrigin(process.env.PUBLIC_ORIGIN);
-const V68_UPSTREAM_ORIGIN = optionalUpstreamOrigin(process.env.V68_UPSTREAM_ORIGIN);
+const V68_UPSTREAM_ROUTES = upstreamRoutesV68(process.env.V68_UPSTREAM_ORIGIN);
 const IMAGE_TYPES = new Set(["image/avif", "image/gif", "image/jpeg", "image/png", "image/webp"]);
 
 await fs.rm(OUT, { recursive: true, force: true });
@@ -115,26 +116,7 @@ await fs.writeFile(
       routes: [
         { src: "/media-v6-8/.*", headers: { "Cache-Control": "public, max-age=86400" }, continue: true },
         { src: "/.*", headers: securityHeaders, continue: true },
-        ...(V68_UPSTREAM_ORIGIN
-          ? [
-              {
-                src: "/catalogo-v6-8/?",
-                dest: `${V68_UPSTREAM_ORIGIN}/catalogo-v6-8`,
-              },
-              {
-                src: "/producto-v6-8/(.*)",
-                dest: `${V68_UPSTREAM_ORIGIN}/producto-v6-8/$1`,
-              },
-              {
-                src: "/api/catalog-v6-8/health",
-                dest: `${V68_UPSTREAM_ORIGIN}/api/catalog-v6-8/health`,
-              },
-              {
-                src: "/api/catalog-v6-8$",
-                dest: `${V68_UPSTREAM_ORIGIN}/api/catalog-v6-8`,
-              },
-            ]
-          : []),
+        ...V68_UPSTREAM_ROUTES,
         { handle: "filesystem" },
       ],
       overrides,
@@ -159,16 +141,6 @@ function productionOrigin(value: string | undefined) {
   const parsed = new URL(value);
   if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
     throw new Error("PUBLIC_ORIGIN debe ser un origen HTTPS público válido.");
-  }
-  return parsed.origin;
-}
-
-function optionalUpstreamOrigin(value: string | undefined) {
-  const cleaned = value?.trim();
-  if (!cleaned) return "";
-  const parsed = new URL(cleaned);
-  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
-    throw new Error("V68_UPSTREAM_ORIGIN debe ser un origen HTTPS público sin ruta.");
   }
   return parsed.origin;
 }

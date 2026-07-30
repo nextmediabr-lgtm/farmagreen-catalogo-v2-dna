@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.json",
     "export:static": "npm run build && PUBLIC_BASE_PATH=/farmagreen-catalogo-v2-dna node dist/export-static.js",
     "export:vercel:v67": "npm run build && PUBLIC_BASE_PATH= node dist/export-v67-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v67 node scripts/prepare-vercel-static.mjs",
-    "export:vercel:v68": "npm run verify && PUBLIC_ORIGIN=https://farmagreen-v6-8-public-test.vercel.app node dist/export-v68-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v68 VERCEL_STATIC_CONFIG=dist/vercel-v68-config.json node scripts/prepare-vercel-static.mjs",
+    "export:vercel:v68": "npm run verify && PUBLIC_ORIGIN=https://farmagreen-v6-8-public-test.vercel.app V68_UPSTREAM_ORIGIN=https://farmagreen-v68-preprod-491207988983.southamerica-east1.run.app node dist/export-v68-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v68 VERCEL_STATIC_CONFIG=dist/vercel-v68-config.json node scripts/prepare-vercel-static.mjs && V68_UPSTREAM_ORIGIN=https://farmagreen-v68-preprod-491207988983.southamerica-east1.run.app node dist/verify-vercel-v68-config.js",
     "deploy:vercel:v67:preview": "npm run export:vercel:v67 && npx vercel deploy --prebuilt --yes --scope farma-green --project farmagreen-v6-7-public-test",
     "deploy:vercel:v68:public-test": "npm run export:vercel:v68 && npx --yes vercel@58.0.0 deploy --prebuilt --yes --prod --scope farma-green --project farmagreen-v6-8-public-test",
     "start": "node dist/server.js",
