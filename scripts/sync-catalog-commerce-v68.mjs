@@ -472,12 +472,6 @@ export function synchronizeCatalog(
       return updatedAvailableProduct(product, exact, completedAt);
     }
 
-    if (knownUrl) {
-      unavailable += 1;
-      metric.unavailable += 1;
-      return unavailableProduct(product, completedAt);
-    }
-
     const productImageKey = normalizeGpsImagePath(
       product?.images?.original || product?.images?.detail || product?.images?.card,
     );
@@ -503,6 +497,12 @@ export function synchronizeCatalog(
       }
       usedCandidateUrls.add(normalizeGpsProductUrl(candidate.sourceUrl));
       return updatedAvailableProduct(product, candidate, completedAt);
+    }
+
+    if (knownUrl) {
+      unavailable += 1;
+      metric.unavailable += 1;
+      return unavailableProduct(product, completedAt);
     }
 
     unverified += 1;

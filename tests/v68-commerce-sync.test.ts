@@ -109,6 +109,42 @@ test("exige exactamente las 11 fuentes completas", () => {
   );
 });
 
+test("una URL migrada conserva disponibilidad si el título identifica el producto", () => {
+  const sources = completeSources();
+  sources[0].products = [
+    candidate(
+      "https://gpsfarma.com/catalogo/nueva-url-producto-disponible.html",
+      "Producto disponible",
+    ),
+  ];
+  const result = synchronizeCatalog(
+    {
+      version: 6.8,
+      syncedAt: "2026-07-25T06:39:05.518Z",
+      totalProducts: 1,
+      products: [
+        product("p1", "Producto disponible", {
+          source: { url: "https://gpsfarma.com/catalogo/url-anterior-producto-disponible.html" },
+        }),
+      ],
+    },
+    sources,
+    {
+      completedAt: "2026-07-30T08:00:00.000Z",
+      minCoverage: 1,
+      minPriceCoverage: 1,
+    },
+  );
+
+  assert.equal(result.products[0].availability, "limited");
+  assert.equal(
+    result.products[0].source.url,
+    "https://gpsfarma.com/catalogo/nueva-url-producto-disponible.html",
+  );
+  assert.equal(result.commerceSync.metrics.matchedByTitle, 1);
+  assert.equal(result.commerceSync.metrics.unavailable, 0);
+});
+
 function completeSources() {
   return GPS_SOURCES_V68.map((source, index) => ({
     id: source.id,
