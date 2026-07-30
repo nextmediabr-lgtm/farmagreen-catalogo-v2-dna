@@ -152,13 +152,13 @@ function score(product) {
 
 function availabilityMeta(product) {
   if (product?.availability === "available_reference") {
-    return { className: "", cardClass: "", label: "Disponible en fuente", requiresCheck: false };
+    return { className: "", cardClass: "", label: "Disponible", requiresCheck: false };
   }
   if (product?.availability === "unavailable_reference") {
     return {
       className: " is-unavailable",
       cardClass: " v68-card-unavailable",
-      label: "No disponible en fuente",
+      label: "No disponible",
       requiresCheck: true,
     };
   }

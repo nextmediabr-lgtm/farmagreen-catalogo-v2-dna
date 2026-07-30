@@ -486,7 +486,7 @@ function availabilityBadgeV68(product: ProductV68, detail = false) {
   const availability = publicAvailabilityV68(product.availability);
   const unavailable = availability === "unavailable_reference";
   const unverified = availability === "unverified";
-  const label = unavailable ? "No disponible en fuente" : unverified ? "No verificado" : "Disponible en fuente";
+  const label = unavailable ? "No disponible" : unverified ? "No verificado" : "Disponible";
   const checkedAt = shortDateV68(product.availabilityCheckedAt);
   const freshness = checkedAt ? `Verificado ${checkedAt}` : "Verificación comercial pendiente";
   return `<p class="v68-stock${unavailable ? " is-unavailable" : ""}${unverified ? " is-unverified" : ""}${detail ? " is-pdp" : ""}"><span aria-hidden="true"></span><strong>${e(label)}</strong>${detail ? `<small>${e(freshness)}</small>` : ""}</p>`;

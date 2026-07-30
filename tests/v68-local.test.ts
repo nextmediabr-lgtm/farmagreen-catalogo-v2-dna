@@ -218,7 +218,8 @@ test("HTML V6.8 usa URLs absolutas, jerarquía revisada y no expone la procedenc
     origin,
   );
   assert.match(unavailableHtml, /class="v68-stock is-unavailable is-pdp"/);
-  assert.match(unavailableHtml, /No disponible en fuente/);
+  assert.match(unavailableHtml, /No disponible/);
+  assert.doesNotMatch(unavailableHtml, /en (?:la )?fuente/i);
   assert.match(unavailableHtml, />Consultar disponibilidad por WhatsApp<\/a>/);
   assert.doesNotMatch(unavailableHtml, /schema\.org\/(?:LimitedAvailability|OutOfStock)/);
   assert.doesNotMatch(unavailableHtml, /gpsfarma|provider|source/i);
