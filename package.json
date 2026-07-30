@@ -8,6 +8,8 @@
     "dev:v67": "PORT=8099 DEFAULT_ROUTE=/catalogo-v6-7 tsx src/server.ts",
     "dev:v68": "V68_LOCAL_PREVIEW=1 PORT=8100 DEFAULT_ROUTE=/catalogo-v6-8 tsx src/server.ts",
     "build:data:v68": "node scripts/build-v68-data.mjs",
+    "sync:data:v68": "node scripts/sync-catalog-commerce-v68.mjs --dry-run",
+    "sync:data:v68:apply": "node scripts/sync-catalog-commerce-v68.mjs --apply",
     "build": "tsc -p tsconfig.json",
     "export:static": "npm run build && PUBLIC_BASE_PATH=/farmagreen-catalogo-v2-dna node dist/export-static.js",
     "export:vercel:v67": "npm run build && PUBLIC_BASE_PATH= node dist/export-v67-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v67 node scripts/prepare-vercel-static.mjs",
@@ -15,16 +17,21 @@
     "deploy:vercel:v67:preview": "npm run export:vercel:v67 && npx vercel deploy --prebuilt --yes --scope farma-green --project farmagreen-v6-7-public-test",
     "deploy:vercel:v68:public-test": "npm run export:vercel:v68 && npx --yes vercel@58.0.0 deploy --prebuilt --yes --prod --scope farma-green --project farmagreen-v6-8-public-test",
     "start": "node dist/server.js",
+    "start:v68:preprod": "NODE_ENV=production V68_ENABLE_PRODUCTION=1 node dist/server.js",
     "test": "npm run test:unit",
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "test:layout:v68": "node --test tests/v68-layout.e2e.mjs",
     "verify": "npm run build:data:v68 && npm run build && npm run test:unit",
-    "verify:release:v68": "npm run verify && npm run test:layout:v68"
+    "verify:release:v68": "npm run verify && npm run test:layout:v68",
+    "verify:sync:v68": "npm run build && node --import tsx --test tests/v68-commerce-runtime.test.ts tests/v68-commerce-sync.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "playwright-core": "^1.62.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "google-auth-library": "^10.9.1"
   }
 }

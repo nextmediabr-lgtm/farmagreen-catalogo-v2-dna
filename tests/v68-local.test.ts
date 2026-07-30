@@ -6,6 +6,8 @@ import {
   catalogV68,
   isPrivateSourceImageV68,
   productPageV68,
+  publicAvailabilityV68,
+  publicCatalogV68,
   searchTextV68,
   similarV68,
 } from "../src/render-v68.js";
@@ -62,6 +64,9 @@ test("V6.8 parte de la V6.7 aprobada y normaliza el dataset sin inventar detalle
   assert.equal(new Set(catalog.products.map((product) => product.slug)).size, 688);
   assert.equal(new Set(catalog.products.map((product) => normalize(product.name))).size, 688);
   assert.ok(!catalog.products.some((product) => product.publicId === "e58ab2ba2993"));
+  assert.equal(catalog.products.filter((product) => product.availability === "available_reference").length, 0);
+  assert.equal(catalog.products.filter((product) => product.availability === "unavailable_reference").length, 0);
+  assert.equal(catalog.products.filter((product) => product.availability === "unverified").length, 688);
 
   for (const [brand, expected] of Object.entries(EXPECTED_BRANDS)) {
     assert.equal(catalog.products.filter((product) => product.brand.name === brand).length, expected, brand);
@@ -87,6 +92,47 @@ test("V6.8 parte de la V6.7 aprobada y normaliza el dataset sin inventar detalle
   const recovered = sourced.filter((product) => String(product.source?.descriptionStatus).startsWith("gpsfarma-") && product.source?.url);
   assert.ok(recovered.length >= 390);
   assert.ok(recovered.every((product) => /^https:\/\/gpsfarma\.com\//.test(product.source?.url || "")));
+});
+
+test("V6.8 normaliza el contrato comercial sin red y publica sólo campos permitidos", async () => {
+  assert.equal(publicAvailabilityV68("available_reference"), "available_reference");
+  assert.equal(publicAvailabilityV68("unavailable_reference"), "unavailable_reference");
+  assert.equal(publicAvailabilityV68("unverified"), "unverified");
+  assert.equal(publicAvailabilityV68("limited"), "unverified");
+  assert.equal(publicAvailabilityV68("out_of_stock"), "unverified");
+  assert.equal(publicAvailabilityV68("valor-inesperado"), "unverified");
+
+  const catalog = await catalogV68();
+  const base = catalog.products[0];
+  const checkedAt = "2026-07-30T12:30:00.000Z";
+  const products = [
+    { ...base, publicId: "commerce-available", availability: "available_reference" as const, availabilityCheckedAt: checkedAt },
+    { ...base, publicId: "commerce-unavailable", availability: "unavailable_reference" as const, availabilityCheckedAt: checkedAt },
+    { ...base, publicId: "commerce-unverified", availability: "unverified" as const, availabilityCheckedAt: null },
+  ];
+  const publicCatalog = publicCatalogV68({
+    ...catalog,
+    commerceSyncedAt: checkedAt,
+    totalProducts: products.length,
+    products,
+  });
+
+  assert.equal(publicCatalog.commerceSyncedAt, checkedAt);
+  assert.deepEqual(publicCatalog.availabilitySummary, {
+    available: 1,
+    unavailable: 1,
+    unverified: 1,
+  });
+  assert.deepEqual(
+    publicCatalog.products.map((product) => product.availability),
+    ["available_reference", "unavailable_reference", "unverified"],
+  );
+  assert.deepEqual(
+    publicCatalog.products.map((product) => product.availabilityCheckedAt),
+    [checkedAt, checkedAt, null],
+  );
+  const serialized = JSON.stringify(publicCatalog);
+  assert.doesNotMatch(serialized, /source|provider|barcode|sku/i);
 });
 
 test("V6.8 sólo considera privadas las imágenes HTTPS del origen permitido", () => {
@@ -130,12 +176,14 @@ test("HTML V6.8 usa URLs absolutas, jerarquía revisada y no expone la procedenc
   assert.match(catalogHtml, /data-need="limpieza"/);
   assert.match(catalogHtml, /data-need="cuidado-diario"/);
   assert.match(catalogHtml, /class="v66-discount">-\d+%<\/span>/);
+  assert.match(catalogHtml, /class="v68-commerce-freshness">Referencia del catálogo actualizada/);
+  assert.match(catalogHtml, /class="v68-stock(?: is-(?:unavailable|unverified))?"/);
   assert.match(catalogHtml, /<dt>Presentación<\/dt>/);
   assert.match(catalogHtml, /<dt>Uso<\/dt>/);
   assert.doesNotMatch(catalogHtml, /<dt>Uso principal<\/dt>/);
   assert.doesNotMatch(catalogHtml, /gpsfarma/i);
 
-  const cardWa = catalogHtml.match(/href="(https:\/\/wa\.me\/[^"]+)"[^>]*>Consultar<\/a>/)?.[1];
+  const cardWa = catalogHtml.match(/href="(https:\/\/wa\.me\/[^"]+)"[^>]*>Consultar disponibilidad<\/a>/)?.[1];
   assert.ok(cardWa);
   const cardText = new URL(cardWa.replaceAll("&amp;", "&")).searchParams.get("text") || "";
   assert.match(cardText, /http:\/\/127\.0\.0\.1:8100\/producto-v6-8\//);
@@ -153,13 +201,37 @@ test("HTML V6.8 usa URLs absolutas, jerarquía revisada y no expone la procedenc
   assert.doesNotMatch(productHtml, /<dt>Uso principal<\/dt>/);
   assert.match(productHtml, /class="v66-discount">-\d+%<\/span>/);
   assert.match(productHtml, /class="price v66-detail-price"><b>-\d+%<\/b>/);
+  assert.match(productHtml, /class="v68-stock is-unverified is-pdp"/);
+  assert.match(productHtml, /Verificación comercial pendiente/);
   assert.doesNotMatch(productHtml, /Fuente(?: de referencia)?:/i);
   assert.doesNotMatch(productHtml, /gpsfarma/i);
   assert.doesNotMatch(productHtml, /Podés compartir esta URL tal como está/);
   assert.match(productHtml, /"url":"http:\/\/127\.0\.0\.1:8100\/producto-v6-8\//);
-  const pdpWa = productHtml.match(/href="(https:\/\/wa\.me\/[^"]+)"[^>]*>Consultar este producto por WhatsApp<\/a>/)?.[1];
+  const pdpWa = productHtml.match(/href="(https:\/\/wa\.me\/[^"]+)"[^>]*>Consultar disponibilidad por WhatsApp<\/a>/)?.[1];
   assert.ok(pdpWa);
   assert.match(new URL(pdpWa.replaceAll("&amp;", "&")).searchParams.get("text") || "", new RegExp(`${origin}/producto-v6-8/${product.slug}/`));
+
+  const checkedAt = "2026-07-30T12:30:00.000Z";
+  const unavailableHtml = productPageV68(
+    { ...product, availability: "unavailable_reference", availabilityCheckedAt: checkedAt },
+    [],
+    origin,
+  );
+  assert.match(unavailableHtml, /class="v68-stock is-unavailable is-pdp"/);
+  assert.match(unavailableHtml, /No disponible en fuente/);
+  assert.match(unavailableHtml, />Consultar disponibilidad por WhatsApp<\/a>/);
+  assert.doesNotMatch(unavailableHtml, /schema\.org\/(?:LimitedAvailability|OutOfStock)/);
+  assert.doesNotMatch(unavailableHtml, /gpsfarma|provider|source/i);
+
+  const unverifiedHtml = productPageV68(
+    { ...product, availability: "unverified", availabilityCheckedAt: null },
+    [],
+    origin,
+  );
+  assert.match(unverifiedHtml, /class="v68-stock is-unverified is-pdp"/);
+  assert.match(unverifiedHtml, /No verificado/);
+  assert.match(unverifiedHtml, />Consultar disponibilidad por WhatsApp<\/a>/);
+  assert.doesNotMatch(unverifiedHtml, /schema\.org\/(?:LimitedAvailability|OutOfStock)/);
 });
 
 test("V6.8 conserva 5 fichas desktop, 2 mobile y compacta filtros/PDP", async () => {
@@ -171,6 +243,10 @@ test("V6.8 conserva 5 fichas desktop, 2 mobile y compacta filtros/PDP", async ()
   assert.match(css68, /\.v67-need-options\{grid-template-columns:repeat\(6,minmax\(0,1fr\)\)\}/);
   assert.match(css68, /@media\(max-width:760px\)[\s\S]*\.v67-need-options\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)\}/);
   assert.match(css68, /\.v67-menu-label\{font-size:11px\}/);
+  assert.match(css68, /\.v68-stock\{/);
+  assert.match(css68, /\.v68-stock\.is-unavailable\{/);
+  assert.match(css68, /\.v68-stock\.is-unverified\{/);
+  assert.match(css68, /\.v68-commerce-freshness\{/);
   assert.match(css68, /\.v65-buybox h1\{[\s\S]*?font-size:clamp\(38px,4\.3vw,64px\)/);
   assert.match(css68, /@media\(max-width:760px\)[\s\S]*font-size:clamp\(32px,9vw,36px\)/);
   assert.match(css68, /\.v66-pdp-facts\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
@@ -178,6 +254,8 @@ test("V6.8 conserva 5 fichas desktop, 2 mobile y compacta filtros/PDP", async ()
   assert.match(app68, /const PUBLIC_ORIGIN = BOOT\.origin \|\| window\.location\.origin/);
   assert.match(app68, /function syncFilterMenuSummaries\(resultCount\)/);
   assert.match(app68, /syncFilterMenuSummaries\(items\.length\)/);
+  assert.match(app68, /function availabilityMeta\(product\)/);
+  assert.match(app68, /Consultar disponibilidad/);
   assert.doesNotMatch(app68, /if \(S\.scope === "ofertas"\) value \+= 20/);
   assert.doesNotMatch(app68, /return "Unidad"/);
 });
@@ -198,23 +276,45 @@ test("el servidor publica V6.8 solo como ruta local propia", async () => {
     assert.equal(cssResponse.status, 200);
     assert.equal(appResponse.status, 200);
     assert.equal(apiResponse.status, 200);
+    assert.equal(apiResponse.headers.get("cache-control"), "no-store");
     const catalogHtml = await catalogResponse.text();
     const appSource = await appResponse.text();
     const publicCatalogText = await apiResponse.text();
     const publicCatalog = JSON.parse(publicCatalogText) as {
       totalProducts: number;
+      commerceSyncedAt?: string | null;
+      availabilitySummary?: {
+        available: number;
+        unavailable: number;
+        unverified: number;
+      };
       extraction?: unknown;
       v68Revision?: unknown;
-      products: Array<Record<string, unknown> & { source?: unknown; images: { card: string; detail: string } }>;
+      products: Array<
+        Record<string, unknown> & {
+          source?: unknown;
+          availability?: string;
+          availabilityCheckedAt?: string | null;
+          images: { card: string; detail: string };
+        }
+      >;
     };
     assert.match(catalogHtml, new RegExp(`http://127\\.0\\.0\\.1:${port}/catalogo-v6-8/`));
     assert.equal(publicCatalog.totalProducts, 688);
     assert.equal(publicCatalog.extraction, undefined);
     assert.equal(publicCatalog.v68Revision, undefined);
-    assert.deepEqual(Object.keys(publicCatalog).sort(), ["products", "syncedAt", "totalProducts", "version"]);
+    assert.deepEqual(Object.keys(publicCatalog).sort(), ["availabilitySummary", "commerceSyncedAt", "products", "syncedAt", "totalProducts", "version"]);
+    assert.equal(publicCatalog.commerceSyncedAt, null);
+    assert.deepEqual(publicCatalog.availabilitySummary, {
+      available: 0,
+      unavailable: 0,
+      unverified: 688,
+    });
     assert.ok(publicCatalog.products.every((product) => product.source === undefined));
     const expectedProductKeys = [
       "aliases",
+      "availability",
+      "availabilityCheckedAt",
       "brand",
       "discountPercent",
       "images",
@@ -234,6 +334,18 @@ test("el servidor publica V6.8 solo como ruta local propia", async () => {
       assert.deepEqual(Object.keys(product.images).sort(), ["card", "detail"]);
       return !["description", "detail", "source", "syncedAt", "taxonomy"].some((key) => key in product);
     }));
+    assert.ok(
+      publicCatalog.products.every((product) =>
+        ["available_reference", "unavailable_reference", "unverified"].includes(String(product.availability)),
+      ),
+    );
+    assert.ok(
+      publicCatalog.products.every(
+        (product) =>
+          product.availabilityCheckedAt === null ||
+          (typeof product.availabilityCheckedAt === "string" && Number.isFinite(Date.parse(product.availabilityCheckedAt))),
+      ),
+    );
     assert.ok(Buffer.byteLength(publicCatalogText) < 800_000, `API V6.8 demasiado pesada: ${Buffer.byteLength(publicCatalogText)} bytes`);
     assert.ok(Buffer.byteLength(catalogHtml) < 850_000, `HTML V6.8 demasiado pesado: ${Buffer.byteLength(catalogHtml)} bytes`);
     assert.ok(
@@ -332,6 +444,9 @@ test("el exportador público V6.8 usa artefacto, configuración y proyecto propi
   assert.match(exporter, /media-v6-8/);
   assert.match(exporter, /publicCatalogV68/);
   assert.match(exporter, /isPrivateSourceImageV68/);
+  assert.match(exporter, /V68_UPSTREAM_ORIGIN/);
+  assert.match(exporter, /api\/catalog-v6-8\/health/);
+  assert.doesNotMatch(exporter, /internal\/catalog-v6-8\/refresh/);
   assert.doesNotMatch(exporter, /vercel-v67|catalogo-v6-7|producto-v6-7/);
   assert.match(preparer, /VERCEL_STATIC_CONFIG/);
   assert.match(packageJson.scripts["export:vercel:v68"], /dist\/export-v68-static\.js/);

@@ -24,7 +24,17 @@ const NEEDS = [
 ] as const;
 
 const NEED_LABELS = new Map<string, string>(NEEDS.map((need) => [need.slug, need.label]));
-let cache: Catalog | null = null;
+export type PublicAvailabilityV68 = "available_reference" | "unavailable_reference" | "unverified";
+export type ProductV68 = Product & {
+  availability: PublicAvailabilityV68;
+  availabilityCheckedAt: string | null;
+  syncedAt?: string;
+};
+export type CatalogV68 = Omit<Catalog, "products"> & {
+  commerceSyncedAt: string | null;
+  products: ProductV68[];
+};
+let cache: CatalogV68 | null = null;
 
 export type PublicProductV68 = {
   publicId: string;
@@ -44,6 +54,8 @@ export type PublicProductV68 = {
   offerPrice: number;
   savingAmount: number;
   discountPercent: number;
+  availability: PublicAvailabilityV68;
+  availabilityCheckedAt: string | null;
   images: {
     card: string;
     detail: string;
@@ -53,23 +65,40 @@ export type PublicProductV68 = {
 export type PublicCatalogV68 = {
   version: number;
   syncedAt: string;
+  commerceSyncedAt: string | null;
   totalProducts: number;
+  availabilitySummary: {
+    available: number;
+    unavailable: number;
+    unverified: number;
+  };
   products: PublicProductV68[];
 };
 
-export async function catalogV68(): Promise<Catalog> {
+export async function catalogV68(): Promise<CatalogV68> {
   if (cache) return cache;
-  const parsed = JSON.parse(await fs.readFile(path.join(ROOT, "data", "catalog-v68.json"), "utf8")) as Catalog;
-  if (!Array.isArray(parsed.products)) throw new Error("Catálogo V6.8 inválido.");
-  cache = { ...parsed, totalProducts: parsed.products.length };
+  cache = normalizeCatalogV68(JSON.parse(await fs.readFile(path.join(ROOT, "data", "catalog-v68.json"), "utf8")));
   return cache;
 }
 
-export function publicCatalogV68(catalog: Catalog): PublicCatalogV68 {
+export function setCatalogV68(value: unknown) {
+  cache = normalizeCatalogV68(value);
+  return cache;
+}
+
+export function publicCatalogV68(catalog: CatalogV68): PublicCatalogV68 {
+  const unavailable = catalog.products.filter((product) => product.availability === "unavailable_reference").length;
+  const unverified = catalog.products.filter((product) => product.availability === "unverified").length;
   return {
     version: catalog.version,
     syncedAt: catalog.syncedAt,
+    commerceSyncedAt: timestampV68(catalog.commerceSyncedAt),
     totalProducts: catalog.products.length,
+    availabilitySummary: {
+      available: catalog.products.length - unavailable - unverified,
+      unavailable,
+      unverified,
+    },
     products: catalog.products.map(publicProductV68),
   };
 }
@@ -78,7 +107,7 @@ export async function productV68(id: string) {
   return (await catalogV68()).products.find((product) => product.slug === id || product.publicId === id);
 }
 
-export async function similarV68(product: Product) {
+export async function similarV68(product: ProductV68) {
   return (await catalogV68()).products
     .filter((candidate) => candidate.publicId !== product.publicId)
     .map((candidate) => ({
@@ -110,8 +139,9 @@ export function searchTextV68(product: Product) {
   );
 }
 
-export function catalogPageV68(catalog: Catalog, query = new URLSearchParams(), origin = "http://127.0.0.1:8100") {
+export function catalogPageV68(catalog: CatalogV68, query = new URLSearchParams(), origin = "http://127.0.0.1:8100") {
   const context = pageContext(catalog, query);
+  const publicCatalog = publicCatalogV68(catalog);
   const brands = [...new Set(catalog.products.map(brandName))];
   const offers = dealProducts(catalog.products);
   const initial = filteredProducts(catalog.products, context);
@@ -190,6 +220,7 @@ export function catalogPageV68(catalog: Catalog, query = new URLSearchParams(), 
       <p class="v65-k" id="modeV68">${e(context.mode)}</p>
       <h1 id="catalogTitleV68">${e(context.title)}</h1>
       <p class="v66-context" id="contextV68">${e(context.copy)}</p>
+      <p class="v68-commerce-freshness">${e(catalogFreshnessV68(catalog))}</p>
     </div>
     <div class="v66-catalog-tools">
       <p id="countV68" aria-live="polite"></p>
@@ -200,7 +231,14 @@ export function catalogPageV68(catalog: Catalog, query = new URLSearchParams(), 
   <div class="morebox"><button id="loadMoreV68" type="button" aria-label="Cargar más productos">Cargar más productos</button></div>
 </section>
 
-<script type="application/json" id="fg68-data">${json({ base: BASE, origin, products: publicCatalogV68(catalog).products, context: context.state })}</script>`,
+<script type="application/json" id="fg68-data">${json({
+      base: BASE,
+      origin,
+      products: publicCatalog.products,
+      syncedAt: publicCatalog.syncedAt,
+      commerceSyncedAt: publicCatalog.commerceSyncedAt,
+      context: context.state,
+    })}</script>`,
     {
       bodyClass: "v65 v66 v67 v68",
       origin,
@@ -218,9 +256,10 @@ export function catalogPageV68(catalog: Catalog, query = new URLSearchParams(), 
   );
 }
 
-export function productPageV68(product: Product, related: Product[], origin = "http://127.0.0.1:8100") {
+export function productPageV68(product: ProductV68, related: ProductV68[], origin = "http://127.0.0.1:8100") {
   const discount = Math.round(product.discountPercent || 0);
   const productUrl = absolute(origin, `/producto-v6-8/${product.slug}/`);
+  const requiresAvailabilityCheck = product.availability !== "available_reference";
   return shell68(
     `${product.name} | Farmagreen Rosario`,
     product.description.slice(0, 155),
@@ -235,12 +274,13 @@ export function productPageV68(product: Product, related: Product[], origin = "h
   <div class="buybox v65-buybox">
     <h1>${e(product.name)}</h1>
     <p class="v65-meta">${e(product.line)} · ${e(categoryLabel(product.primaryCategory))}</p>
+    ${availabilityBadgeV68(product, true)}
     <dl class="v66-pdp-facts">
       <div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div>
       <div><dt>Uso</dt><dd>${e(usage(product))}</dd></div>
     </dl>
     ${priceDetail(product)}
-    <a class="cta" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product.name}. Link: ${productUrl}`)}">Consultar este producto por WhatsApp</a>
+    <a class="cta" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product.name}. Link: ${productUrl}`)}">${requiresAvailabilityCheck ? "Consultar disponibilidad por WhatsApp" : "Consultar este producto por WhatsApp"}</a>
     <ul class="v65-service-list">
       <li>Consulta humana y directa.</li>
       <li>Retiro coordinado en Rosario.</li>
@@ -265,7 +305,6 @@ export function productPageV68(product: Product, related: Product[], origin = "h
         "@type": "Offer",
         priceCurrency: "ARS",
         price: product.offerPrice || product.listPrice,
-        availability: "https://schema.org/LimitedAvailability",
       },
     })}</script>`,
     {
@@ -300,7 +339,7 @@ type PageContext = QueryState & {
   ogImage: string;
 };
 
-function pageContext(catalog: Catalog, query: URLSearchParams): PageContext {
+function pageContext(catalog: CatalogV68, query: URLSearchParams): PageContext {
   const availableBrands = new Set(catalog.products.map(brandName));
   const requestedBrand = query.get("marca") === "Aveeno" ? "Aveno" : query.get("marca") || "";
   let brand = availableBrands.has(requestedBrand) ? requestedBrand : "Todas";
@@ -342,7 +381,7 @@ function pageContext(catalog: Catalog, query: URLSearchParams): PageContext {
   return { ...state, state, mode, title, copy, metaTitle, metaDescription, ogImage: contextual ? safeImage(filtered[0], "card") || SOCIAL_IMAGE : SOCIAL_IMAGE };
 }
 
-function filteredProducts(products: Product[], state: QueryState) {
+function filteredProducts(products: ProductV68[], state: QueryState) {
   const terms = normalize(state.q).split(" ").filter(Boolean);
   return products
     .filter((product) => state.scope !== "ofertas" || product.discountPercent > 0)
@@ -377,15 +416,92 @@ function shell68(title: string, description: string, body: string, options: Shel
   return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-5.css")}"><link rel="stylesheet" href="${u("/styles-v6-6.css")}"><link rel="stylesheet" href="${u("/styles-v6-7.css")}"><link rel="stylesheet" href="${u("/styles-v6-8.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.nav ? ` data-nav="${e(link.nav)}"` : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main><a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-8.js")}"></script></body></html>`;
 }
 
-function cardV68(product: Product, origin = "http://127.0.0.1:8100") {
+export function publicAvailabilityV68(value: unknown): PublicAvailabilityV68 {
+  if (value === "available_reference") return "available_reference";
+  if (value === "unavailable_reference") return "unavailable_reference";
+  return "unverified";
+}
+
+function normalizeCatalogV68(value: unknown): CatalogV68 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Catálogo V6.8 inválido.");
+  const parsed = value as Omit<Catalog, "products"> & {
+    commerceSyncedAt?: unknown;
+    commerceSync?: { completedAt?: unknown };
+    products?: Array<Product & { availability?: unknown; availabilityCheckedAt?: unknown; syncedAt?: string }>;
+  };
+  if (!Array.isArray(parsed.products)) throw new Error("Catálogo V6.8 inválido.");
+  const commerceSyncedAt = timestampV68(parsed.commerceSyncedAt || parsed.commerceSync?.completedAt);
+  return {
+    ...parsed,
+    commerceSyncedAt,
+    totalProducts: parsed.products.length,
+    products: parsed.products.map((product) => {
+      const availabilityCheckedAt = timestampV68(product.availabilityCheckedAt);
+      const explicitAvailability =
+        product.availability === "available_reference" || product.availability === "unavailable_reference";
+      const availability = explicitAvailability
+        ? publicAvailabilityV68(product.availability)
+        : availabilityCheckedAt && product.availability === "limited"
+          ? "available_reference"
+          : availabilityCheckedAt && product.availability === "out_of_stock"
+            ? "unavailable_reference"
+            : "unverified";
+      return { ...product, availability, availabilityCheckedAt };
+    }),
+  };
+}
+
+function timestampV68(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function shortDateV68(value: string | null | undefined) {
+  const normalized = timestampV68(value);
+  if (!normalized) return "";
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Argentina/Cordoba",
+  }).format(new Date(normalized));
+}
+
+function catalogFreshnessV68(catalog: CatalogV68) {
+  const commerceSyncedAt = shortDateV68(catalog.commerceSyncedAt);
+  if (commerceSyncedAt) return `Estado comercial actualizado ${commerceSyncedAt}.`;
+  const snapshotSyncedAt = shortDateV68(catalog.syncedAt);
+  return snapshotSyncedAt
+    ? `Referencia del catálogo actualizada ${snapshotSyncedAt}; verificación comercial pendiente.`
+    : "Disponibilidad de referencia; verificación comercial pendiente.";
+}
+
+function availabilityCardClassV68(availability: PublicAvailabilityV68) {
+  if (availability === "unavailable_reference") return " v68-card-unavailable";
+  if (availability === "unverified") return " v68-card-unverified";
+  return "";
+}
+
+function availabilityBadgeV68(product: ProductV68, detail = false) {
+  const availability = publicAvailabilityV68(product.availability);
+  const unavailable = availability === "unavailable_reference";
+  const unverified = availability === "unverified";
+  const label = unavailable ? "No disponible en fuente" : unverified ? "No verificado" : "Disponible en fuente";
+  const checkedAt = shortDateV68(product.availabilityCheckedAt);
+  const freshness = checkedAt ? `Verificado ${checkedAt}` : "Verificación comercial pendiente";
+  return `<p class="v68-stock${unavailable ? " is-unavailable" : ""}${unverified ? " is-unverified" : ""}${detail ? " is-pdp" : ""}"><span aria-hidden="true"></span><strong>${e(label)}</strong>${detail ? `<small>${e(freshness)}</small>` : ""}</p>`;
+}
+
+function cardV68(product: ProductV68, origin = "http://127.0.0.1:8100") {
   const discount = Math.round(product.discountPercent || 0);
   const productPath = `/producto-v6-8/${product.slug}/`;
   const name = String(product.name || "Producto Farmagreen");
   const brand = brandName(product);
-  return `<article class="v66-card"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${productImage(product, "card", "v66-media")}<div class="v66-card-body"><h3>${e(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${priceCard(product)}<a class="ask v66-ask" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(origin, productPath)}`)}">Consultar</a></div></article>`;
+  const requiresAvailabilityCheck = product.availability !== "available_reference";
+  return `<article class="v66-card${availabilityCardClassV68(product.availability)}"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${productImage(product, "card", "v66-media")}<div class="v66-card-body"><h3>${e(name)}</h3>${availabilityBadgeV68(product)}<dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${priceCard(product)}<a class="ask v66-ask" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(origin, productPath)}`)}">${requiresAvailabilityCheck ? "Consultar disponibilidad" : "Consultar"}</a></div></article>`;
 }
 
-function dealProducts(products: Product[]) {
+function dealProducts(products: ProductV68[]) {
   return [...products].filter((product) => product.discountPercent > 0).sort((left, right) => right.discountPercent - left.discountPercent || right.savingAmount - left.savingAmount);
 }
 
@@ -473,7 +589,7 @@ function safeImage(product: Partial<Product> | undefined, kind: "card" | "detail
   return u(`/media-v6-8/${encodeURIComponent(String(product?.publicId || ""))}/${kind}`);
 }
 
-function publicProductV68(product: Product): PublicProductV68 {
+function publicProductV68(product: ProductV68): PublicProductV68 {
   return {
     publicId: product.publicId,
     slug: product.slug,
@@ -492,6 +608,8 @@ function publicProductV68(product: Product): PublicProductV68 {
     offerPrice: product.offerPrice,
     savingAmount: product.savingAmount,
     discountPercent: product.discountPercent,
+    availability: product.availability,
+    availabilityCheckedAt: timestampV68(product.availabilityCheckedAt),
     images: {
       card: safeImage(product, "card"),
       detail: safeImage(product, "detail"),

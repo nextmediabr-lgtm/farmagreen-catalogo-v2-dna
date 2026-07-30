@@ -62,6 +62,8 @@ test("V6.8 verifica el contrato renderizado 5 desktop / 2 mobile y el PDP largo"
     assert.equal(await firstRowColumns(page), 5);
     assert.equal(await hasHorizontalOverflow(page), false);
     assert.match(await page.locator("#gridV68 .v66-discount").first().textContent(), /^-\d+%$/);
+    assert.match(await page.locator("#gridV68 .v68-stock").first().textContent(), /Disponible|No disponible|No verificado/);
+    assert.match(await page.locator(".v68-commerce-freshness").textContent(), /Referencia|Estado comercial/);
     assert.deepEqual(await page.locator("#gridV68 .v66-card").first().locator(".v66-facts dt").allTextContents(), ["Presentación", "Uso"]);
     const desktopHierarchy = await page.locator("#gridV68 .v66-card").first().evaluate((card) => ({
       title: Number.parseFloat(getComputedStyle(card.querySelector("h3")).fontSize),
@@ -70,6 +72,9 @@ test("V6.8 verifica el contrato renderizado 5 desktop / 2 mobile y el PDP largo"
     assert.ok(desktopHierarchy.fact < desktopHierarchy.title, JSON.stringify(desktopHierarchy));
 
     const api = await (await fetch(`${origin}/api/catalog-v6-8`)).json();
+    assert.deepEqual(api.availabilitySummary, { available: 0, unavailable: 0, unverified: 688 });
+    assert.ok(api.products.every((product) => ["available_reference", "unavailable_reference", "unverified"].includes(product.availability)));
+    assert.ok(api.products.every((product) => !("source" in product) && !("sku" in product) && !("barcode" in product)));
     const isdinCount = api.products.filter((product) => product.brand.name === "ISDIN").length;
     const dermaglosCount = api.products.filter((product) => product.brand.name === "Dermaglos").length;
     const acneCount = api.products.filter((product) => product.needs.includes("acne")).length;
@@ -131,6 +136,13 @@ test("V6.8 verifica el contrato renderizado 5 desktop / 2 mobile y el PDP largo"
     await page.goto(`${origin}/producto-v6-8/${discountedProduct.slug}/`, { waitUntil: "domcontentloaded" });
     assert.match(await page.locator(".v67-pdp-card-top .v66-discount").textContent(), /^-\d+%$/);
     assert.match(await page.locator(".v66-detail-price b").textContent(), /^-\d+%$/);
+    assert.equal(await page.locator(".v68-stock.is-pdp").count(), 1);
+
+    const unverifiedProduct = api.products.find((product) => product.availability === "unverified");
+    assert.ok(unverifiedProduct);
+    await page.goto(`${origin}/producto-v6-8/${unverifiedProduct.slug}/`, { waitUntil: "domcontentloaded" });
+    assert.match(await page.locator(".v68-stock.is-unverified.is-pdp").textContent(), /No verificado/);
+    assert.equal(await page.locator(".cta").textContent(), "Consultar disponibilidad por WhatsApp");
 
     const longProduct = api.products.find((product) => product.publicId === "406a621c346c");
     assert.ok(longProduct);
@@ -162,6 +174,7 @@ test("V6.8 verifica el contrato renderizado 5 desktop / 2 mobile y el PDP largo"
     assert.equal(await firstRowColumns(page), 2);
     assert.equal(await hasHorizontalOverflow(page), false);
     assert.match(await page.locator("#gridV68 .v66-discount").first().textContent(), /^-\d+%$/);
+    assert.equal(await page.locator("#gridV68 .v68-stock").count(), 24);
     const mobileHierarchy = await page.locator("#gridV68 .v66-card").first().evaluate((card) => ({
       title: Number.parseFloat(getComputedStyle(card.querySelector("h3")).fontSize),
       fact: Number.parseFloat(getComputedStyle(card.querySelector(".v66-facts dd")).fontSize),

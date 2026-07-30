@@ -1,6 +1,10 @@
 import type http from "node:http";
 import type { Catalog } from "./data.js";
 import {
+  RuntimeHttpErrorV68,
+  createCommerceRuntimeV68,
+} from "./commerce-runtime-v68.js";
+import {
   catalogPageV68,
   catalogV68,
   isPrivateSourceImageV68,
@@ -47,10 +51,13 @@ export function catalogReadyForRuntimeV68(catalog: Catalog, environment: Environ
   } catch {
     return false;
   }
+  const edgeMediaMirror = environment.V68_EDGE_MEDIA_MIRROR === "1";
   return catalog.products.every((product) =>
     (["card", "detail"] as const).every((kind) => {
+      const source = sourceImageV68(product, kind);
+      if (edgeMediaMirror && isPrivateSourceImageV68(source)) return true;
       try {
-        const image = new URL(sourceImageV68(product, kind));
+        const image = new URL(source);
         return image.protocol === "https:" && image.hostname === "storage.googleapis.com";
       } catch {
         return false;
@@ -87,13 +94,53 @@ export async function handleV68Request(
   url: URL,
   pathname: string,
   environment: Environment = process.env,
+  commerceRuntime = createCommerceRuntimeV68(environment),
+  request?: http.IncomingMessage,
 ) {
   const isV68Route =
     pathname === "/catalogo-v6-8" ||
     pathname === "/api/catalog-v6-8" ||
+    pathname === "/api/catalog-v6-8/health" ||
+    pathname === "/internal/catalog-v6-8/refresh" ||
     pathname.startsWith("/producto-v6-8/") ||
     pathname.startsWith("/media-v6-8/");
   if (!isV68Route) return false;
+
+  try {
+    await commerceRuntime.initialize();
+  } catch {
+    sendTextV68(response, "V6.8 no pudo inicializarse.", 503);
+    return true;
+  }
+
+  if (pathname === "/api/catalog-v6-8/health") {
+    if ((request?.method || "GET").toUpperCase() !== "GET") {
+      sendJsonV68(response, { error: "Método no permitido." }, 405, { allow: "GET" });
+      return true;
+    }
+    sendJsonV68(response, commerceRuntime.health(), 200, { "cache-control": "no-store" });
+    return true;
+  }
+
+  if (pathname === "/internal/catalog-v6-8/refresh") {
+    if ((request?.method || "GET").toUpperCase() !== "POST") {
+      sendJsonV68(response, { error: "Método no permitido." }, 405, { allow: "POST" });
+      return true;
+    }
+    try {
+      await commerceRuntime.authorizeSchedulerRequest(request?.headers.authorization);
+      const result = await commerceRuntime.refresh(schedulerIdempotencyKeyV68(request));
+      sendJsonV68(response, result, 200, { "cache-control": "no-store" });
+    } catch (error) {
+      const status = error instanceof RuntimeHttpErrorV68 ? error.status : 500;
+      const message =
+        error instanceof RuntimeHttpErrorV68
+          ? error.message
+          : "No se pudo actualizar el catálogo.";
+      sendJsonV68(response, { error: message }, status, { "cache-control": "no-store" });
+    }
+    return true;
+  }
 
   const catalog = await catalogV68();
   if (!catalogReadyForRuntimeV68(catalog, environment)) {
@@ -118,7 +165,7 @@ export async function handleV68Request(
   }
 
   if (pathname === "/api/catalog-v6-8") {
-    sendJsonV68(response, publicCatalogV68(catalog));
+    sendJsonV68(response, publicCatalogV68(catalog), 200, { "cache-control": "no-store" });
     return true;
   }
 
@@ -141,14 +188,32 @@ function sendHtmlV68(response: http.ServerResponse, body: string, status = 200) 
   response.end(body);
 }
 
-function sendJsonV68(response: http.ServerResponse, body: unknown) {
+function sendJsonV68(
+  response: http.ServerResponse,
+  body: unknown,
+  status = 200,
+  extraHeaders: Record<string, string> = {},
+) {
   response.writeHead(
-    200,
+    status,
     headersV68({
       "content-type": "application/json; charset=utf-8",
+      ...extraHeaders,
     }),
   );
   response.end(JSON.stringify(body));
+}
+
+function schedulerIdempotencyKeyV68(request: http.IncomingMessage | undefined) {
+  if (!request) return "";
+  const jobName = headerV68(request, "x-cloudscheduler-jobname");
+  const scheduleTime = headerV68(request, "x-cloudscheduler-schedule-time");
+  return [jobName, scheduleTime].filter(Boolean).join("|");
+}
+
+function headerV68(request: http.IncomingMessage, name: string) {
+  const value = request.headers[name];
+  return Array.isArray(value) ? value[0] || "" : String(value || "");
 }
 
 function sendTextV68(response: http.ServerResponse, body: string, status: number) {
