@@ -13,6 +13,14 @@ export const GPS_ORIGIN = "https://gpsfarma.com";
 export const PAGE_SIZE = 36;
 export const DEFAULT_MIN_COVERAGE = 0.95;
 export const DEFAULT_MIN_PRICE_COVERAGE = 0.95;
+export const DEFAULT_INVENTORY_SCOPE_V69 = Object.freeze({
+  label: "Rosario",
+  regionId: 722,
+  cityId: 152,
+  inventorySource: "STOM",
+});
+
+const LOCATION_ENDPOINT_V69 = "/rest/V1/gpsfarma/geolocation/customer/location";
 
 export const GPS_SOURCES_V69 = Object.freeze([
   { id: "5930", catalogBrandId: "5930", catalogBrandName: "Eucerin", mode: "brand" },
@@ -47,6 +55,36 @@ const USER_AGENT =
 
 export function trustedGpsUrl(value) {
   return trustedSourceUrl(value, GPS_ORIGIN);
+}
+
+export function inventoryScopeV69(environment = process.env) {
+  const label = String(environment.V69_SYNC_LOCATION_LABEL || DEFAULT_INVENTORY_SCOPE_V69.label)
+    .trim()
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .slice(0, 80);
+  const inventorySource = String(
+    environment.V69_SYNC_INVENTORY_SOURCE || DEFAULT_INVENTORY_SCOPE_V69.inventorySource,
+  )
+    .trim()
+    .toUpperCase();
+  if (!label) throw new Error("La ubicación comercial V6.9 es obligatoria.");
+  if (!/^[A-Z0-9_-]{2,32}$/.test(inventorySource)) {
+    throw new Error("La fuente de inventario V6.9 es inválida.");
+  }
+  return {
+    label,
+    regionId: environmentPositiveInteger(
+      environment,
+      "V69_SYNC_LOCATION_REGION_ID",
+      DEFAULT_INVENTORY_SCOPE_V69.regionId,
+    ),
+    cityId: environmentPositiveInteger(
+      environment,
+      "V69_SYNC_LOCATION_CITY_ID",
+      DEFAULT_INVENTORY_SCOPE_V69.cityId,
+    ),
+    inventorySource,
+  };
 }
 
 export function normalizeGpsProductUrl(value) {
@@ -132,6 +170,20 @@ function priceAmounts(block) {
   return computePricing(oldPrice || finalPrice, finalPrice || oldPrice);
 }
 
+function listingAvailability(block) {
+  for (const tag of String(block || "").matchAll(/<(?:div|span|p)\b([^>]*)>/gi)) {
+    const classes = htmlAttribute(tag[1], "class").split(/\s+/).filter(Boolean);
+    if (classes.includes("stock") && classes.includes("unavailable")) return "unavailable";
+  }
+  if (
+    /\bdata-role\s*=\s*(?:"tocart-form"|'tocart-form')/i.test(block) ||
+    /\/checkout\/cart\/add\//i.test(block)
+  ) {
+    return "available";
+  }
+  return "unknown";
+}
+
 export function computePricing(listPriceValue, offerPriceValue) {
   const rawList = Number(listPriceValue);
   const rawOffer = Number(offerPriceValue);
@@ -184,6 +236,7 @@ export function parseListingProducts(html, source) {
       sourceBrand,
       listedBrand,
       imageUrl: normalizeGpsImagePath(imageUrl) ? trustedGpsUrl(imageUrl) : "",
+      availability: listingAvailability(block),
       ...pricing,
     });
   }
@@ -223,12 +276,15 @@ function listingFingerprint(products) {
 export async function crawlSource(
   source,
   {
-    fetchHtml = defaultFetchHtml,
+    fetchHtml,
     maxPages = 100,
     wait = sleep,
     delayMs = 120,
   } = {},
 ) {
+  if (typeof fetchHtml !== "function") {
+    throw new Error("La extracción comercial V6.9 requiere una ubicación de inventario configurada.");
+  }
   const seenPages = new Set();
   const seenFingerprints = new Set();
   const productsByUrl = new Map();
@@ -331,7 +387,7 @@ function uniqueCandidatesByImage(candidates) {
   return unique;
 }
 
-function updatedAvailableProduct(product, candidate, completedAt) {
+function updatedMatchedProduct(product, candidate, completedAt) {
   const pricing = validPricing(candidate)
     ? {
         listPrice: candidate.listPrice,
@@ -340,24 +396,22 @@ function updatedAvailableProduct(product, candidate, completedAt) {
         discountPercent: candidate.discountPercent,
       }
     : {};
+  const availability =
+    candidate?.availability === "available"
+      ? "limited"
+      : candidate?.availability === "unavailable"
+        ? "out_of_stock"
+        : "unknown";
   return {
     ...product,
     ...pricing,
-    availability: "limited",
-    availabilityCheckedAt: completedAt,
+    availability,
+    availabilityCheckedAt: availability === "unknown" ? null : completedAt,
     source: {
       ...(product.source && typeof product.source === "object" ? product.source : {}),
       url: candidate.sourceUrl,
       retrievedAt: completedAt,
     },
-  };
-}
-
-function unavailableProduct(product, completedAt) {
-  return {
-    ...product,
-    availability: "out_of_stock",
-    availabilityCheckedAt: completedAt,
   };
 }
 
@@ -379,6 +433,7 @@ export function synchronizeCatalog(
     minSourceListingRatio = 0.2,
     minTitleConfidence = 0.86,
     expectedSourceIds = GPS_SOURCES_V69.map((source) => String(source.id)),
+    inventoryScope = DEFAULT_INVENTORY_SCOPE_V69,
   } = {},
 ) {
   if (!baseCatalog || !Array.isArray(baseCatalog.products) || !baseCatalog.products.length) {
@@ -434,6 +489,7 @@ export function synchronizeCatalog(
         matchedByUrl: 0,
         matchedByImage: 0,
         matchedByTitle: 0,
+        available: 0,
         unavailable: 0,
         unverified: 0,
         pricesUpdated: 0,
@@ -444,15 +500,29 @@ export function synchronizeCatalog(
   let matchedByUrl = 0;
   let matchedByImage = 0;
   let matchedByTitle = 0;
+  let available = 0;
   let unavailable = 0;
   let unverified = 0;
   let pricesUpdated = 0;
 
+  const trackAvailability = (product, metric) => {
+    if (product.availability === "limited") {
+      available += 1;
+      if (metric) metric.available += 1;
+    } else if (product.availability === "out_of_stock") {
+      unavailable += 1;
+      if (metric) metric.unavailable += 1;
+    } else {
+      unverified += 1;
+      if (metric) metric.unverified += 1;
+    }
+    return product;
+  };
+
   const products = baseCatalog.products.map((product) => {
     const source = sourceForProduct(product, resultsByBrandId);
     if (!source) {
-      unverified += 1;
-      return unverifiedProduct(product);
+      return trackAvailability(unverifiedProduct(product), null);
     }
     const metric = sourceMetrics.get(source.id);
     const candidatesByUrl = new Map(
@@ -469,7 +539,7 @@ export function synchronizeCatalog(
         metric.pricesUpdated += 1;
       }
       usedCandidateUrls.add(normalizeGpsProductUrl(exact.sourceUrl));
-      return updatedAvailableProduct(product, exact, completedAt);
+      return trackAvailability(updatedMatchedProduct(product, exact, completedAt), metric);
     }
 
     const productImageKey = normalizeGpsImagePath(
@@ -484,7 +554,7 @@ export function synchronizeCatalog(
         metric.pricesUpdated += 1;
       }
       usedCandidateUrls.add(normalizeGpsProductUrl(imageMatch.sourceUrl));
-      return updatedAvailableProduct(product, imageMatch, completedAt);
+      return trackAvailability(updatedMatchedProduct(product, imageMatch, completedAt), metric);
     }
 
     const candidate = bestProductCandidate(product, source.products);
@@ -496,24 +566,17 @@ export function synchronizeCatalog(
         metric.pricesUpdated += 1;
       }
       usedCandidateUrls.add(normalizeGpsProductUrl(candidate.sourceUrl));
-      return updatedAvailableProduct(product, candidate, completedAt);
+      return trackAvailability(updatedMatchedProduct(product, candidate, completedAt), metric);
     }
 
-    if (knownUrl) {
-      unavailable += 1;
-      metric.unavailable += 1;
-      return unavailableProduct(product, completedAt);
-    }
-
-    unverified += 1;
-    metric.unverified += 1;
-    return unverifiedProduct(product);
+    return trackAvailability(unverifiedProduct(product), metric);
   });
 
-  const available = matchedByUrl + matchedByImage + matchedByTitle;
+  const matched = matchedByUrl + matchedByImage + matchedByTitle;
   const verified = available + unavailable;
-  const coverage = Number((verified / products.length).toFixed(4));
-  const priceCoverage = available ? Number((pricesUpdated / available).toFixed(4)) : 0;
+  const coverage = Number((matched / products.length).toFixed(4));
+  const priceCoverage = matched ? Number((pricesUpdated / matched).toFixed(4)) : 0;
+  const availabilityCoverage = Number((verified / products.length).toFixed(4));
   if (coverage < minCoverage) {
     throw new Error(`Cobertura comercial insuficiente: ${(coverage * 100).toFixed(1)}%.`);
   }
@@ -536,14 +599,17 @@ export function synchronizeCatalog(
     matchedByUrl,
     matchedByImage,
     matchedByTitle,
+    matched,
     available,
     unavailable,
     unverified,
     verified,
+    availabilityCoverage,
     pricesUpdated,
     newCandidates,
     coverage,
     priceCoverage,
+    inventoryLocation: String(inventoryScope?.label || DEFAULT_INVENTORY_SCOPE_V69.label),
   };
 
   return {
@@ -567,7 +633,8 @@ export async function runCommercialSync({
   apply = false,
   sources = GPS_SOURCES_V69,
   providedBaseCatalog,
-  fetchHtml = defaultFetchHtml,
+  fetchHtml,
+  inventoryScope = inventoryScopeV69(),
   now = () => new Date(),
   minCoverage = environmentNumber("V69_MIN_SYNC_COVERAGE", DEFAULT_MIN_COVERAGE),
   minPriceCoverage = environmentNumber(
@@ -584,12 +651,18 @@ export async function runCommercialSync({
     : path.join(dataDir, "catalog-v68.json");
   const baseCatalog =
     providedBaseCatalog || JSON.parse(await fs.readFile(inputPath, "utf8"));
-  const sourceResults = await crawlAllSources(sources, { fetchHtml, onProgress });
+  const scopedFetchHtml =
+    fetchHtml ||
+    (await createLocationScopedFetchV69({
+      inventoryScope,
+    }));
+  const sourceResults = await crawlAllSources(sources, { fetchHtml: scopedFetchHtml, onProgress });
   const catalog = synchronizeCatalog(baseCatalog, sourceResults, {
     completedAt: now().toISOString(),
     minCoverage,
     minPriceCoverage,
     expectedSourceIds: sources.map((source) => String(source.id)),
+    inventoryScope,
   });
   if (apply) await writeCatalog(outputPath, catalog);
   return {
@@ -621,18 +694,108 @@ export async function writeJsonAtomically(filePath, value) {
   }
 }
 
-async function defaultFetchHtml(url) {
-  return fetchTrustedHtml(url, {
-    origin: GPS_ORIGIN,
-    headers: {
-      accept: "text/html,application/xhtml+xml",
-      "accept-language": "es-AR,es;q=0.9",
-      "user-agent": USER_AGENT,
-    },
-    timeoutMs: environmentNumber("V69_SYNC_TIMEOUT_MS", 20_000),
-    maxAttempts: environmentNumber("V69_SYNC_MAX_ATTEMPTS", 3),
-    retryDelayMs: 450,
+export async function createLocationScopedFetchV69({
+  inventoryScope = inventoryScopeV69(),
+  fetchImpl = globalThis.fetch,
+  timeoutMs = environmentNumber("V69_SYNC_TIMEOUT_MS", 20_000),
+  maxAttempts = environmentNumber("V69_SYNC_MAX_ATTEMPTS", 3),
+  retryDelayMs = 450,
+} = {}) {
+  if (typeof fetchImpl !== "function") throw new Error("Fetch comercial V6.9 no disponible.");
+  const cookies = new Map();
+  const baseHeaders = {
+    accept: "text/html,application/xhtml+xml",
+    "accept-language": "es-AR,es;q=0.9",
+    "user-agent": USER_AGENT,
+  };
+  const scopedFetch = async (input, init = {}) => {
+    const headers = new Headers(init.headers || {});
+    const cookie = cookieHeaderV69(cookies);
+    if (cookie) headers.set("cookie", cookie);
+    const response = await fetchImpl(input, { ...init, headers });
+    absorbCookiesV69(cookies, response);
+    return response;
+  };
+
+  const root = await scopedFetch(trustedGpsUrl("/"), {
+    headers: baseHeaders,
+    redirect: "manual",
+    signal: AbortSignal.timeout(timeoutMs),
   });
+  if (!root.ok) throw new Error(`No se pudo iniciar la sesión comercial: HTTP ${root.status}.`);
+
+  const location = await scopedFetch(trustedGpsUrl(LOCATION_ENDPOINT_V69), {
+    method: "POST",
+    headers: {
+      ...baseHeaders,
+      accept: "application/json, text/plain, */*",
+      "content-type": "application/json",
+      origin: GPS_ORIGIN,
+      referer: `${GPS_ORIGIN}/`,
+    },
+    body: JSON.stringify({
+      location: {
+        regionId: inventoryScope.regionId,
+        cityId: inventoryScope.cityId,
+      },
+      persistLocation: false,
+    }),
+    redirect: "manual",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!location.ok) {
+    throw new Error(`No se pudo seleccionar la ubicación comercial: HTTP ${location.status}.`);
+  }
+  await location.text();
+  const selectedSource = decodedCookieValueV69(cookies.get("geo_inventory_source"));
+  if (selectedSource !== inventoryScope.inventorySource) {
+    throw new Error("La fuente de inventario comercial no coincide con la ubicación configurada.");
+  }
+
+  return (url) =>
+    fetchTrustedHtml(url, {
+      origin: GPS_ORIGIN,
+      headers: baseHeaders,
+      fetchImpl: scopedFetch,
+      timeoutMs,
+      maxAttempts,
+      retryDelayMs,
+    });
+}
+
+function absorbCookiesV69(cookies, response) {
+  const headers = response?.headers;
+  const setCookies =
+    typeof headers?.getSetCookie === "function"
+      ? headers.getSetCookie()
+      : headers?.get("set-cookie")
+        ? [headers.get("set-cookie")]
+        : [];
+  for (const rawCookie of setCookies) {
+    const firstSegment = String(rawCookie || "").split(";", 1)[0];
+    const separator = firstSegment.indexOf("=");
+    if (separator <= 0) continue;
+    const name = firstSegment.slice(0, separator).trim();
+    const value = firstSegment.slice(separator + 1).trim();
+    if (name && value) cookies.set(name, value);
+  }
+}
+
+function cookieHeaderV69(cookies) {
+  return [...cookies.entries()]
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
+}
+
+function decodedCookieValueV69(value) {
+  if (!value) return "";
+  try {
+    const decoded = decodeURIComponent(value);
+    const parsed = JSON.parse(decoded);
+    return String(parsed || "").trim().toUpperCase();
+  } catch {
+    return decodeURIComponent(value).replace(/^"|"$/g, "").trim().toUpperCase();
+  }
 }
 
 function defaultProgress(result) {
@@ -658,6 +821,19 @@ async function mapLimit(items, limit, worker) {
 function environmentNumber(name, fallback) {
   const parsed = Number(process.env[name]);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function environmentPositiveInteger(environment, name, fallback) {
+  const raw = environment?.[name];
+  if (raw === undefined || raw === null || String(raw).trim() === "") return fallback;
+  if (!/^\d+$/.test(String(raw).trim())) {
+    throw new Error(`${name} debe ser un entero positivo.`);
+  }
+  const parsed = Number.parseInt(String(raw), 10);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} debe ser un entero positivo.`);
+  }
+  return parsed;
 }
 
 function roundCurrency(value) {

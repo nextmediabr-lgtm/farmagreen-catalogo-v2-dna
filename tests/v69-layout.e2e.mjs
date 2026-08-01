@@ -111,6 +111,18 @@ function currentPrice(product) {
   return Math.round(Number(product.offerPrice || product.listPrice || 0));
 }
 
+function publicAvailabilitySummary(products) {
+  return products.reduce(
+    (summary, product) => {
+      if (product.availability === "available_reference") summary.available += 1;
+      else if (product.availability === "unavailable_reference") summary.unavailable += 1;
+      else summary.unverified += 1;
+      return summary;
+    },
+    { available: 0, unavailable: 0, unverified: 0 },
+  );
+}
+
 function expectedFirst(products, sort) {
   const copy = [...products];
   if (sort === "descuento" || sort === "relevancia") {
@@ -184,11 +196,11 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     const apiText = await apiResponse.text();
     assert.doesNotMatch(apiText, /gpsfarma|provider|barcode|"sku"|"source"/i);
     const api = JSON.parse(apiText);
-    assert.equal(api.totalProducts, 686);
-    assert.deepEqual(api.availabilitySummary, { available: 672, unavailable: 6, unverified: 8 });
-    assert.equal(api.products.filter((product) => product.availability === "available_reference").length, 672);
-    assert.equal(api.products.filter((product) => product.availability === "unavailable_reference").length, 6);
-    assert.equal(api.products.filter((product) => product.availability === "unverified").length, 8);
+    assert.equal(api.totalProducts, api.products.length);
+    assert.deepEqual(api.availabilitySummary, publicAvailabilitySummary(api.products));
+    assert.equal(api.products.filter((product) => product.availability === "available_reference").length, api.availabilitySummary.available);
+    assert.equal(api.products.filter((product) => product.availability === "unavailable_reference").length, api.availabilitySummary.unavailable);
+    assert.equal(api.products.filter((product) => product.availability === "unverified").length, api.availabilitySummary.unverified);
 
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo&orden=precio-asc`, {
       waitUntil: "domcontentloaded",
@@ -208,9 +220,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator("#sortV69").inputValue(), "precio-asc");
     assert.equal(await firstCardSlug(page), expectedFirst(api.products, "precio-asc").slug);
     const availabilityText = await page.locator("#availabilityV69").innerText();
-    assert.match(availabilityText, /\b672\b/);
-    assert.match(availabilityText, /\b6\b/);
-    assert.match(availabilityText, /\b8\b/);
+    assert.match(availabilityText, new RegExp(`\\b${api.availabilitySummary.available}\\b`));
+    assert.match(availabilityText, new RegExp(`\\b${api.availabilitySummary.unavailable}\\b`));
+    assert.match(availabilityText, new RegExp(`\\b${api.availabilitySummary.unverified}\\b`));
     assert.match(availabilityText, /no verificados/i);
 
     await selectSort(page, api.products, "precio-desc");
@@ -252,7 +264,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.locator(".v69-stock.is-unavailable.is-pdp").waitFor();
-    assert.match(await page.locator(".v69-stock.is-unavailable.is-pdp").innerText(), /no disponible/i);
+    assert.match(await page.locator(".v69-stock.is-unavailable.is-pdp").innerText(), /Sin stock en Rosario/i);
     assert.match(await page.locator(".cta").innerText(), /Consultar disponibilidad/i);
     assert.equal(await hasHorizontalOverflow(page), false);
 
@@ -262,7 +274,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.locator(".v69-stock.is-unverified.is-pdp").waitFor();
-    assert.match(await page.locator(".v69-stock.is-unverified.is-pdp").innerText(), /no verificado/i);
+    assert.match(await page.locator(".v69-stock.is-unverified.is-pdp").innerText(), /A confirmar en Rosario/i);
     assert.match(await page.locator(".cta").innerText(), /Consultar disponibilidad/i);
 
     await page.setViewportSize({ width: 390, height: 844 });

@@ -221,7 +221,7 @@ export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(
       <h1 id="catalogTitleV69">${e(context.title)}</h1>
       <p class="v66-context" id="contextV69">${e(context.copy)}</p>
       <p class="v69-availability-summary" id="availabilityV69">${availabilitySummaryTextV69(initialAvailability.available, initialAvailability.unavailable, initialAvailability.unverified)}</p>
-      <p class="v69-availability-note" id="availabilityNoteV69">${catalog.commerceSyncedAt ? `Estado comercial verificado ${e(shortDateV69(catalog.commerceSyncedAt))}. Confirmamos disponibilidad por WhatsApp.` : catalog.availabilityReferenceAt ? `Verificación parcial actualizada ${e(shortDateV69(catalog.availabilityReferenceAt))}. Confirmamos disponibilidad por WhatsApp.` : "Estado comercial pendiente de sincronización. Confirmamos disponibilidad por WhatsApp."}</p>
+      <p class="v69-availability-note" id="availabilityNoteV69">${catalog.commerceSyncedAt ? `Estado comercial en Rosario verificado ${e(shortDateV69(catalog.commerceSyncedAt))}. Confirmamos disponibilidad por WhatsApp.` : catalog.availabilityReferenceAt ? `Verificación parcial en Rosario actualizada ${e(shortDateV69(catalog.availabilityReferenceAt))}. Confirmamos disponibilidad por WhatsApp.` : "Estado comercial en Rosario pendiente de sincronización. Confirmamos disponibilidad por WhatsApp."}</p>
     </div>
     <div class="v66-catalog-tools">
       <p id="countV69" aria-live="polite"></p>
@@ -470,9 +470,16 @@ function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109") {
 function stockBadgeV69(product: ProductV69, detail = false) {
   const unavailable = product.availability === "out_of_stock";
   const unverified = product.availability === "unknown";
-  const label = unavailable ? "no disponible" : unverified ? "no verificado" : "disponible";
+  const label = unavailable
+    ? "Sin stock en Rosario"
+    : unverified
+      ? "A confirmar en Rosario"
+      : "Disponible en Rosario";
   const checked = product.availabilityCheckedAt ? shortDateV69(product.availabilityCheckedAt) : "";
-  return `<p class="v69-stock${unavailable ? " is-unavailable" : ""}${unverified ? " is-unverified" : ""}${detail ? " is-pdp" : ""}"><span aria-hidden="true"></span><strong>Disponibilidad:</strong> ${label}${detail ? `<small>${checked ? `Verificado ${e(checked)}` : "Pendiente de verificación diaria"} · confirmar por WhatsApp</small>` : ""}</p>`;
+  const freshness = checked
+    ? `Verificado en Rosario ${checked}`
+    : "Verificación comercial pendiente";
+  return `<p class="v69-stock${unavailable ? " is-unavailable" : ""}${unverified ? " is-unverified" : ""}${detail ? " is-pdp" : ""}"><span aria-hidden="true"></span><strong>${label}</strong>${detail ? `<small>${e(freshness)}</small>` : ""}</p>`;
 }
 
 export function availabilitySummaryV69(products: ProductV69[]) {

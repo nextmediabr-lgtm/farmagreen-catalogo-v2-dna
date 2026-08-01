@@ -161,21 +161,21 @@ function availabilityMeta(product) {
   if (product?.availability === "available_reference") {
     return {
       className: "",
-      label: "disponible",
-      title: "Estado observado en la última verificación del catálogo; consultá para confirmar.",
+      label: "Disponible en Rosario",
+      title: "Estado observado en Rosario durante la última verificación; consultá para confirmar.",
     };
   }
   if (product?.availability === "unavailable_reference") {
     return {
       className: " is-unavailable",
-      label: "no disponible",
-      title: "Estado observado en la última verificación del catálogo; consultá para confirmar.",
+      label: "Sin stock en Rosario",
+      title: "Estado observado en Rosario durante la última verificación; consultá para confirmar.",
     };
   }
   return {
     className: " is-unverified",
-    label: "no verificado",
-    title: "Este producto todavía no tiene una verificación comercial reciente; consultá para confirmar.",
+    label: "A confirmar en Rosario",
+    title: "Este producto todavía no tiene una verificación comercial reciente en Rosario; consultá para confirmar.",
   };
 }
 
@@ -187,7 +187,7 @@ function card(product) {
   const media = image
     ? `<div class="v66-media"><img src="${esc(image)}" alt="${esc(name)}" loading="lazy" decoding="async"></div>`
     : `<div class="v66-media v67-image-missing" role="img" aria-label="Imagen no disponible para ${esc(name)}"></div>`;
-  const stock = `<p class="v69-stock${availability.className}" title="${esc(availability.title)}"><span aria-hidden="true"></span><strong>Disponibilidad:</strong> ${esc(availability.label)}</p>`;
+  const stock = `<p class="v69-stock${availability.className}" title="${esc(availability.title)}"><span aria-hidden="true"></span><strong>${esc(availability.label)}</strong></p>`;
   const cta = product?.availability === "available_reference" ? "Consultar" : "Consultar disponibilidad";
   const statusClass =
     product?.availability === "unavailable_reference"

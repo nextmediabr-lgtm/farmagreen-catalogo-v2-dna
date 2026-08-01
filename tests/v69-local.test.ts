@@ -39,6 +39,32 @@ async function baseCatalog() {
   });
 }
 
+function availabilityCounts(products: Pick<ProductV69, "availability">[]) {
+  return products.reduce(
+    (counts, product) => {
+      counts[product.availability] += 1;
+      return counts;
+    },
+    { limited: 0, out_of_stock: 0, unknown: 0 },
+  );
+}
+
+function publicAvailabilitySummary(products: Array<{ availability: string }>) {
+  return products.reduce(
+    (summary, product) => {
+      if (product.availability === "available_reference" || product.availability === "limited") {
+        summary.available += 1;
+      } else if (product.availability === "unavailable_reference" || product.availability === "out_of_stock") {
+        summary.unavailable += 1;
+      } else {
+        summary.unverified += 1;
+      }
+      return summary;
+    },
+    { available: 0, unavailable: 0, unverified: 0 },
+  );
+}
+
 async function privateFixture(catalog: CatalogV69) {
   const directory = await mkdtemp(path.join(tmpdir(), "farmagreen-v69-exclusions-"));
   const file = path.join(directory, "catalog-exclusions-v69.local.json");
@@ -107,26 +133,18 @@ async function close(server: ReturnType<typeof app>) {
   );
 }
 
-test("V6.9 conserva el snapshot base de 688 y distingue 674/6/8 antes de exclusiones", async () => {
+test("V6.9 conserva las 688 fichas y sus métricas coinciden con el snapshot local", async () => {
   const raw = JSON.parse(await readFile(CATALOG_FILE, "utf8")) as {
     products: ProductV69[];
     commerceSync?: { metrics?: Record<string, number> };
   };
   assert.equal(raw.products.length, 688);
-  assert.deepEqual(
-    raw.products.reduce(
-      (counts, product) => {
-        counts[product.availability] += 1;
-        return counts;
-      },
-      { limited: 0, out_of_stock: 0, unknown: 0 },
-    ),
-    { limited: 674, out_of_stock: 6, unknown: 8 },
-  );
+  const availability = availabilityCounts(raw.products);
+  assert.equal(availability.limited + availability.out_of_stock + availability.unknown, raw.products.length);
   assert.equal(raw.commerceSync?.metrics?.catalogProducts, 688);
-  assert.equal(raw.commerceSync?.metrics?.available, 674);
-  assert.equal(raw.commerceSync?.metrics?.unavailable, 6);
-  assert.equal(raw.commerceSync?.metrics?.unverified, 8);
+  assert.equal(raw.commerceSync?.metrics?.available, availability.limited);
+  assert.equal(raw.commerceSync?.metrics?.unavailable, availability.out_of_stock);
+  assert.equal(raw.commerceSync?.metrics?.unverified, availability.unknown);
 });
 
 test("fallback sin verificación real queda no verificado y un snapshot atómico se activa sin reiniciar", async () => {
@@ -196,14 +214,8 @@ test("la lista privada excluye antes de publicar y nunca filtra sus identificado
     assert.equal(visible.products.length, 686);
     assert.ok(fixture.excludedIds.every((id) => !visible.products.some((product) => product.publicId === id)));
 
-    const availability = visible.products.reduce(
-      (counts, product) => {
-        counts[product.availability] += 1;
-        return counts;
-      },
-      { limited: 0, out_of_stock: 0, unknown: 0 },
-    );
-    assert.deepEqual(availability, { limited: 672, out_of_stock: 6, unknown: 8 });
+    const availability = availabilityCounts(visible.products);
+    assert.equal(availability.limited + availability.out_of_stock + availability.unknown, visible.products.length);
 
     const rules = await loadExclusionsV69(fixture.file, true);
     const sample = base.products.find((product) => !fixture.excludedIds.includes(product.publicId));
@@ -213,11 +225,7 @@ test("la lista privada excluye antes de publicar y nunca filtra sus identificado
 
     const publicCatalog = publicCatalogV69(visible);
     assert.equal(publicCatalog.totalProducts, 686);
-    assert.deepEqual(publicCatalog.availabilitySummary, {
-      available: 672,
-      unavailable: 6,
-      unverified: 8,
-    });
+    assert.deepEqual(publicCatalog.availabilitySummary, publicAvailabilitySummary(visible.products));
     const serialized = JSON.stringify(publicCatalog);
     for (const secret of [fixture.privateSku, fixture.privateBarcode, fixture.privateUrl]) {
       assert.doesNotMatch(serialized, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -303,8 +311,8 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     const health = await healthResponse.json() as ReturnType<typeof catalogHealthV69>;
     const appSource = await appResponse.text();
     const api = JSON.parse(apiText) as ReturnType<typeof publicCatalogV69>;
-    assert.equal(api.totalProducts, 686);
-    assert.deepEqual(api.availabilitySummary, { available: 672, unavailable: 6, unverified: 8 });
+    assert.equal(api.totalProducts, base.products.length - fixture.excludedIds.length);
+    assert.deepEqual(api.availabilitySummary, publicAvailabilitySummary(api.products));
     assert.deepEqual(Object.keys(api).sort(), [
       "availabilityReferenceAt",
       "availabilitySummary",
@@ -342,7 +350,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(apiText, /gpsfarma|provider|barcode|"sku"|"source"/i);
     assert.equal(health.status, "ready");
     assert.equal(health.totalProducts, 686);
-    assert.deepEqual(health.availabilitySummary, { available: 672, unavailable: 6, unverified: 8 });
+    assert.deepEqual(health.availabilitySummary, publicAvailabilitySummary(api.products));
     assert.doesNotMatch(html, /gpsfarma/i);
     assert.doesNotMatch(appSource, /gpsfarma/i);
     assert.doesNotMatch(catalogResponse.headers.get("content-security-policy") || "", /gpsfarma|unsafe-inline/i);
@@ -355,6 +363,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(pdpResponse.status, 200);
     const pdp = await pdpResponse.text();
     assert.match(pdp, /class="v69-stock is-unavailable is-pdp"/);
+    assert.match(pdp, /Sin stock en Rosario/);
     assert.match(pdp, /Consultar disponibilidad o alternativa/);
     assert.doesNotMatch(pdp, /gpsfarma|provider|barcode|"sku"|"source"/i);
     assert.match(pdp, new RegExp(`${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/producto-v6-9/`));

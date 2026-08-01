@@ -5,8 +5,10 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_INVENTORY_SCOPE_V69,
   GPS_SOURCES_V69,
   crawlSource,
+  inventoryScopeV69,
   normalizeGpsImagePath,
   normalizeGpsProductUrl,
   parseListingProducts,
@@ -40,6 +42,7 @@ test("parser de listing conserva URL confiable y calcula oferta/descuento", () =
   assert.equal(products[0].offerPrice, 7000);
   assert.equal(products[0].savingAmount, 3000);
   assert.equal(products[0].discountPercent, 30);
+  assert.equal(products[0].availability, "available");
   assert.equal(
     normalizeGpsImagePath(products[0].imageUrl),
     "/media/catalog/product/demo/serum-30.jpg",
@@ -56,8 +59,47 @@ test("parser acepta precio regular y detecta el enlace siguiente", () => {
   assert.equal(products[0].listPrice, 12500.5);
   assert.equal(products[0].offerPrice, 12500.5);
   assert.equal(products[0].discountPercent, 0);
+  assert.equal(products[0].availability, "available");
   assert.match(parseNextPageUrl(PAGE_1), /[?&]p=2(?:&|$)/);
   assert.equal(parseNextPageUrl(PAGE_2), null);
+});
+
+test("el parser usa sólo los marcadores explícitos del listado para disponibilidad", () => {
+  const products = parseListingProducts(
+    `
+      <li class="item product product-item">
+        <a class="product-item-link" href="/con-stock.html">Con stock</a>
+        <form data-role="tocart-form" action="/checkout/cart/add/uenc/aHR0cHM6Ly8/"></form>
+      </li>
+      <li class="item product product-item">
+        <a class="product-item-link" href="/sin-stock.html">Sin stock</a>
+        <div class="stock unavailable"><span>Sin stock</span></div>
+      </li>
+      <li class="item product product-item">
+        <a class="product-item-link" href="/a-confirmar.html">A confirmar</a>
+      </li>
+    `,
+    EUCERIN,
+  );
+
+  assert.deepEqual(
+    products.map((product) => product.availability),
+    ["available", "unavailable", "unknown"],
+  );
+});
+
+test("la ubicación comercial por defecto es Rosario y valida sus identificadores", () => {
+  assert.deepEqual(DEFAULT_INVENTORY_SCOPE_V69, {
+    label: "Rosario",
+    regionId: 722,
+    cityId: 152,
+    inventorySource: "STOM",
+  });
+  assert.deepEqual(inventoryScopeV69({}), DEFAULT_INVENTORY_SCOPE_V69);
+  assert.throws(
+    () => inventoryScopeV69({ V69_SYNC_LOCATION_REGION_ID: "Rosario" }),
+    /V69_SYNC_LOCATION_REGION_ID debe ser un entero positivo/,
+  );
 });
 
 test("la frontera HTTPS rechaza host, protocolo y credenciales ajenos", () => {
@@ -168,7 +210,7 @@ test("sincroniza URL primero, título confiable después y no autoagrega candida
   assert.equal(result.products[0].offerPrice, 7000);
   assert.equal(result.products[0].description, description);
   assert.deepEqual(result.products[0].taxonomy, taxonomy);
-  assert.equal(result.products[1].availability, "out_of_stock");
+  assert.equal(result.products[1].availability, "unknown");
   assert.equal(result.products[2].availability, "limited");
   assert.equal(result.products[2].offerPrice, 12500.5);
   assert.equal(result.products[3].availability, "unknown");
@@ -179,15 +221,107 @@ test("sincroniza URL primero, título confiable después y no autoagrega candida
     matchedByUrl: 1,
     matchedByImage: 0,
     matchedByTitle: 1,
+    matched: 2,
     available: 2,
-    unavailable: 1,
-    unverified: 1,
-    verified: 3,
+    unavailable: 0,
+    unverified: 2,
+    verified: 2,
+    availabilityCoverage: 0.5,
     pricesUpdated: 2,
     newCandidates: 1,
-    coverage: 0.75,
+    coverage: 0.5,
     priceCoverage: 1,
+    inventoryLocation: "Rosario",
   });
+});
+
+test("una ausencia del listado no se publica como sin stock", () => {
+  const result = synchronizeCatalog(
+    {
+      version: 6.8,
+      products: [
+        product("p-no-listado", "Producto sin coincidencia x 50 ml", {
+          source: { url: "https://gpsfarma.com/no-listado.html" },
+        }),
+      ],
+    },
+    [
+      {
+        id: "5930",
+        catalogBrandId: "5930",
+        catalogBrandName: "Eucerin",
+        status: "completed",
+        pages: [{ page: 1 }],
+        products: [
+          {
+            sourceId: "5930",
+            catalogBrandId: "5930",
+            catalogBrandName: "Eucerin",
+            sourceUrl: "https://gpsfarma.com/otro-producto.html",
+            sourceName: "Otro producto x 99 ml",
+            sourceBrand: "Eucerin",
+            availability: "available",
+            listPrice: 100,
+            offerPrice: 100,
+            savingAmount: 0,
+            discountPercent: 0,
+          },
+        ],
+      },
+    ],
+    { minCoverage: 0, minPriceCoverage: 0, expectedSourceIds: ["5930"] },
+  );
+
+  assert.equal(result.products[0].availability, "unknown");
+  assert.equal(result.products[0].availabilityCheckedAt, null);
+  assert.equal(result.commerceSync.metrics.unavailable, 0);
+});
+
+test("un marcador explícito de sin stock se conserva", () => {
+  const result = synchronizeCatalog(
+    {
+      version: 6.8,
+      products: [
+        product("p-sin-stock", "Producto sin stock x 50 ml", {
+          source: { url: "https://gpsfarma.com/sin-stock.html" },
+        }),
+      ],
+    },
+    [
+      {
+        id: "5930",
+        catalogBrandId: "5930",
+        catalogBrandName: "Eucerin",
+        status: "completed",
+        pages: [{ page: 1 }],
+        products: [
+          {
+            sourceId: "5930",
+            catalogBrandId: "5930",
+            catalogBrandName: "Eucerin",
+            sourceUrl: "https://gpsfarma.com/sin-stock.html",
+            sourceName: "Producto sin stock x 50 ml",
+            sourceBrand: "Eucerin",
+            availability: "unavailable",
+            listPrice: 100,
+            offerPrice: 100,
+            savingAmount: 0,
+            discountPercent: 0,
+          },
+        ],
+      },
+    ],
+    {
+      completedAt: "2026-07-30T12:00:00.000Z",
+      minCoverage: 1,
+      minPriceCoverage: 1,
+      expectedSourceIds: ["5930"],
+    },
+  );
+
+  assert.equal(result.products[0].availability, "out_of_stock");
+  assert.equal(result.products[0].availabilityCheckedAt, "2026-07-30T12:00:00.000Z");
+  assert.equal(result.commerceSync.metrics.unavailable, 1);
 });
 
 test("una URL migrada conserva disponibilidad si imagen o título identifican el producto", () => {
