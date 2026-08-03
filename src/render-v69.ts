@@ -8,7 +8,8 @@ import {
 
 const BASE = (process.env.PUBLIC_BASE_PATH || "").replace(/\/$/, "");
 const W = "5493417234000";
-const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/logo_farmagreen.png";
+const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/farmagreen-social-preview-v69.png";
+const SOCIAL_DESCRIPTION = "Farmacia y Dermocosmetica, Catalogo de Precios y Promociones";
 const HOME_ROUTE = "/";
 const CATALOG_ROUTE = "/catalogo";
 const PRODUCT_ROUTE = "/p/";
@@ -292,7 +293,7 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
 
   return shell69(
     "Farmagreen Rosario | Marcas y productos",
-    "Explorá las marcas de Farmagreen Rosario y consultá disponibilidad por WhatsApp.",
+    SOCIAL_DESCRIPTION,
     `${discoveryPanelV69(catalog, homeContext, catalog.totalProducts)}
     <div class="v69-home-sections" id="marcas-inicio-v69">${sections}</div>
     <script type="application/json" id="fg69-data">${json({
@@ -308,6 +309,10 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
       canonicalPath: HOME_ROUTE,
       ogType: "website",
       ogImage: SOCIAL_IMAGE,
+      ogImageType: "image/png",
+      ogImageWidth: 1200,
+      ogImageHeight: 630,
+      ogImageAlt: `Farmagreen Rosario. ${SOCIAL_DESCRIPTION}.`,
       homeHref: HOME_ROUTE,
       links: [
         { href: `${CATALOG_ROUTE}#productos-v69`, label: "Ofertas" },
@@ -519,6 +524,10 @@ type ShellOptions = {
   canonicalPath?: string;
   ogType?: string;
   ogImage?: string;
+  ogImageType?: string;
+  ogImageWidth?: number;
+  ogImageHeight?: number;
+  ogImageAlt?: string;
 };
 
 function shell69(title: string, description: string, body: string, options: ShellOptions = {}) {
@@ -527,7 +536,10 @@ function shell69(title: string, description: string, body: string, options: Shel
   const canonicalUrl = options.canonicalPath ? absolute(options.origin || "http://127.0.0.1:8109", options.canonicalPath) : "";
   const canonical = canonicalUrl ? `<link rel="canonical" href="${e(canonicalUrl)}">` : "";
   const ogImage = options.ogImage ? new URL(options.ogImage, options.origin || "http://127.0.0.1:8109").toString() : "";
-  const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImage ? `<meta property="og:image" content="${e(ogImage)}">` : ""}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">`;
+  const ogImageMeta = ogImage
+    ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
+    : "";
+  const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
   return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-5.css")}"><link rel="stylesheet" href="${u("/styles-v6-6.css")}"><link rel="stylesheet" href="${u("/styles-v6-7.css")}"><link rel="stylesheet" href="${u("/styles-v6-9.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main><a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9.js")}"></script></body></html>`;
 }
 

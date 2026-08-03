@@ -31,6 +31,7 @@ const PUBLIC_ASSETS = new Set([
   "/app-v6-8.js",
   "/app-v6-9.js",
   "/logo_farmagreen.png",
+  "/farmagreen-social-preview-v69.png",
 ]);
 
 export function app(environment: Environment = process.env) {

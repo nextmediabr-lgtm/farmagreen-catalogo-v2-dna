@@ -339,6 +339,18 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
   assert.match(html, new RegExp(`id="brandSummaryV69">Todas · ${catalog.totalProducts}<\\/strong>`));
   assert.match(html, /id="sortV69" name="orden"/);
   assert.match(html, /Ver toda la marca/);
+  assert.match(
+    html,
+    /<meta property="og:description" content="Farmacia y Dermocosmetica, Catalogo de Precios y Promociones">/,
+  );
+  assert.match(
+    html,
+    /<meta property="og:image" content="https:\/\/farmagreenrosario\.web\.app\/farmagreen-social-preview-v69\.png">/,
+  );
+  assert.match(html, /<meta property="og:image:width" content="1200">/);
+  assert.match(html, /<meta property="og:image:height" content="630">/);
+  assert.match(html, /<meta property="og:image:type" content="image\/png">/);
+  assert.match(html, /<meta name="twitter:card" content="summary_large_image">/);
   assert.doesNotMatch(html, /gpsfarma|provider|"sku"|"source"/i);
 
   for (const brand of brands) {
@@ -370,7 +382,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
   const server = app({ ...process.env, NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" });
   const origin = await listen(server);
   try {
-    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, cssResponse] = await Promise.all([
+    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, cssResponse, socialImageResponse] = await Promise.all([
       fetch(`${origin}/`),
       fetch(`${origin}/inicio-v6-9/`),
       fetch(`${origin}/catalogo/`),
@@ -379,6 +391,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/api/catalog-v6-9/health`),
       fetch(`${origin}/app-v6-9.js`),
       fetch(`${origin}/styles-v6-9.css`),
+      fetch(`${origin}/farmagreen-social-preview-v69.png`),
     ]);
     assert.equal(rootResponse.status, 200);
     assert.equal(homeResponse.status, 200);
@@ -388,6 +401,8 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(healthResponse.status, 200);
     assert.equal(appResponse.status, 200);
     assert.equal(cssResponse.status, 200);
+    assert.equal(socialImageResponse.status, 200);
+    assert.equal(socialImageResponse.headers.get("content-type"), "image/png");
     assert.equal(apiResponse.headers.get("cache-control"), "no-store");
     assert.equal(healthResponse.headers.get("cache-control"), "no-store");
 
@@ -450,6 +465,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       "La home definitiva debe comenzar por Eucerin y conservar las marcas apiladas.",
     );
     assert.match(root, /<link rel="canonical" href="http:\/\/127\.0\.0\.1:\d+\/">/);
+    assert.match(root, /Farmacia y Dermocosmetica, Catalogo de Precios y Promociones/);
+    assert.match(root, /farmagreen-social-preview-v69\.png/);
+    assert.match(root, /<meta property="og:image:width" content="1200">/);
+    assert.match(root, /<meta property="og:image:height" content="630">/);
     assert.match(root, /class="brandmark"/);
     assert.match(root, /class="brandmark"[^>]*>/);
     assert.match(home, /class="v69-home-sections" id="marcas-inicio-v69"/);
