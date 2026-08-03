@@ -19,6 +19,7 @@ const chromeCandidates = [
   "/usr/bin/chromium",
 ].filter(Boolean);
 const executablePath = chromeCandidates.find((candidate) => existsSync(candidate));
+const remoteOrigin = process.env.V69_E2E_ORIGIN?.replace(/\/$/, "");
 
 async function exclusionFixture() {
   const raw = JSON.parse(await readFile(CATALOG_FILE, "utf8"));
@@ -80,6 +81,16 @@ async function startServer() {
       await rm(fixture.directory, { recursive: true, force: true });
     },
   };
+}
+
+async function runtimeTarget() {
+  if (remoteOrigin) {
+    return {
+      origin: remoteOrigin,
+      async cleanup() {},
+    };
+  }
+  return startServer();
 }
 
 async function firstRowColumns(page) {
@@ -205,9 +216,9 @@ async function selectSort(page, products, sort) {
   assert.equal(await firstCardSlug(page), expected.slug);
 }
 
-test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del proveedor", { timeout: 60_000 }, async () => {
+test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del proveedor", { timeout: 180_000 }, async () => {
   assert.ok(executablePath, "No se encontró Chrome/Chromium; definí CHROME_PATH para ejecutar la guarda visual.");
-  const runtime = await startServer();
+  const runtime = await runtimeTarget();
   let browser;
 
   try {
@@ -215,8 +226,21 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const providerRequests = [];
     const consoleErrors = [];
+    const failedResponses = [];
+    const failedRequests = [];
     page.on("request", (request) => {
       if (/gpsfarma/i.test(request.url())) providerRequests.push(request.url());
+    });
+    page.on("requestfailed", (request) => {
+      const failure = request.failure();
+      if (failure?.errorText !== "net::ERR_ABORTED") {
+        failedRequests.push({ url: request.url(), error: failure?.errorText });
+      }
+    });
+    page.on("response", (response) => {
+      if (response.status() >= 400) {
+        failedResponses.push({ url: response.url(), status: response.status() });
+      }
     });
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
@@ -542,6 +566,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.match(await page.locator("#catalogTitleV69").textContent(), /protetor solar bebe/i);
     assert.deepEqual(providerRequests, []);
     assert.deepEqual(consoleErrors, []);
+    assert.deepEqual(failedResponses, []);
+    assert.deepEqual(failedRequests, []);
   } finally {
     if (browser) await browser.close();
     await runtime.cleanup();
