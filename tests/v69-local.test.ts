@@ -307,7 +307,7 @@ test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente e
     assert.equal(bootPayload(html).context.sort, sort);
     assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9\.js/);
+    assert.match(html, /app-v6-9-r20260803\.js/);
     assert.match(html, /styles-v6-9\.css/);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
     assert.doesNotMatch(html, /gpsfarma/i);
@@ -391,7 +391,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9.js`),
+      fetch(`${origin}/app-v6-9-r20260803.js`),
       fetch(`${origin}/styles-v6-9.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
     ]);
@@ -402,6 +402,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(apiResponse.status, 200);
     assert.equal(healthResponse.status, 200);
     assert.equal(appResponse.status, 200);
+    assert.equal(appResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
     assert.equal(cssResponse.status, 200);
     assert.equal(socialImageResponse.status, 200);
     assert.equal(socialImageResponse.headers.get("content-type"), "image/png");
