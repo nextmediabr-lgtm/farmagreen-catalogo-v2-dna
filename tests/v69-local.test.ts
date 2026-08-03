@@ -135,7 +135,9 @@ function bootPayload(html: string) {
   assert.ok(encoded, "Falta el payload público V6.9.");
   return JSON.parse(encoded) as {
     context: { brand: string; need: string; scope: string; sort: SortV69 };
-    products: Array<Record<string, unknown>>;
+    products?: Array<Record<string, unknown>>;
+    totalProducts?: number;
+    dataEndpoint?: string;
   };
 }
 
@@ -345,7 +347,7 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
   );
   assert.match(
     html,
-    /<meta property="og:image" content="https:\/\/farmagreenrosario\.web\.app\/farmagreen-social-preview-v69\.png">/,
+    /<meta property="og:image" content="https:\/\/farmagreenrosario\.web\.app\/farmagreen-social-preview-v69-social-2\.png">/,
   );
   assert.match(html, /<meta property="og:image:width" content="1200">/);
   assert.match(html, /<meta property="og:image:height" content="630">/);
@@ -391,7 +393,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/api/catalog-v6-9/health`),
       fetch(`${origin}/app-v6-9.js`),
       fetch(`${origin}/styles-v6-9.css`),
-      fetch(`${origin}/farmagreen-social-preview-v69.png`),
+      fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
     ]);
     assert.equal(rootResponse.status, 200);
     assert.equal(homeResponse.status, 200);
@@ -403,7 +405,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(cssResponse.status, 200);
     assert.equal(socialImageResponse.status, 200);
     assert.equal(socialImageResponse.headers.get("content-type"), "image/png");
-    assert.equal(apiResponse.headers.get("cache-control"), "no-store");
+    assert.equal(apiResponse.headers.get("cache-control"), "public, max-age=60, s-maxage=300, stale-while-revalidate=60");
     assert.equal(healthResponse.headers.get("cache-control"), "no-store");
 
     const root = await rootResponse.text();
@@ -466,7 +468,13 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     );
     assert.match(root, /<link rel="canonical" href="http:\/\/127\.0\.0\.1:\d+\/">/);
     assert.match(root, /Farmacia y Dermocosmetica, Catalogo de Precios y Promociones/);
-    assert.match(root, /farmagreen-social-preview-v69\.png/);
+    assert.match(root, /farmagreen-social-preview-v69-social-2\.png/);
+    assert.doesNotMatch(root, /"products":\[/);
+    assert.doesNotMatch(html, /"products":\[/);
+    assert.equal(bootPayload(root).totalProducts, api.totalProducts);
+    assert.equal(bootPayload(html).dataEndpoint, "/api/catalog-v6-9");
+    assert.ok(Buffer.byteLength(root) < 250_000, "La home no debe volver a incrustar el catálogo completo.");
+    assert.ok(Buffer.byteLength(html) < 180_000, "El catálogo no debe volver a incrustar todos los productos.");
     assert.match(root, /<meta property="og:image:width" content="1200">/);
     assert.match(root, /<meta property="og:image:height" content="630">/);
     assert.match(root, /class="brandmark"/);

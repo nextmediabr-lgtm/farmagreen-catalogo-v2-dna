@@ -22,6 +22,7 @@ const S = {
   sort: SORT_VALUES.has(CONTEXT.sort) ? CONTEXT.sort : DEFAULT_SORT,
   limit: PAGE,
 };
+const TOTAL_PRODUCTS = Number(BOOT.totalProducts || S.all.length || 0);
 
 const NEED_LABELS = {
   manchas: "Manchas",
@@ -559,7 +560,7 @@ function bootHomeDiscovery() {
     if ($("#searchV69")) $("#searchV69").value = "";
     if ($("#sortV69")) $("#sortV69").value = DEFAULT_SORT;
     $("#needSummaryV69").textContent = "Todas";
-    $("#brandSummaryV69").textContent = `Todas · ${S.all.length}`;
+    $("#brandSummaryV69").textContent = `Todas · ${TOTAL_PRODUCTS}`;
   });
   $("#sortV69")?.addEventListener("change", (event) => openCatalogFromHome({ sort: event.target.value }));
   $$('[data-brand]').forEach((button) =>
@@ -571,11 +572,36 @@ function bootHomeDiscovery() {
   return true;
 }
 
-function boot() {
+async function loadCatalogProducts() {
+  if (S.all.length || !BOOT.dataEndpoint) return;
+  const response = await fetch(url(BOOT.dataEndpoint), {
+    headers: { accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`No se pudo cargar el catálogo (${response.status}).`);
+  const payload = await response.json();
+  if (!Array.isArray(payload.products) || !payload.products.length) {
+    throw new Error("El catálogo público llegó vacío.");
+  }
+  S.all = payload.products;
+  BOOT.commerceSyncedAt = payload.commerceSyncedAt || BOOT.commerceSyncedAt;
+  BOOT.availabilityReferenceAt = payload.availabilityReferenceAt || BOOT.availabilityReferenceAt;
+}
+
+async function boot() {
   if (!$("#gridV69")) {
     bootHomeDiscovery();
     return;
   }
+  const discovery = $("#buscar-v69");
+  discovery?.setAttribute("aria-busy", "true");
+  try {
+    await loadCatalogProducts();
+  } catch (error) {
+    console.error(error);
+    discovery?.removeAttribute("aria-busy");
+    return;
+  }
+  discovery?.removeAttribute("aria-busy");
   const params = new URLSearchParams(location.search);
   applyParams(params);
   $("#searchV69").value = S.q;
@@ -691,6 +717,6 @@ function wireHistoryBack() {
 
 wireImageFallbacks();
 wireHistoryBack();
-boot();
+void boot();
 refreshFloatingWhatsapp();
 window.matchMedia("(max-width: 760px)").addEventListener?.("change", refreshFloatingWhatsapp);

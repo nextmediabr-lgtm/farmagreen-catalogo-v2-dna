@@ -1,4 +1,5 @@
 import type http from "node:http";
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import type { CatalogV69 } from "./data-v69.js";
 import {
   RuntimeHttpErrorV69,
@@ -22,6 +23,8 @@ const MAX_SOURCE_IMAGE_BYTES = 12_000_000;
 const SOURCE_IMAGE_TIMEOUT_MS = 15_000;
 const V69_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://storage.googleapis.com; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
+const PUBLIC_HTML_CACHE = "public, max-age=0, s-maxage=300, stale-while-revalidate=60";
+const PUBLIC_CATALOG_CACHE = "public, max-age=60, s-maxage=300, stale-while-revalidate=60";
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -156,12 +159,12 @@ export async function handleV69Request(
   }
 
   if (pathname === "/catalogo-v6-9" || servesPublicCatalog) {
-    sendHtmlV69(response, catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment)));
+    sendHtmlV69(response, catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment)), 200, request);
     return true;
   }
 
   if (servesPublicHome || pathname === "/inicio-v6-9" || (pathname === "/inicio" && publicAliasesEnabled)) {
-    sendHtmlV69(response, homePageV69(catalog, publicOriginV69(url.origin, environment)));
+    sendHtmlV69(response, homePageV69(catalog, publicOriginV69(url.origin, environment)), 200, request);
     return true;
   }
 
@@ -172,6 +175,7 @@ export async function handleV69Request(
       response,
       found ? productPageV69(found, await similarV69(found), origin) : notFoundPageV69(origin),
       found ? 200 : 404,
+      request,
     );
     return true;
   }
@@ -183,12 +187,13 @@ export async function handleV69Request(
       response,
       found ? productPageV69(found, await similarV69(found), origin) : notFoundPageV69(origin),
       found ? 200 : 404,
+      request,
     );
     return true;
   }
 
   if (pathname === "/api/catalog-v6-9") {
-    sendJsonV69(response, publicCatalogV69(catalog), 200, { "cache-control": "no-store" });
+    sendJsonV69(response, publicCatalogV69(catalog), 200, { "cache-control": PUBLIC_CATALOG_CACHE }, request);
     return true;
   }
 
@@ -198,6 +203,7 @@ export async function handleV69Request(
       { ...catalogHealthV69(catalog), runtime: commerceRuntime.health() },
       200,
       { "cache-control": "no-store" },
+      request,
     );
     return true;
   }
@@ -222,15 +228,22 @@ function headerV69(request: http.IncomingMessage, name: string) {
   return Array.isArray(value) ? value[0] || "" : String(value || "");
 }
 
-function sendHtmlV69(response: http.ServerResponse, body: string, status = 200) {
-  response.writeHead(
+function sendHtmlV69(
+  response: http.ServerResponse,
+  body: string,
+  status = 200,
+  request?: http.IncomingMessage,
+) {
+  sendEncodedV69(
+    response,
+    body,
     status,
     headersV69({
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-cache",
+      "cache-control": status === 200 ? PUBLIC_HTML_CACHE : "no-store",
     }),
+    request,
   );
-  response.end(body);
 }
 
 export function catalogHealthV69(catalog: CatalogV69, now = new Date()) {
@@ -253,15 +266,47 @@ function sendJsonV69(
   body: unknown,
   status = 200,
   extra: Record<string, string> = {},
+  request?: http.IncomingMessage,
 ) {
-  response.writeHead(
+  sendEncodedV69(
+    response,
+    JSON.stringify(body),
     status,
     headersV69({
       "content-type": "application/json; charset=utf-8",
       ...extra,
     }),
+    request,
   );
-  response.end(JSON.stringify(body));
+}
+
+function sendEncodedV69(
+  response: http.ServerResponse,
+  body: string,
+  status: number,
+  headers: Record<string, string>,
+  request?: http.IncomingMessage,
+) {
+  const source = Buffer.from(body);
+  const accepted = String(request?.headers["accept-encoding"] || "").toLowerCase();
+  let encoded = source;
+  let encoding = "";
+  if (source.length >= 1_024 && accepted.includes("br")) {
+    encoded = brotliCompressSync(source, {
+      params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 },
+    });
+    encoding = "br";
+  } else if (source.length >= 1_024 && accepted.includes("gzip")) {
+    encoded = gzipSync(source, { level: 6 });
+    encoding = "gzip";
+  }
+  const outputHeaders = {
+    ...headers,
+    "content-length": String(encoded.length),
+    ...(encoding ? { "content-encoding": encoding, vary: "accept-encoding" } : {}),
+  };
+  response.writeHead(status, outputHeaders);
+  response.end(request?.method === "HEAD" ? undefined : encoded);
 }
 
 function sendTextV69(response: http.ServerResponse, body: string, status: number) {

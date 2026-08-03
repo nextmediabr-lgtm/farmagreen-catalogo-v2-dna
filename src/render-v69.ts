@@ -8,7 +8,7 @@ import {
 
 const BASE = (process.env.PUBLIC_BASE_PATH || "").replace(/\/$/, "");
 const W = "5493417234000";
-const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/farmagreen-social-preview-v69.png";
+const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/farmagreen-social-preview-v69-social-2.png";
 const SOCIAL_DESCRIPTION = "Farmacia y Dermocosmetica, Catalogo de Precios y Promociones";
 const HOME_ROUTE = "/";
 const CATALOG_ROUTE = "/catalogo";
@@ -155,7 +155,7 @@ ${discoveryPanelV69(catalog, context, initial.length)}
       <p class="v69-availability-note" id="availabilityNoteV69" hidden>${catalog.commerceSyncedAt ? `Estado comercial en Rosario verificado ${e(shortDateV69(catalog.commerceSyncedAt))}. Confirmamos disponibilidad por WhatsApp.` : catalog.availabilityReferenceAt ? `Verificación parcial en Rosario actualizada ${e(shortDateV69(catalog.availabilityReferenceAt))}. Confirmamos disponibilidad por WhatsApp.` : "Estado comercial en Rosario pendiente de sincronización. Confirmamos disponibilidad por WhatsApp."}</p>
     </div>
     <div class="v66-catalog-tools">
-      <p id="countV69" aria-live="polite"></p>
+      <p id="countV69" aria-live="polite">${Math.min(48, initial.length)} de ${initial.length}</p>
       <button class="v65-link-button" type="button" id="showAllV69">Ver todo el catálogo</button>
     </div>
   </div>
@@ -168,7 +168,8 @@ ${discoveryPanelV69(catalog, context, initial.length)}
       origin,
       commerceSyncedAt: catalog.commerceSyncedAt,
       availabilityReferenceAt: catalog.availabilityReferenceAt,
-      products: publicCatalogV69(catalog).products,
+      dataEndpoint: "/api/catalog-v6-9",
+      totalProducts: catalog.totalProducts,
       context: context.state,
     })}</script>`,
     {
@@ -300,7 +301,7 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
       base: BASE,
       origin,
       page: "home",
-      products: publicCatalogV69(catalog).products,
+      totalProducts: catalog.totalProducts,
       context: homeContext.state,
     })}</script>`,
     {

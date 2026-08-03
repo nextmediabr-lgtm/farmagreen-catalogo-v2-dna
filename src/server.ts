@@ -32,6 +32,10 @@ const PUBLIC_ASSETS = new Set([
   "/app-v6-9.js",
   "/logo_farmagreen.png",
   "/farmagreen-social-preview-v69.png",
+  "/farmagreen-social-preview-v69-social-2.png",
+]);
+const PUBLIC_ALIASES = new Map([
+  ["/farmagreen-social-preview-v69-social-2.png", "/farmagreen-social-preview-v69.png"],
 ]);
 
 export function app(environment: Environment = process.env) {
@@ -73,8 +77,17 @@ export function app(environment: Environment = process.env) {
       }
 
       if (PUBLIC_ASSETS.has(pathname)) {
-        const file = path.join(PUBLIC, pathname);
-        sendBinary(response, await fs.readFile(file), MIME[path.extname(file)] || "application/octet-stream");
+        const file = path.join(PUBLIC, PUBLIC_ALIASES.get(pathname) || pathname);
+        sendBinary(
+          response,
+          await fs.readFile(file),
+          MIME[path.extname(file)] || "application/octet-stream",
+          pathname === "/farmagreen-social-preview-v69-social-2.png"
+            ? "public, max-age=31536000, immutable"
+            : pathname.includes("v6-9")
+              ? "public, max-age=300, s-maxage=300, stale-while-revalidate=60"
+              : "no-cache",
+        );
         return;
       }
 
@@ -131,12 +144,12 @@ function sendText(response: http.ServerResponse, body: string, status: number) {
   response.end(body);
 }
 
-function sendBinary(response: http.ServerResponse, body: Buffer, contentType: string) {
+function sendBinary(response: http.ServerResponse, body: Buffer, contentType: string, cacheControl = "no-cache") {
   response.writeHead(
     200,
     headersV68({
       "content-type": contentType,
-      "cache-control": "no-cache",
+      "cache-control": cacheControl,
     }),
   );
   response.end(body);
