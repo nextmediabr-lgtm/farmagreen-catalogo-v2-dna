@@ -592,6 +592,7 @@ async function boot() {
     bootHomeDiscovery();
     return;
   }
+  document.body.dataset.v69CatalogState = "loading";
   const discovery = $("#buscar-v69");
   discovery?.setAttribute("aria-busy", "true");
   try {
@@ -599,6 +600,7 @@ async function boot() {
   } catch (error) {
     console.error(error);
     discovery?.removeAttribute("aria-busy");
+    document.body.dataset.v69CatalogState = "error";
     return;
   }
   discovery?.removeAttribute("aria-busy");
@@ -697,6 +699,7 @@ async function boot() {
 
   wireFilterMenus();
   render();
+  document.body.dataset.v69CatalogState = "ready";
   window.addEventListener("popstate", () => {
     applyParams(new URLSearchParams(location.search));
     $("#searchV69").value = S.q;

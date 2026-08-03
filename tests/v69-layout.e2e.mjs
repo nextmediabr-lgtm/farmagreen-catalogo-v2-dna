@@ -174,6 +174,7 @@ async function cardVisualState(page, origin, product) {
   await page.goto(`${origin}/catalogo-v6-9/?scope=todo&q=${encodeURIComponent(query)}`, {
     waitUntil: "domcontentloaded",
   });
+  await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
   await page.waitForFunction(
     (slug) => document.querySelector("#gridV69 .v65-hit")?.getAttribute("href")?.includes(slug),
     product.publicId,
