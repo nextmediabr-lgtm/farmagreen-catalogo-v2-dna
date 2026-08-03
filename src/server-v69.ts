@@ -104,13 +104,22 @@ export async function handleV69Request(
   commerceRuntime: CommerceRuntimeV69 = createCommerceRuntimeV69(environment),
   request?: http.IncomingMessage,
 ) {
+  const publicAliasesEnabled =
+    environment.V69_ENABLE_PRODUCTION === "1" || environment.V69_LOCAL_PREVIEW === "1";
+  const servesPublicHome = pathname === "/" && publicAliasesEnabled;
+  const servesPublicCatalog = pathname === "/catalogo" && publicAliasesEnabled;
+  const servesShortProduct = pathname.startsWith("/p/") && publicAliasesEnabled;
   const isV69Route =
+    servesPublicHome ||
+    (pathname === "/inicio" && publicAliasesEnabled) ||
+    servesPublicCatalog ||
     pathname === "/inicio-v6-9" ||
     pathname === "/catalogo-v6-9" ||
     pathname === "/api/catalog-v6-9" ||
     pathname === "/api/catalog-v6-9/health" ||
     pathname === "/internal/catalog-v6-9/refresh" ||
     pathname.startsWith("/producto-v6-9/") ||
+    servesShortProduct ||
     pathname.startsWith("/media-v6-9/");
   if (!isV69Route) return false;
 
@@ -147,18 +156,29 @@ export async function handleV69Request(
     return true;
   }
 
-  if (pathname === "/catalogo-v6-9") {
+  if (pathname === "/catalogo-v6-9" || servesPublicCatalog) {
     sendHtmlV69(response, catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment)));
     return true;
   }
 
-  if (pathname === "/inicio-v6-9") {
+  if (servesPublicHome || pathname === "/inicio-v6-9" || (pathname === "/inicio" && publicAliasesEnabled)) {
     sendHtmlV69(response, homePageV69(catalog, publicOriginV69(url.origin, environment)));
     return true;
   }
 
   if (pathname.startsWith("/producto-v6-9/")) {
     const found = await productV69(pathname.slice("/producto-v6-9/".length));
+    const origin = publicOriginV69(url.origin, environment);
+    sendHtmlV69(
+      response,
+      found ? productPageV69(found, await similarV69(found), origin) : notFoundPageV69(origin),
+      found ? 200 : 404,
+    );
+    return true;
+  }
+
+  if (servesShortProduct) {
+    const found = await productV69(pathname.slice("/p/".length));
     const origin = publicOriginV69(url.origin, environment);
     sendHtmlV69(
       response,

@@ -8,7 +8,10 @@ import {
 
 const BASE = (process.env.PUBLIC_BASE_PATH || "").replace(/\/$/, "");
 const W = "5493417234000";
-const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/assets/farmagreen-social-preview-v2.png";
+const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/logo_farmagreen.png";
+const HOME_ROUTE = "/";
+const CATALOG_ROUTE = "/catalogo";
+const PRODUCT_ROUTE = "/p/";
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
 const NEEDS = [
@@ -170,15 +173,15 @@ ${discoveryPanelV69(catalog, context, initial.length)}
     {
       bodyClass: "v65 v66 v67 v69",
       origin,
-      canonicalPath: "/catalogo-v6-9/",
+      canonicalPath: CATALOG_ROUTE,
       ogType: "website",
       ogImage: context.ogImage,
-      homeHref: "/catalogo-v6-9/",
+      homeHref: HOME_ROUTE,
       links: [
-        { href: "/catalogo-v6-9/#productos-v69", label: "Ofertas", nav: "ofertas" },
-        { href: "/catalogo-v6-9/#marcas-v69", label: "Marcas", nav: "marcas" },
-        { href: "/catalogo-v6-9/#buscar-v69", label: "Buscar", nav: "buscar" },
-        { href: "/catalogo-v6-9/?scope=todo#productos-v69", label: "Productos", nav: "productos" },
+        { href: `${CATALOG_ROUTE}#productos-v69`, label: "Ofertas", nav: "ofertas" },
+        { href: `${CATALOG_ROUTE}#marcas-v69`, label: "Marcas", nav: "marcas" },
+        { href: `${CATALOG_ROUTE}#buscar-v69`, label: "Buscar", nav: "buscar" },
+        { href: `${CATALOG_ROUTE}?scope=todo#productos-v69`, label: "Productos", nav: "productos" },
       ],
     },
   );
@@ -198,7 +201,7 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
   return `<section class="v65-panel v65-search-panel v65-top-search v67-discovery" id="buscar-v69">
     <div class="v67-primary-row">
       <div class="v67-title"><p class="v65-k">Encontrá tu producto</p><h2><span>Buscá como</span> <span>hablás</span></h2></div>
-      <form class="v66-search v67-search" role="search" action="${u("/catalogo-v6-9/")}" method="get">
+      <form class="v66-search v67-search" role="search" action="${u(CATALOG_ROUTE)}" method="get">
         <label class="v67-visually-hidden" for="searchV69">Producto, marca o necesidad</label>
         <span class="v67-search-icon">${searchIcon()}</span>
         <input id="searchV69" name="q" type="search" placeholder="Producto, marca o necesidad" autocomplete="off" spellcheck="false">
@@ -276,7 +279,7 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
         "disponibilidad",
       );
       const sectionId = `marca-${brandSlug(products[0])}`;
-      const brandHref = `/catalogo-v6-9/?scope=todo&marca=${encodeURIComponent(brand)}#productos-v69`;
+      const brandHref = `${CATALOG_ROUTE}?scope=todo&marca=${encodeURIComponent(brand)}#productos-v69`;
       return `<section class="v69-home-brand" id="${e(sectionId)}" aria-labelledby="${e(`${sectionId}-title`)}">
         <div class="v69-home-brand-head">
           <div><p class="v65-k">Marca</p><h2 id="${e(`${sectionId}-title`)}">${e(brand)}</h2></div>
@@ -302,15 +305,15 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
     {
       bodyClass: "v65 v66 v67 v69 v69-home",
       origin,
-      canonicalPath: "/inicio-v6-9/",
+      canonicalPath: HOME_ROUTE,
       ogType: "website",
       ogImage: SOCIAL_IMAGE,
-      homeHref: "/inicio-v6-9/",
+      homeHref: HOME_ROUTE,
       links: [
-        { href: "/catalogo-v6-9/#productos-v69", label: "Ofertas" },
-        { href: "/inicio-v6-9/#marcas-inicio-v69", label: "Marcas", active: true },
-        { href: "/catalogo-v6-9/#buscar-v69", label: "Buscar" },
-        { href: "/catalogo-v6-9/?scope=todo#productos-v69", label: "Productos" },
+        { href: `${CATALOG_ROUTE}#productos-v69`, label: "Ofertas" },
+        { href: `${HOME_ROUTE}#marcas-inicio-v69`, label: "Marcas", active: true },
+        { href: `${CATALOG_ROUTE}#buscar-v69`, label: "Buscar" },
+        { href: `${CATALOG_ROUTE}?scope=todo#productos-v69`, label: "Productos" },
       ],
     },
   );
@@ -319,12 +322,13 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
 export function productPageV69(product: ProductV69, related: ProductV69[], origin = "http://127.0.0.1:8109") {
   const discount = Math.round(product.discountPercent || 0);
   const needsAvailabilityConsult = product.availability !== "limited";
-  const productUrl = absolute(origin, `/producto-v6-9/${product.slug}/`);
+  const productPath = publicProductPathV69(product);
+  const productUrl = absolute(origin, productPath);
   return shell69(
     `${product.name} | Farmagreen Rosario`,
     product.description.slice(0, 155),
     `
-<nav class="crumb v65-crumb"><a href="${u("/catalogo-v6-9/#productos-v69")}">Volver al catálogo</a><span>/</span><span>${e(brandName(product))}</span></nav>
+<nav class="crumb v65-crumb"><a href="${u(`${CATALOG_ROUTE}#productos-v69`)}">Volver al catálogo</a><span>/</span><span>${e(brandName(product))}</span></nav>
 <article class="pdp v65-pdp v66-pdp">
   <div class="v66-card-top v67-pdp-card-top">
     <p class="v66-brand">${e(brandName(product))}</p>
@@ -371,10 +375,10 @@ export function productPageV69(product: ProductV69, related: ProductV69[], origi
     {
       bodyClass: "v65 v66 v67 v69 product-detail",
       origin,
-      canonicalPath: `/producto-v6-9/${product.slug}/`,
+      canonicalPath: productPath,
       ogType: "product",
       ogImage: safeImage(product, "detail"),
-      homeHref: "/catalogo-v6-9/",
+      homeHref: HOME_ROUTE,
       links: [{ href: "#", label: "Volver", historyBack: true }],
     },
   );
@@ -384,8 +388,8 @@ export function notFoundPageV69(origin = "http://127.0.0.1:8109") {
   return shell69(
     "No encontrado | Farmagreen Rosario",
     "Producto no encontrado",
-    `<section class="empty"><h1>No encontramos ese producto</h1><a href="${u("/catalogo-v6-9/")}">Volver al catálogo</a></section>`,
-    { bodyClass: "v65 v66 v67 v69", origin, homeHref: "/catalogo-v6-9/" },
+    `<section class="empty"><h1>No encontramos ese producto</h1><a href="${u(CATALOG_ROUTE)}">Volver al catálogo</a></section>`,
+    { bodyClass: "v65 v66 v67 v69", origin, homeHref: HOME_ROUTE },
   );
 }
 
@@ -518,7 +522,7 @@ type ShellOptions = {
 };
 
 function shell69(title: string, description: string, body: string, options: ShellOptions = {}) {
-  const homeHref = options.homeHref || "/catalogo-v6-9/";
+  const homeHref = options.homeHref || HOME_ROUTE;
   const links = options.links || [];
   const canonicalUrl = options.canonicalPath ? absolute(options.origin || "http://127.0.0.1:8109", options.canonicalPath) : "";
   const canonical = canonicalUrl ? `<link rel="canonical" href="${e(canonicalUrl)}">` : "";
@@ -529,7 +533,7 @@ function shell69(title: string, description: string, body: string, options: Shel
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109") {
   const discount = Math.round(product.discountPercent || 0);
-  const productPath = `/producto-v6-9/${product.slug}/`;
+  const productPath = publicProductPathV69(product);
   const name = String(product.name || "Producto Farmagreen");
   const brand = brandName(product);
   const unavailable = product.availability === "out_of_stock";
@@ -537,6 +541,10 @@ function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109") {
   const needsAvailabilityConsult = unavailable || unverified;
   const statusClass = unavailable ? " v69-card-unavailable" : unverified ? " v69-card-unverified" : "";
   return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${productImage(product, "card", "v66-media")}<div class="v66-card-body"><h3>${e(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${stockBadgeV69(product)}${priceCard(product)}<a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(origin, productPath)}`)}">Consultar</a></div></article>`;
+}
+
+function publicProductPathV69(product: ProductV69) {
+  return `${PRODUCT_ROUTE}${encodeURIComponent(product.publicId)}`;
 }
 
 function stockBadgeV69(product: ProductV69, detail = false) {

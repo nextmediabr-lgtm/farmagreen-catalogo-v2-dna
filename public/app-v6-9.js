@@ -8,8 +8,8 @@ const BOOT = (() => {
 const BASE = (BOOT.base || "").replace(/\/$/, "");
 const PUBLIC_ORIGIN = BOOT.origin || window.location.origin;
 const PAGE = 48;
-const ROUTE = "/catalogo-v6-9/";
-const PDP = "/producto-v6-9/";
+const ROUTE = "/catalogo";
+const PDP = "/p/";
 const CONTEXT = BOOT.context || {};
 const SORT_VALUES = new Set(["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"]);
 const DEFAULT_SORT = "descuento";
@@ -69,7 +69,7 @@ const url = (path) => `${BASE}${path}`;
 const absoluteUrl = (path) => new URL(url(path), PUBLIC_ORIGIN).href;
 const wa = (product) =>
   `https://wa.me/5493417234000?text=${encodeURIComponent(
-    `Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product?.name || "Producto Farmagreen"}. Link: ${absoluteUrl(`${PDP}${product?.slug || ""}/`)}`,
+    `Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product?.name || "Producto Farmagreen"}. Link: ${absoluteUrl(`${PDP}${product?.publicId || ""}`)}`,
   )}`;
 
 function brandName(product) {
@@ -198,7 +198,7 @@ function card(product) {
       : product?.availability === "unverified"
         ? " v69-card-unverified"
         : "";
-  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${url(`${PDP}${esc(product?.slug || "")}/`)}" aria-label="Ver ${esc(name)}"></a><div class="v66-card-top"><p class="v66-brand">${esc(brandName(product))}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${media}<div class="v66-card-body"><h3>${esc(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${esc(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${esc(usage(product))}</dd></div></dl>${stock}<div class="v66-price">${product.discountPercent > 0 ? `<s>${ars(product.listPrice)}</s>` : ""}<strong>${ars(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${ars(product.savingAmount)}</small>` : ""}</div><a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(product)}">${cta}</a></div></article>`;
+  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${url(`${PDP}${esc(product?.publicId || "")}`)}" aria-label="Ver ${esc(name)}"></a><div class="v66-card-top"><p class="v66-brand">${esc(brandName(product))}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${media}<div class="v66-card-body"><h3>${esc(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${esc(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${esc(usage(product))}</dd></div></dl>${stock}<div class="v66-price">${product.discountPercent > 0 ? `<s>${ars(product.listPrice)}</s>` : ""}<strong>${ars(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${ars(product.savingAmount)}</small>` : ""}</div><a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(product)}">${cta}</a></div></article>`;
 }
 
 function presentation(product) {

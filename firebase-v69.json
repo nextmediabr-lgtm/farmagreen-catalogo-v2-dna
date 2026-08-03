@@ -1,0 +1,22 @@
+{
+  "hosting": {
+    "site": "farmagreenrosario",
+    "public": "firebase-public-v69",
+    "ignore": [
+      "firebase-v69.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "farmagreen-v69-preprod",
+          "region": "southamerica-east1"
+        }
+      }
+    ]
+  }
+}

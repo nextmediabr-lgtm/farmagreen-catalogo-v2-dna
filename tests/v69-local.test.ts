@@ -139,11 +139,11 @@ function bootPayload(html: string) {
   };
 }
 
-function firstGridSlug(html: string) {
+function firstGridProductId(html: string) {
   const grid = html.match(/<section class="v65-grid" id="gridV69">([\s\S]*?)<\/section>/)?.[1] || "";
-  const slug = grid.match(/href="\/producto-v6-9\/([^/"]+)\/"/)?.[1];
-  assert.ok(slug, "La grilla SSR V6.9 no contiene productos.");
-  return slug;
+  const publicId = grid.match(/href="\/p\/([^/"]+)"/)?.[1];
+  assert.ok(publicId, "La grilla SSR V6.9 no contiene productos.");
+  return publicId;
 }
 
 async function listen(server: ReturnType<typeof app>) {
@@ -303,7 +303,7 @@ test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente e
       "http://127.0.0.1:8109",
     );
     assert.equal(bootPayload(html).context.sort, sort);
-    assert.equal(firstGridSlug(html), sortProductsV69(catalog.products, sort)[0].slug, sort);
+    assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
     assert.match(html, /id="sortV69" name="orden"/);
     assert.match(html, /app-v6-9\.js/);
     assert.match(html, /styles-v6-9\.css/);
@@ -349,7 +349,7 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
     const sectionStart = html.indexOf(`id="marca-${brandProducts[0].brand.slug}"`);
     const sectionEnd = html.indexOf('<section class="v69-home-brand"', sectionStart + 1);
     const section = html.slice(sectionStart, sectionEnd < 0 ? undefined : sectionEnd);
-    assert.match(section, new RegExp(`/producto-v6-9/${brandProducts[0].slug}/`), brand);
+    assert.match(section, new RegExp(`/p/${brandProducts[0].publicId}`), brand);
     assert.equal((section.match(/class="v66-card(?: |")/g) || []).length, 10, brand);
   }
 });
@@ -370,15 +370,19 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
   const server = app({ ...process.env, NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" });
   const origin = await listen(server);
   try {
-    const [homeResponse, catalogResponse, apiResponse, healthResponse, appResponse, cssResponse] = await Promise.all([
+    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, cssResponse] = await Promise.all([
+      fetch(`${origin}/`),
       fetch(`${origin}/inicio-v6-9/`),
+      fetch(`${origin}/catalogo/`),
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
       fetch(`${origin}/app-v6-9.js`),
       fetch(`${origin}/styles-v6-9.css`),
     ]);
+    assert.equal(rootResponse.status, 200);
     assert.equal(homeResponse.status, 200);
+    assert.equal(catalogAliasResponse.status, 200);
     assert.equal(catalogResponse.status, 200);
     assert.equal(apiResponse.status, 200);
     assert.equal(healthResponse.status, 200);
@@ -387,6 +391,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(apiResponse.headers.get("cache-control"), "no-store");
     assert.equal(healthResponse.headers.get("cache-control"), "no-store");
 
+    const root = await rootResponse.text();
     const home = await homeResponse.text();
     const html = await catalogResponse.text();
     const apiText = await apiResponse.text();
@@ -437,6 +442,15 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.deepEqual(health.availabilitySummary, publicAvailabilitySummary(api.products));
     assert.doesNotMatch(html, /gpsfarma/i);
     assert.match(home, /class="v69-home-sections"/);
+    assert.match(root, /class="v69-home-sections"/);
+    assert.match(root, /id="marca-eucerin"/);
+    assert.ok(
+      root.indexOf('id="marca-eucerin"') < root.indexOf('id="marca-dermaglos"'),
+      "La home definitiva debe comenzar por Eucerin y conservar las marcas apiladas.",
+    );
+    assert.match(root, /<link rel="canonical" href="http:\/\/127\.0\.0\.1:\d+\/">/);
+    assert.match(root, /class="brandmark"/);
+    assert.match(root, /class="brandmark"[^>]*>/);
     assert.match(home, /class="v69-home-sections" id="marcas-inicio-v69"/);
     assert.doesNotMatch(home, /v69-home-brand-index/);
     assert.doesNotMatch(home, /gpsfarma|provider|"sku"|"source"/i);
@@ -447,7 +461,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
 
     const unavailable = api.products.find((product) => product.availability === "unavailable_reference");
     assert.ok(unavailable);
-    const pdpResponse = await fetch(`${origin}/producto-v6-9/${unavailable.slug}/`);
+    const pdpResponse = await fetch(`${origin}/p/${unavailable.publicId}/`);
     assert.equal(pdpResponse.status, 200);
     const pdp = await pdpResponse.text();
     assert.match(pdp, /class="v69-stock is-unavailable is-pdp"/);
@@ -456,7 +470,8 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(pdp, /Consulta Personalizada por WhatsApp\./);
     assert.match(pdp, /Coordinamos Retiro o Envío, Consultar formas de Pago\./);
     assert.doesNotMatch(pdp, /gpsfarma|provider|"sku"|"source"/i);
-    assert.match(pdp, new RegExp(`${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/producto-v6-9/`));
+    assert.match(pdp, new RegExp(`${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/p/${unavailable.publicId}`));
+    assert.match(pdp, /class="brandmark"/);
   } finally {
     await close(server);
   }

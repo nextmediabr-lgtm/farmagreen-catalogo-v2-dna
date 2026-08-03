@@ -40,11 +40,11 @@ export function app(environment: Environment = process.env) {
       const url = new URL(request.url || "/", `http://${request.headers.host || "local"}`);
       const pathname = normalize(decodeURIComponent(url.pathname));
 
+      if (await handleV69Request(response, url, pathname, environment, commerceRuntimeV69, request)) return;
       if (pathname === "/") {
         sendRedirect(response, DEFAULT_ROUTE);
         return;
       }
-      if (await handleV69Request(response, url, pathname, environment, commerceRuntimeV69, request)) return;
       if (await handleV68Request(response, url, pathname, environment)) return;
 
       if (pathname === "/catalogo-v6-7") {

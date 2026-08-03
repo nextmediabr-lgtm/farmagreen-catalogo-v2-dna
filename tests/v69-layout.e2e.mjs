@@ -162,7 +162,7 @@ function expectedFirst(products, sort) {
   return copy[0];
 }
 
-async function firstCardSlug(page) {
+async function firstCardProductId(page) {
   return page
     .locator("#gridV69 .v65-hit")
     .first()
@@ -176,7 +176,7 @@ async function cardVisualState(page, origin, product) {
   });
   await page.waitForFunction(
     (slug) => document.querySelector("#gridV69 .v65-hit")?.getAttribute("href")?.includes(slug),
-    product.slug,
+    product.publicId,
   );
   return page.locator("#gridV69 .v66-card").first().evaluate((card) => {
     const action = card.querySelector(".v66-ask");
@@ -206,14 +206,14 @@ async function selectSort(page, products, sort) {
   );
   const expected = expectedFirst(products, sort);
   await page.waitForFunction(
-    (slug) =>
+    (publicId) =>
       document
         .querySelector("#gridV69 .v65-hit")
         ?.getAttribute("href")
-        ?.includes(`/producto-v6-9/${slug}/`),
-    expected.slug,
+        ?.includes(`/p/${publicId}`),
+    expected.publicId,
   );
-  assert.equal(await firstCardSlug(page), expected.slug);
+  assert.equal(await firstCardProductId(page), expected.publicId);
 }
 
 test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del proveedor", { timeout: 180_000 }, async () => {
@@ -284,7 +284,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await hasHorizontalOverflow(page), false);
     await page.locator('[data-filter-menu-trigger="brand"]').click();
     await page.locator('[data-brand="ISDIN"]').click();
-    await page.waitForFunction(() => location.pathname.includes("/catalogo-v6-9") && new URL(location.href).searchParams.get("marca") === "ISDIN");
+    await page.waitForFunction(() => location.pathname.startsWith("/catalogo") && new URL(location.href).searchParams.get("marca") === "ISDIN");
 
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo&orden=precio-asc`, {
       waitUntil: "domcontentloaded",
@@ -312,7 +312,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       }),
       ["sortV69", "sortV69", "sortV69"],
     );
-    assert.equal(await firstCardSlug(page), expectedFirst(api.products, "precio-asc").slug);
+    assert.equal(await firstCardProductId(page), expectedFirst(api.products, "precio-asc").publicId);
     assert.equal(await page.locator("#contextV69").isVisible(), false);
     assert.equal(await page.locator("#availabilityV69").isVisible(), false);
     assert.equal(await page.locator("#availabilityNoteV69").isVisible(), false);
@@ -326,11 +326,11 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("#gridV69 .v66-card").first().waitFor();
     assert.equal(await page.locator("#sortV69").inputValue(), "precio-desc");
-    assert.equal(await firstCardSlug(page), expectedFirst(api.products, "precio-desc").slug);
+    assert.equal(await firstCardProductId(page), expectedFirst(api.products, "precio-desc").publicId);
     await page.goBack({ waitUntil: "domcontentloaded" });
     await page.locator("#gridV69 .v66-card").first().waitFor();
     assert.equal(await page.locator("#sortV69").inputValue(), "precio-asc");
-    assert.equal(await firstCardSlug(page), expectedFirst(api.products, "precio-asc").slug);
+    assert.equal(await firstCardProductId(page), expectedFirst(api.products, "precio-asc").publicId);
 
     await selectSort(page, api.products, "descuento");
     await selectSort(page, api.products, "disponibilidad");
@@ -433,7 +433,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     const unavailable = api.products.find((product) => product.availability === "unavailable_reference");
     assert.ok(unavailable);
-    await page.goto(`${runtime.origin}/producto-v6-9/${unavailable.slug}/`, {
+    await page.goto(`${runtime.origin}/p/${unavailable.publicId}/`, {
       waitUntil: "domcontentloaded",
     });
     await page.locator(".v69-stock.is-unavailable.is-pdp").waitFor();
@@ -478,7 +478,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     const identified = api.products.find((product) => /^\d{8,14}$/.test(product.barcode));
     assert.ok(identified, "La prueba real necesita al menos una ficha con código de barras.");
-    await page.goto(`${runtime.origin}/producto-v6-9/${identified.slug}/`, {
+    await page.goto(`${runtime.origin}/p/${identified.publicId}/`, {
       waitUntil: "domcontentloaded",
     });
     assert.equal(await page.locator(".v69-barcode").isVisible(), true);
@@ -530,6 +530,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       const search = document.querySelector("#searchV69");
       const sort = document.querySelector(".v69-sort");
       const catalogTitle = document.querySelector("#catalogTitleV69");
+      const price = document.querySelector("#gridV69 .v66-price strong");
+      const oldPrice = document.querySelector("#gridV69 .v66-price s");
       const titleLines = new Set(
         [...(searchTitle?.querySelectorAll("span") || [])].map((span) => Math.round(span.getBoundingClientRect().top)),
       );
@@ -537,6 +539,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       return {
         headerHeight: Math.round(header?.getBoundingClientRect().height || 0),
         logoWidth: Math.round(logo?.getBoundingClientRect().width || 0),
+        logoHref: document.querySelector(".brandmark")?.getAttribute("href"),
+        priceSize: price ? Number.parseFloat(getComputedStyle(price).fontSize) : 0,
+        oldPriceSize: oldPrice ? Number.parseFloat(getComputedStyle(oldPrice).fontSize) : 0,
         searchWidth: Math.round(search?.getBoundingClientRect().width || 0),
         searchTitleWidth: Math.round(searchTitle?.getBoundingClientRect().width || 0),
         sortHeight: Math.round(sort?.getBoundingClientRect().height || 0),
@@ -547,7 +552,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       };
     });
     assert.ok(compactMobile.headerHeight <= 64, `El header móvil mide ${compactMobile.headerHeight}px.`);
-    assert.ok(compactMobile.logoWidth >= 270, `El logo móvil mide ${compactMobile.logoWidth}px.`);
+    assert.ok(compactMobile.logoWidth >= 338, `El logo móvil mide ${compactMobile.logoWidth}px.`);
+    assert.equal(compactMobile.logoHref, "/");
+    assert.ok(compactMobile.priceSize >= 20.3, `El precio móvil mide ${compactMobile.priceSize}px.`);
+    assert.ok(compactMobile.oldPriceSize >= 12.5, `El precio anterior móvil mide ${compactMobile.oldPriceSize}px.`);
     assert.ok(compactMobile.searchWidth >= compactMobile.searchTitleWidth * 3);
     assert.ok(compactMobile.sortHeight <= 32, `El selector de orden mide ${compactMobile.sortHeight}px.`);
     assert.equal(compactMobile.searchTitleLines, 2);
@@ -571,6 +579,26 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.ok(mobileType.title >= 15.5);
     assert.ok(mobileType.fact < mobileType.title, "La información secundaria no debe competir con el título.");
 
+    await page.setViewportSize({ width: 320, height: 844 });
+    await page.goto(`${runtime.origin}/`, { waitUntil: "domcontentloaded" });
+    await page.locator(".v69-home-brand").first().waitFor();
+    assert.equal(await hasHorizontalOverflow(page), false);
+    assert.equal(
+      await page.locator(".v69-home-brand").first().locator(".v66-card").evaluateAll((cards) => {
+        const visible = cards.filter((card) => getComputedStyle(card).display !== "none");
+        const firstTop = visible[0]?.getBoundingClientRect().top;
+        return visible.filter((card) => Math.abs(card.getBoundingClientRect().top - firstTop) < 2).length;
+      }),
+      2,
+    );
+    assert.ok(await page.locator(".brandmark img").evaluate((logo) => logo.getBoundingClientRect().width >= 270));
+    assert.equal(await page.locator(".brandmark").getAttribute("href"), "/");
+    assert.ok(await page.locator(".v66-price strong").first().evaluate((price) => Number.parseFloat(getComputedStyle(price).fontSize) >= 19.1));
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${runtime.origin}/catalogo/?scope=todo`, { waitUntil: "domcontentloaded" });
+    await page.locator("#gridV69 .v66-card").first().waitFor();
+
     await page.locator("#searchV69").fill("eucerin");
     await page.waitForFunction(() => new URL(location.href).searchParams.get("q") === "eucerin");
     await page.locator("#searchV69").fill("");
@@ -578,7 +606,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
 
     const mobileReturnUrl = page.url();
-    await page.goto(`${runtime.origin}/producto-v6-9/${available.slug}/`, {
+    await page.goto(`${runtime.origin}/p/${available.publicId}/`, {
       waitUntil: "domcontentloaded",
     });
     assert.equal(await page.locator(".toplinks").isVisible(), true);
@@ -654,7 +682,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     );
     assert.equal(await page.locator("#gridV69 .v66-card").count(), barcodeMatches.length);
     await page.locator("#gridV69 .v65-hit").first().click();
-    await page.waitForURL(/\/producto-v6-9\//);
+    await page.waitForURL(/\/p\/[a-f0-9]+\/?$/);
     assert.equal(await page.locator(".v69-barcode").isVisible(), false);
 
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
