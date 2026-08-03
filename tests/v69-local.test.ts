@@ -14,6 +14,7 @@ import {
 } from "../src/data-v69.js";
 import {
   catalogPageV69,
+  homePageV69,
   productPageV69,
   publicCatalogV69,
   searchTextV69,
@@ -325,6 +326,34 @@ test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente e
   );
 });
 
+test("la home V6.9 organiza dos filas por marca con disponibilidad primero", async () => {
+  const catalog = await baseCatalog();
+  const html = homePageV69(catalog, "http://127.0.0.1:8109");
+  const brands = [...new Set(catalog.products.map((product) => product.brand.name))];
+  assert.equal((html.match(/class="v69-home-brand"/g) || []).length, brands.length);
+  assert.equal((html.match(/class="v65-grid v69-home-grid"/g) || []).length, brands.length);
+  assert.equal((html.match(/class="v66-card(?: |")/g) || []).length, brands.length * 10);
+  assert.match(html, /id="buscar-v69"/);
+  assert.match(html, /<span>Buscá como<\/span> <span>hablás<\/span>/);
+  assert.match(html, /id="needSummaryV69">Todas<\/strong>/);
+  assert.match(html, new RegExp(`id="brandSummaryV69">Todas · ${catalog.totalProducts}<\\/strong>`));
+  assert.match(html, /id="sortV69" name="orden"/);
+  assert.match(html, /Ver toda la marca/);
+  assert.doesNotMatch(html, /gpsfarma|provider|"sku"|"source"/i);
+
+  for (const brand of brands) {
+    const brandProducts = sortProductsV69(
+      catalog.products.filter((product) => product.brand.name === brand),
+      "disponibilidad",
+    );
+    const sectionStart = html.indexOf(`id="marca-${brandProducts[0].brand.slug}"`);
+    const sectionEnd = html.indexOf('<section class="v69-home-brand"', sectionStart + 1);
+    const section = html.slice(sectionStart, sectionEnd < 0 ? undefined : sectionEnd);
+    assert.match(section, new RegExp(`/producto-v6-9/${brandProducts[0].slug}/`), brand);
+    assert.equal((section.match(/class="v66-card(?: |")/g) || []).length, 10, brand);
+  }
+});
+
 test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza producción", async () => {
   const base = await baseCatalog();
   const fixture = await privateFixture(base);
@@ -341,13 +370,15 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
   const server = app({ ...process.env, NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" });
   const origin = await listen(server);
   try {
-    const [catalogResponse, apiResponse, healthResponse, appResponse, cssResponse] = await Promise.all([
+    const [homeResponse, catalogResponse, apiResponse, healthResponse, appResponse, cssResponse] = await Promise.all([
+      fetch(`${origin}/inicio-v6-9/`),
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
       fetch(`${origin}/app-v6-9.js`),
       fetch(`${origin}/styles-v6-9.css`),
     ]);
+    assert.equal(homeResponse.status, 200);
     assert.equal(catalogResponse.status, 200);
     assert.equal(apiResponse.status, 200);
     assert.equal(healthResponse.status, 200);
@@ -356,6 +387,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(apiResponse.headers.get("cache-control"), "no-store");
     assert.equal(healthResponse.headers.get("cache-control"), "no-store");
 
+    const home = await homeResponse.text();
     const html = await catalogResponse.text();
     const apiText = await apiResponse.text();
     const health = await healthResponse.json() as ReturnType<typeof catalogHealthV69>;
@@ -404,6 +436,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(health.totalProducts, 686);
     assert.deepEqual(health.availabilitySummary, publicAvailabilitySummary(api.products));
     assert.doesNotMatch(html, /gpsfarma/i);
+    assert.match(home, /class="v69-home-sections"/);
+    assert.match(home, /class="v69-home-sections" id="marcas-inicio-v69"/);
+    assert.doesNotMatch(home, /v69-home-brand-index/);
+    assert.doesNotMatch(home, /gpsfarma|provider|"sku"|"source"/i);
     assert.doesNotMatch(appSource, /gpsfarma/i);
     assert.doesNotMatch(catalogResponse.headers.get("content-security-policy") || "", /gpsfarma|unsafe-inline/i);
     assert.match(html, /id="availabilityV69"/);

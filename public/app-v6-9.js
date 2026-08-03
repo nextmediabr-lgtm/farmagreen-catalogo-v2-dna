@@ -537,8 +537,45 @@ function applyParams(params) {
   S.limit = page * PAGE;
 }
 
+function openCatalogFromHome({ q = "", brand = "Todas", need = "Todas", sort = DEFAULT_SORT } = {}) {
+  const params = new URLSearchParams({ scope: "todo" });
+  if (q.trim()) params.set("q", q.trim());
+  if (brand !== "Todas") params.set("marca", brand);
+  if (need !== "Todas") params.set("need", need);
+  if (SORT_VALUES.has(sort) && sort !== DEFAULT_SORT) params.set("orden", sort);
+  location.assign(`${url(ROUTE)}?${params.toString()}#productos-v69`);
+}
+
+function bootHomeDiscovery() {
+  if (!document.body.classList.contains("v69-home") || !$("#buscar-v69")) return false;
+
+  wireFilterMenus();
+  $(".v66-search")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    openCatalogFromHome({ q: $("#searchV69")?.value || "" });
+  });
+  $("#clearFiltersV69")?.addEventListener("click", () => {
+    closeFilterMenus();
+    if ($("#searchV69")) $("#searchV69").value = "";
+    if ($("#sortV69")) $("#sortV69").value = DEFAULT_SORT;
+    $("#needSummaryV69").textContent = "Todas";
+    $("#brandSummaryV69").textContent = `Todas · ${S.all.length}`;
+  });
+  $("#sortV69")?.addEventListener("change", (event) => openCatalogFromHome({ sort: event.target.value }));
+  $$('[data-brand]').forEach((button) =>
+    button.addEventListener("click", () => openCatalogFromHome({ brand: button.dataset.brand || "Todas" })),
+  );
+  $$('[data-need]').forEach((button) =>
+    button.addEventListener("click", () => openCatalogFromHome({ need: button.dataset.need || "Todas" })),
+  );
+  return true;
+}
+
 function boot() {
-  if (!$("#gridV69")) return;
+  if (!$("#gridV69")) {
+    bootHomeDiscovery();
+    return;
+  }
   const params = new URLSearchParams(location.search);
   applyParams(params);
   $("#searchV69").value = S.q;

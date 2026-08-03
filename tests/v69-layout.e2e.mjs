@@ -266,6 +266,26 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(api.products.filter((product) => product.availability === "unverified").length, api.availabilitySummary.unverified);
     assert.equal(api.availabilitySummary.unverified, 0);
 
+    await page.goto(`${runtime.origin}/inicio-v6-9/`, { waitUntil: "domcontentloaded" });
+    await page.locator(".v69-home-brand").first().waitFor();
+    assert.equal(await page.locator("#buscar-v69").isVisible(), true);
+    assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
+    assert.equal(await page.locator(".v69-home-brand").count(), 11);
+    assert.equal(await page.locator(".v69-home-brand-index").count(), 0);
+    assert.equal(await page.locator("#marcas-inicio-v69").getAttribute("class"), "v69-home-sections");
+    assert.equal(await page.locator(".v69-home-brand").first().locator(".v66-card").count(), 10);
+    assert.equal(
+      await page.locator(".v69-home-brand").first().locator(".v66-card").evaluateAll((cards) => {
+        const firstTop = cards[0]?.getBoundingClientRect().top;
+        return cards.filter((card) => Math.abs(card.getBoundingClientRect().top - firstTop) < 2).length;
+      }),
+      5,
+    );
+    assert.equal(await hasHorizontalOverflow(page), false);
+    await page.locator('[data-filter-menu-trigger="brand"]').click();
+    await page.locator('[data-brand="ISDIN"]').click();
+    await page.waitForFunction(() => location.pathname.includes("/catalogo-v6-9") && new URL(location.href).searchParams.get("marca") === "ISDIN");
+
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo&orden=precio-asc`, {
       waitUntil: "domcontentloaded",
     });
@@ -283,6 +303,15 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       "nombre",
     ]);
     assert.equal(await page.locator("#sortV69").inputValue(), "precio-asc");
+    assert.deepEqual(
+      await page.locator(".v69-sort").evaluate((sort) => {
+        const rect = sort.getBoundingClientRect();
+        return [3, rect.height / 2, rect.height - 3].map((offset) =>
+          document.elementFromPoint(rect.left + rect.width / 2, rect.top + offset)?.id,
+        );
+      }),
+      ["sortV69", "sortV69", "sortV69"],
+    );
     assert.equal(await firstCardSlug(page), expectedFirst(api.products, "precio-asc").slug);
     assert.equal(await page.locator("#contextV69").isVisible(), false);
     assert.equal(await page.locator("#availabilityV69").isVisible(), false);
@@ -456,12 +485,41 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.match(await page.locator(".v69-barcode").innerText(), new RegExp(identified.barcode));
 
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${runtime.origin}/inicio-v6-9/`, { waitUntil: "domcontentloaded" });
+    await page.locator(".v69-home-brand").first().waitFor();
+    assert.equal(await page.locator("#buscar-v69").isVisible(), true);
+    assert.equal(await page.locator(".v67-filter-grid").isVisible(), true);
+    assert.equal(
+      await page.locator(".v69-home-brand").first().locator(".v66-card").evaluateAll(
+        (cards) => cards.filter((card) => getComputedStyle(card).display !== "none").length,
+      ),
+      4,
+    );
+    assert.equal(
+      await page.locator(".v69-home-brand").first().locator(".v66-card").evaluateAll((cards) => {
+        const visible = cards.filter((card) => getComputedStyle(card).display !== "none");
+        const firstTop = visible[0]?.getBoundingClientRect().top;
+        return visible.filter((card) => Math.abs(card.getBoundingClientRect().top - firstTop) < 2).length;
+      }),
+      2,
+    );
+    assert.equal(await hasHorizontalOverflow(page), false);
+
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
     await page.locator("#gridV69 .v66-card").first().waitFor();
     assert.equal(await firstRowColumns(page), 2);
     assert.equal(await hasHorizontalOverflow(page), false);
     assert.equal(await page.locator("#gridV69 .v69-stock").count(), 48);
     assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
+    assert.deepEqual(
+      await page.locator(".v69-sort").evaluate((sort) => {
+        const rect = sort.getBoundingClientRect();
+        return [3, rect.height / 2, rect.height - 3].map((offset) =>
+          document.elementFromPoint(rect.left + rect.width / 2, rect.top + offset)?.id,
+        );
+      }),
+      ["sortV69", "sortV69", "sortV69"],
+    );
     assert.equal(new URL(page.url()).searchParams.has("orden"), false);
     assert.equal(await page.locator("#clearFiltersV69").isVisible(), false);
     assert.equal(await page.locator(".toplinks").isVisible(), false);
@@ -488,8 +546,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
         catalogTitleFits: Boolean(catalogTitle && catalogTitle.scrollWidth <= catalogTitle.clientWidth + 1),
       };
     });
-    assert.ok(compactMobile.headerHeight <= 52, `El header móvil mide ${compactMobile.headerHeight}px.`);
-    assert.ok(compactMobile.logoWidth >= 185, `El logo móvil mide ${compactMobile.logoWidth}px.`);
+    assert.ok(compactMobile.headerHeight <= 64, `El header móvil mide ${compactMobile.headerHeight}px.`);
+    assert.ok(compactMobile.logoWidth >= 270, `El logo móvil mide ${compactMobile.logoWidth}px.`);
     assert.ok(compactMobile.searchWidth >= compactMobile.searchTitleWidth * 3);
     assert.ok(compactMobile.sortHeight <= 32, `El selector de orden mide ${compactMobile.sortHeight}px.`);
     assert.equal(compactMobile.searchTitleLines, 2);
@@ -544,7 +602,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.setViewportSize({ width: 360, height: 800 });
     assert.equal(await firstRowColumns(page), 2);
     assert.equal(await hasHorizontalOverflow(page), false);
-    assert.ok(await page.locator(".top").evaluate((element) => element.getBoundingClientRect().height <= 48));
+    assert.ok(await page.locator(".top").evaluate((element) => element.getBoundingClientRect().height <= 64));
     assert.ok(
       await page.locator("#catalogTitleV69").evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
     );

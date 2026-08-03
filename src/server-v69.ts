@@ -8,6 +8,7 @@ import {
 import {
   catalogPageV69,
   catalogV69,
+  homePageV69,
   isPrivateSourceImageV69,
   notFoundPageV69,
   productPageV69,
@@ -104,6 +105,7 @@ export async function handleV69Request(
   request?: http.IncomingMessage,
 ) {
   const isV69Route =
+    pathname === "/inicio-v6-9" ||
     pathname === "/catalogo-v6-9" ||
     pathname === "/api/catalog-v6-9" ||
     pathname === "/api/catalog-v6-9/health" ||
@@ -147,6 +149,11 @@ export async function handleV69Request(
 
   if (pathname === "/catalogo-v6-9") {
     sendHtmlV69(response, catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment)));
+    return true;
+  }
+
+  if (pathname === "/inicio-v6-9") {
+    sendHtmlV69(response, homePageV69(catalog, publicOriginV69(url.origin, environment)));
     return true;
   }
 

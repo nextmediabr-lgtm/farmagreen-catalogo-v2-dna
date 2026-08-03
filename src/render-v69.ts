@@ -132,90 +132,14 @@ export function searchTextV69(product: ProductV69) {
 
 export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(), origin = "http://127.0.0.1:8109") {
   const context = pageContext(catalog, query);
-  const brands = [...new Set(catalog.products.map(brandName))];
-  const offers = dealProducts(catalog.products);
   const initial = filteredProducts(catalog.products, context);
   const initialAvailability = availabilitySummaryV69(initial);
-  const brandStats = brands.map((brand) => ({
-    brand,
-    count: catalog.products.filter((product) => brandName(product) === brand).length,
-    best: offers.find((product) => brandName(product) === brand)?.discountPercent || 0,
-  }));
-  const initialNeedLabel = context.need === "Todas" ? "Todas" : NEED_LABELS.get(context.need) || "Todas";
-  const initialBrandLabel = `${context.brand} · ${initial.length}`;
 
   return shell69(
     context.metaTitle,
     context.metaDescription,
     `
-<section class="v65-panel v65-search-panel v65-top-search v67-discovery" id="buscar-v69">
-  <div class="v67-primary-row">
-    <div class="v67-title"><p class="v65-k">Encontrá tu producto</p><h2><span>Buscá como</span> <span>hablás</span></h2></div>
-    <form class="v66-search v67-search" role="search">
-      <label class="v67-visually-hidden" for="searchV69">Producto, marca o necesidad</label>
-      <span class="v67-search-icon">${searchIcon()}</span>
-      <input id="searchV69" type="search" placeholder="Producto, marca o necesidad" autocomplete="off" spellcheck="false">
-    </form>
-    <button class="v65-link-button" id="clearFiltersV69" type="button">Limpiar</button>
-  </div>
-  <div class="v67-filter-grid" aria-label="Filtros del catálogo">
-    <div class="v67-filter-menu v67-need-menu" data-filter-menu="need">
-      <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="need" aria-expanded="false" aria-controls="needMenuV69">
-        <span class="v67-menu-label">¿Qué necesitás?</span>
-        <strong id="needSummaryV69">${e(initialNeedLabel)}</strong>
-        ${chevronIcon()}
-      </button>
-      <div class="v67-menu-popover v67-need-popover" id="needMenuV69" data-filter-menu-popover aria-hidden="true" aria-label="Elegir necesidad" inert>
-        <div class="v67-need-options">
-          <button class="v67-need-option${context.need === "Todas" ? " on" : ""}" type="button" data-need="Todas" aria-pressed="${context.need === "Todas"}">
-            ${needIcon("Todas")}<span>Todas</span>${optionCheckIcon()}
-          </button>
-          ${NEEDS.map(
-            (need) => `<button class="v67-need-option${context.need === need.slug ? " on" : ""}" type="button" data-need="${need.slug}" aria-pressed="${context.need === need.slug}">
-              ${needIcon(need.slug)}<span>${need.label}</span>${optionCheckIcon()}
-            </button>`,
-          ).join("")}
-        </div>
-      </div>
-    </div>
-    <div class="v67-filter-menu v67-brand-menu" data-filter-menu="brand" id="marcas-v69">
-      <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="brand" aria-expanded="false" aria-controls="brandMenuV69">
-        <span class="v67-menu-label">Marca</span>
-        <strong id="brandSummaryV69">${e(initialBrandLabel)}</strong>
-        ${chevronIcon()}
-      </button>
-      <div class="v67-menu-popover v67-brand-popover" id="brandMenuV69" data-filter-menu-popover aria-hidden="true" aria-label="Elegir marca" inert>
-        <div class="v67-brand-options">
-          <button class="v67-brand-option${context.brand === "Todas" ? " on" : ""}" type="button" data-brand="Todas" aria-pressed="${context.brand === "Todas"}">
-            <span class="v67-brand-copy"><strong>Todas</strong><small>${catalog.totalProducts} productos</small></span>
-            ${optionCheckIcon()}
-          </button>
-          ${brandStats
-            .map(
-              (item) => `<button class="v67-brand-option${context.brand === item.brand ? " on" : ""}" type="button" data-brand="${e(item.brand)}" aria-pressed="${context.brand === item.brand}">
-                <span class="v67-brand-copy"><strong>${e(item.brand)}</strong><small>${item.count} productos</small></span>
-                ${item.best ? `<em>hasta ${Math.round(item.best)}%</em>` : ""}
-                ${optionCheckIcon()}
-              </button>`,
-            )
-            .join("")}
-        </div>
-      </div>
-    </div>
-    <label class="v69-sort">
-      <span class="v67-menu-label">Ordenar</span>
-      <select id="sortV69" name="orden">
-        <option value="relevancia"${context.sort === "relevancia" ? " selected" : ""}>Relevancia</option>
-        <option value="disponibilidad"${context.sort === "disponibilidad" ? " selected" : ""}>Disponibilidad</option>
-        <option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Descuento</option>
-        <option value="precio-asc"${context.sort === "precio-asc" ? " selected" : ""}>Menor precio</option>
-        <option value="precio-desc"${context.sort === "precio-desc" ? " selected" : ""}>Mayor precio</option>
-        <option value="nombre"${context.sort === "nombre" ? " selected" : ""}>Nombre A–Z</option>
-      </select>
-      ${chevronIcon()}
-    </label>
-  </div>
-</section>
+${discoveryPanelV69(catalog, context, initial.length)}
 
 <section class="v65-products" id="productos-v69">
   <div class="v65-head v66-catalog-head">
@@ -255,6 +179,138 @@ export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(
         { href: "/catalogo-v6-9/#marcas-v69", label: "Marcas", nav: "marcas" },
         { href: "/catalogo-v6-9/#buscar-v69", label: "Buscar", nav: "buscar" },
         { href: "/catalogo-v6-9/?scope=todo#productos-v69", label: "Productos", nav: "productos" },
+      ],
+    },
+  );
+}
+
+function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageContext>, resultCount: number) {
+  const brands = [...new Set(catalog.products.map(brandName))];
+  const offers = dealProducts(catalog.products);
+  const brandStats = brands.map((brand) => ({
+    brand,
+    count: catalog.products.filter((product) => brandName(product) === brand).length,
+    best: offers.find((product) => brandName(product) === brand)?.discountPercent || 0,
+  }));
+  const initialNeedLabel = context.need === "Todas" ? "Todas" : NEED_LABELS.get(context.need) || "Todas";
+  const initialBrandLabel = `${context.brand} · ${resultCount}`;
+
+  return `<section class="v65-panel v65-search-panel v65-top-search v67-discovery" id="buscar-v69">
+    <div class="v67-primary-row">
+      <div class="v67-title"><p class="v65-k">Encontrá tu producto</p><h2><span>Buscá como</span> <span>hablás</span></h2></div>
+      <form class="v66-search v67-search" role="search" action="${u("/catalogo-v6-9/")}" method="get">
+        <label class="v67-visually-hidden" for="searchV69">Producto, marca o necesidad</label>
+        <span class="v67-search-icon">${searchIcon()}</span>
+        <input id="searchV69" name="q" type="search" placeholder="Producto, marca o necesidad" autocomplete="off" spellcheck="false">
+        <input type="hidden" name="scope" value="todo">
+      </form>
+      <button class="v65-link-button" id="clearFiltersV69" type="button">Limpiar</button>
+    </div>
+    <div class="v67-filter-grid" aria-label="Filtros del catálogo">
+      <div class="v67-filter-menu v67-need-menu" data-filter-menu="need">
+        <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="need" aria-expanded="false" aria-controls="needMenuV69">
+          <span class="v67-menu-label">¿Qué necesitás?</span>
+          <strong id="needSummaryV69">${e(initialNeedLabel)}</strong>
+          ${chevronIcon()}
+        </button>
+        <div class="v67-menu-popover v67-need-popover" id="needMenuV69" data-filter-menu-popover aria-hidden="true" aria-label="Elegir necesidad" inert>
+          <div class="v67-need-options">
+            <button class="v67-need-option${context.need === "Todas" ? " on" : ""}" type="button" data-need="Todas" aria-pressed="${context.need === "Todas"}">
+              ${needIcon("Todas")}<span>Todas</span>${optionCheckIcon()}
+            </button>
+            ${NEEDS.map(
+              (need) => `<button class="v67-need-option${context.need === need.slug ? " on" : ""}" type="button" data-need="${need.slug}" aria-pressed="${context.need === need.slug}">
+                ${needIcon(need.slug)}<span>${need.label}</span>${optionCheckIcon()}
+              </button>`,
+            ).join("")}
+          </div>
+        </div>
+      </div>
+      <div class="v67-filter-menu v67-brand-menu" data-filter-menu="brand" id="marcas-v69">
+        <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="brand" aria-expanded="false" aria-controls="brandMenuV69">
+          <span class="v67-menu-label">Marca</span>
+          <strong id="brandSummaryV69">${e(initialBrandLabel)}</strong>
+          ${chevronIcon()}
+        </button>
+        <div class="v67-menu-popover v67-brand-popover" id="brandMenuV69" data-filter-menu-popover aria-hidden="true" aria-label="Elegir marca" inert>
+          <div class="v67-brand-options">
+            <button class="v67-brand-option${context.brand === "Todas" ? " on" : ""}" type="button" data-brand="Todas" aria-pressed="${context.brand === "Todas"}">
+              <span class="v67-brand-copy"><strong>Todas</strong><small>${catalog.totalProducts} productos</small></span>
+              ${optionCheckIcon()}
+            </button>
+            ${brandStats
+              .map(
+                (item) => `<button class="v67-brand-option${context.brand === item.brand ? " on" : ""}" type="button" data-brand="${e(item.brand)}" aria-pressed="${context.brand === item.brand}">
+                  <span class="v67-brand-copy"><strong>${e(item.brand)}</strong><small>${item.count} productos</small></span>
+                  ${item.best ? `<em>hasta ${Math.round(item.best)}%</em>` : ""}
+                  ${optionCheckIcon()}
+                </button>`,
+              )
+              .join("")}
+          </div>
+        </div>
+      </div>
+      <label class="v69-sort">
+        <span class="v67-menu-label">Ordenar</span>
+        <select id="sortV69" name="orden">
+          <option value="relevancia"${context.sort === "relevancia" ? " selected" : ""}>Relevancia</option>
+          <option value="disponibilidad"${context.sort === "disponibilidad" ? " selected" : ""}>Disponibilidad</option>
+          <option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Descuento</option>
+          <option value="precio-asc"${context.sort === "precio-asc" ? " selected" : ""}>Menor precio</option>
+          <option value="precio-desc"${context.sort === "precio-desc" ? " selected" : ""}>Mayor precio</option>
+          <option value="nombre"${context.sort === "nombre" ? " selected" : ""}>Nombre A–Z</option>
+        </select>
+        ${chevronIcon()}
+      </label>
+    </div>
+  </section>`;
+}
+
+export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109") {
+  const brands = [...new Set(catalog.products.map(brandName))];
+  const homeContext = pageContext(catalog, new URLSearchParams({ scope: "todo" }));
+  const sections = brands
+    .map((brand) => {
+      const products = sortProductsV69(
+        catalog.products.filter((product) => brandName(product) === brand),
+        "disponibilidad",
+      );
+      const sectionId = `marca-${brandSlug(products[0])}`;
+      const brandHref = `/catalogo-v6-9/?scope=todo&marca=${encodeURIComponent(brand)}#productos-v69`;
+      return `<section class="v69-home-brand" id="${e(sectionId)}" aria-labelledby="${e(`${sectionId}-title`)}">
+        <div class="v69-home-brand-head">
+          <div><p class="v65-k">Marca</p><h2 id="${e(`${sectionId}-title`)}">${e(brand)}</h2></div>
+          <div class="v69-home-brand-actions"><span>${products.length} productos</span><a href="${u(brandHref)}">Ver toda la marca</a></div>
+        </div>
+        <div class="v65-grid v69-home-grid">${products.slice(0, 10).map((product) => cardV69(product, origin)).join("")}</div>
+      </section>`;
+    })
+    .join("");
+
+  return shell69(
+    "Farmagreen Rosario | Marcas y productos",
+    "Explorá las marcas de Farmagreen Rosario y consultá disponibilidad por WhatsApp.",
+    `${discoveryPanelV69(catalog, homeContext, catalog.totalProducts)}
+    <div class="v69-home-sections" id="marcas-inicio-v69">${sections}</div>
+    <script type="application/json" id="fg69-data">${json({
+      base: BASE,
+      origin,
+      page: "home",
+      products: publicCatalogV69(catalog).products,
+      context: homeContext.state,
+    })}</script>`,
+    {
+      bodyClass: "v65 v66 v67 v69 v69-home",
+      origin,
+      canonicalPath: "/inicio-v6-9/",
+      ogType: "website",
+      ogImage: SOCIAL_IMAGE,
+      homeHref: "/inicio-v6-9/",
+      links: [
+        { href: "/catalogo-v6-9/#productos-v69", label: "Ofertas" },
+        { href: "/inicio-v6-9/#marcas-inicio-v69", label: "Marcas", active: true },
+        { href: "/catalogo-v6-9/#buscar-v69", label: "Buscar" },
+        { href: "/catalogo-v6-9/?scope=todo#productos-v69", label: "Productos" },
       ],
     },
   );
@@ -450,7 +506,7 @@ function currentPriceV69(product: ProductV69) {
   return Math.round(Number(product.offerPrice || product.listPrice || 0));
 }
 
-type ShellLink = { href: string; label: string; nav?: string; historyBack?: boolean };
+type ShellLink = { href: string; label: string; nav?: string; historyBack?: boolean; active?: boolean };
 type ShellOptions = {
   homeHref?: string;
   links?: ShellLink[];
@@ -468,7 +524,7 @@ function shell69(title: string, description: string, body: string, options: Shel
   const canonical = canonicalUrl ? `<link rel="canonical" href="${e(canonicalUrl)}">` : "";
   const ogImage = options.ogImage ? new URL(options.ogImage, options.origin || "http://127.0.0.1:8109").toString() : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImage ? `<meta property="og:image" content="${e(ogImage)}">` : ""}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-5.css")}"><link rel="stylesheet" href="${u("/styles-v6-6.css")}"><link rel="stylesheet" href="${u("/styles-v6-7.css")}"><link rel="stylesheet" href="${u("/styles-v6-9.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main><a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9.js")}"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-5.css")}"><link rel="stylesheet" href="${u("/styles-v6-6.css")}"><link rel="stylesheet" href="${u("/styles-v6-7.css")}"><link rel="stylesheet" href="${u("/styles-v6-9.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main><a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9.js")}"></script></body></html>`;
 }
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109") {
