@@ -1,6 +1,7 @@
 /* V6.9 local: stock de referencia visible y ordenamiento, sobre V6.8. */
 
 body.v69{
+  --v69-whatsapp:#25d366;
   --v69-stock:#137942;
   --v69-stock-bg:#edf9f0;
   --v69-stock-line:rgba(19,121,66,.28);
@@ -10,9 +11,17 @@ body.v69{
   --v69-unverified:#7a5b16;
   --v69-unverified-bg:#fff8e5;
   --v69-unverified-line:rgba(167,116,19,.3);
+  --v69-consult:#ffd101;
+  --v69-consult-ring:#ffd101;
   --v69-order:#174fb9;
   --v69-order-bg:#f3f6ff;
 }
+
+/* Un único verde para todas las consultas por WhatsApp. */
+body.v69 .topwa,
+body.v69 .float,
+body.v69 .v66-card .v66-ask,
+body.v69.product-detail .cta{background:var(--v69-whatsapp);color:#fff}
 
 body.v69 #buscar-v69,
 body.v69 #marcas-v69,
@@ -39,6 +48,9 @@ body.v69 #loadMoreV69{
 }
 
 body.v69 #loadMoreV69[hidden]{display:none}
+body.v69 #contextV69[hidden],
+body.v69 #availabilityV69[hidden],
+body.v69 #availabilityNoteV69[hidden]{display:none!important}
 body.v69 #loadMoreV69:active{transform:translateY(1px)}
 body.v69 .v67-menu-label{font-size:11px}
 body.v69 .v67-need-options{grid-template-columns:repeat(6,minmax(0,1fr))}
@@ -135,7 +147,7 @@ body.v69 .v69-stock{
   background:var(--v69-stock-bg);
   color:var(--v69-stock);
   font-size:10.5px;
-  font-weight:900;
+  font-weight:650;
   line-height:1;
   text-overflow:ellipsis;
   white-space:nowrap;
@@ -178,7 +190,30 @@ body.v69 .v69-stock.is-unverified::before{
 }
 
 body.v69 .v66-card .v69-stock{
+  width:100%;
+  height:24px;
+  min-height:24px;
+  justify-self:stretch;
+  gap:3px;
   margin-top:-1px;
+  padding:3px 5px;
+  font-size:clamp(8px,.62vw,10px);
+  letter-spacing:-.025em;
+}
+
+body.v69 .v66-card .v69-stock strong{
+  min-width:0;
+  font-weight:650;
+  white-space:nowrap;
+}
+
+body.v69 .v69-stock.is-pdp strong,
+body.v69 .v69-pdp-stock strong{font-weight:650}
+
+body.v69 .v66-card .v66-ask{
+  height:42px;
+  min-height:42px;
+  white-space:nowrap;
 }
 
 body.v69 .v69-card-unavailable{
@@ -187,6 +222,14 @@ body.v69 .v69-card-unavailable{
 
 body.v69 .v69-card-unavailable .v66-media{
   border-color:rgba(201,71,35,.18);
+}
+
+body.v69 .v69-ask-unavailable{
+  border-color:var(--v69-consult-ring)!important;
+  background:var(--v69-consult)!important;
+  color:#fff!important;
+  box-shadow:0 8px 18px rgba(255,209,1,.28),inset 0 0 0 1px rgba(255,255,255,.22)!important;
+  text-shadow:0 1px 1px rgba(91,72,0,.26);
 }
 
 body.v69 .v69-card-unverified{
@@ -287,6 +330,18 @@ body.v69.product-detail .v66-pdp-facts div{
 
 body.v69.product-detail .v66-pdp-facts dt{font-size:10px;line-height:1.05}
 body.v69.product-detail .v66-pdp-facts dd{font-size:15px;line-height:1.08}
+body.v69.product-detail .v69-barcode{
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+  margin:0 0 10px;
+  color:#7a8581;
+  font-size:10px;
+  font-weight:750;
+  line-height:1.2;
+}
+body.v69.product-detail .v69-barcode span{text-transform:uppercase;letter-spacing:.055em}
+body.v69.product-detail .v69-barcode strong{color:#56615e;font-size:12px;font-weight:850;letter-spacing:.025em}
 body.v69.product-detail .v65-service-list{gap:4px;margin:10px 0 14px;font-size:15px;line-height:1.22}
 body.v69.product-detail .v65-service-list li::before{top:6px;width:7px;height:7px}
 
@@ -343,11 +398,31 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
     box-shadow:0 13px 26px rgba(255,92,45,.3);
     transform:translateY(-1px);
   }
+  body.v69 .v69-ask-unavailable:hover{
+    border-color:#ffd101!important;
+    background:#ffd101!important;
+    box-shadow:0 10px 22px rgba(255,209,1,.34),inset 0 0 0 1px rgba(255,255,255,.25)!important;
+  }
 }
 
 @media(min-width:981px){
   /* Contrato V6.9: cinco fichas completas en escritorio. */
   body.v69 .v65-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+}
+
+@media(min-width:981px) and (max-width:1180px){
+  /* En el umbral de cinco columnas, la leyenda completa debe entrar sin elipsis. */
+  body.v69 .v66-card .v69-stock{
+    gap:2px;
+    padding:2px 3px;
+    font-size:8px;
+    letter-spacing:-.025em;
+  }
+  body.v69 .v66-card .v69-stock::before{
+    width:5px;
+    height:5px;
+    box-shadow:none;
+  }
 }
 
 @media(min-width:761px){
@@ -356,21 +431,60 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
 }
 
 @media(max-width:760px){
+  /* Encabezado móvil compacto: marca, navegación y WhatsApp en una sola fila. */
+  body.v69 .top{
+    grid-template-columns:108px minmax(0,1fr) 36px;
+    grid-template-areas:"brand links action";
+    gap:6px;
+    min-height:48px;
+    padding:6px 8px;
+  }
+  body.v69 .brandmark{padding:0}
+  body.v69 .top img{max-width:108px;max-height:31px}
+  body.v69 .toplinks{
+    justify-content:center;
+    gap:6px;
+    min-width:0;
+    padding:0;
+    overflow:hidden;
+  }
+  body.v69 .toplinks a{
+    min-width:0;
+    padding:6px 0;
+    border-radius:8px;
+    font-size:12px;
+    line-height:1;
+    white-space:nowrap;
+  }
+  body.v69 .topwa{width:36px;height:36px;padding:0}
+  body.v69 .topwa svg{width:20px;height:20px}
   body.v69 #buscar-v69,
   body.v69 #marcas-v69,
-  body.v69 #productos-v69{scroll-margin-top:134px}
+  body.v69 #productos-v69{scroll-margin-top:58px}
+  body.v69 .v67-primary-row{grid-template-columns:118px minmax(0,1fr) 56px}
+  body.v69 .v67-title h2{font-size:20px;line-height:.92}
+  body.v69 .v67-title h2 span{display:block;white-space:nowrap}
   body.v69 .v67-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   body.v69 .v69-sort{grid-column:1/-1}
-  body.v69 .v69-sort select{font-size:12.5px}
-  body.v69 .v67-menu-label{font-size:10px;letter-spacing:.07em}
+  body.v69 .v69-sort select{font-size:15px}
+  body.v69 .v67-search input{font-size:15.5px}
+  body.v69 .v67-menu-label{font-size:12px;letter-spacing:.07em}
+  body.v69 .v67-menu-trigger strong{font-size:15px}
+  body.v69 .v67-need-option{font-size:12px}
+  body.v69 .v67-brand-copy strong{font-size:14px}
+  body.v69 .v67-brand-copy small,
+  body.v69 .v67-brand-option em{font-size:11px}
   body.v69 .v67-need-options{grid-template-columns:repeat(4,minmax(0,1fr))}
   body.v69 .v65-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  body.v69 .v66-card .v66-brand{font-size:17px}
+  body.v69 .v66-card h3{font-size:15.5px;line-height:1.08}
   body.v69 .v66-card .v66-facts div{font-size:8.75px}
   body.v69 .v66-card .v66-facts dd{font-size:9.5px}
   body.v69 .v66-card .v69-stock{
-    min-height:21px;
+    height:24px;
+    min-height:24px;
     padding:3px 6px;
-    font-size:8.5px;
+    font-size:clamp(8px,2.2vw,8.75px);
   }
   body.v69 .v66-card .v69-stock::before{width:6px;height:6px;box-shadow:none}
   body.v69 .v69-availability-summary{
@@ -384,6 +498,7 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
     font-size:9.5px;
   }
   body.v69 #loadMoreV69{min-height:54px;padding:14px 16px;border-radius:10px;font-size:16px}
+  body.v69 .v66-card .v66-ask{height:37px;min-height:37px}
   body.v69.product-detail .v65-buybox h1{font-size:clamp(32px,9vw,36px);line-height:.95}
   body.v69.product-detail .v65-meta{margin-top:7px;font-size:15px}
   body.v69.product-detail .v69-stock,
@@ -393,15 +508,33 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
   body.v69.product-detail .v66-pdp-facts div{min-height:58px;padding:8px;border-radius:11px}
   body.v69.product-detail .v66-pdp-facts dt{font-size:9.5px;letter-spacing:.055em}
   body.v69.product-detail .v66-pdp-facts dd{font-size:14px}
+  body.v69.product-detail .v69-barcode{display:none}
   body.v69.product-detail .v65-service-list{margin:9px 0 12px;font-size:14px}
   body.v69.product-detail .v69-detail{font-size:15px;line-height:1.45}
   body.v69.product-detail .v69-detail h2{font-size:25px}
   body.v69.product-detail .v69-detail-section{margin-top:14px;padding-top:12px}
   body.v69.product-detail .v69-detail-section h3{font-size:17px}
   body.v69 .float.is-cta-visible{opacity:0;pointer-events:none}
+  body.v69 #catalogTitleV69.v69-title-all{
+    font-size:clamp(27px,7.8vw,31px);
+    letter-spacing:-.065em;
+    white-space:nowrap;
+  }
 }
 
 @media(max-width:370px){
+  body.v69 .top{
+    grid-template-columns:88px minmax(0,1fr) 32px;
+    gap:3px;
+    min-height:44px;
+    padding:6px;
+  }
+  body.v69 .top img{max-width:88px;max-height:27px}
+  body.v69 .toplinks{gap:3px}
+  body.v69 .toplinks a{font-size:11.5px}
+  body.v69 .topwa{width:32px;height:32px}
+  body.v69 .v67-primary-row{grid-template-columns:108px minmax(0,1fr) 50px;gap:5px}
+  body.v69 .v67-title h2{font-size:18.5px}
   body.v69 .v67-menu-label{font-size:9.5px}
   body.v69 .v69-sort{padding-right:7px;padding-left:7px}
   body.v69 .v69-sort select{font-size:11.5px}

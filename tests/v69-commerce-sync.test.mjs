@@ -5,14 +5,22 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  bestProductCandidate,
+  candidateBrandMatchesProduct,
+  normalizeProductText,
+  productTitleMatchScore,
+} from "../scripts/gpsfarma-listing.mjs";
+import {
   DEFAULT_INVENTORY_SCOPE_V69,
   GPS_SOURCES_V69,
   crawlSource,
   inventoryScopeV69,
   normalizeGpsImagePath,
   normalizeGpsProductUrl,
+  enrichCatalogIdentitiesV69,
   parseListingProducts,
   parseNextPageUrl,
+  parseProductIdentityV69,
   runCommercialSync,
   sourceStartUrl,
   synchronizeCatalog,
@@ -69,11 +77,12 @@ test("el parser usa sólo los marcadores explícitos del listado para disponibil
     `
       <li class="item product product-item">
         <a class="product-item-link" href="/con-stock.html">Con stock</a>
-        <form data-role="tocart-form" action="/checkout/cart/add/uenc/aHR0cHM6Ly8/"></form>
+        <form data-role="tocart-form" data-product-sku="SKU-CON-STOCK" action="/checkout/cart/add/uenc/aHR0cHM6Ly8/"></form>
       </li>
       <li class="item product product-item">
         <a class="product-item-link" href="/sin-stock.html">Sin stock</a>
         <div class="stock unavailable"><span>Sin stock</span></div>
+        <script type="text/x-magento-init">{ "[data-role=tocart-form]": { "catalogAddToCart": { "product_sku": "SKU-SIN-STOCK" } } }</script>
       </li>
       <li class="item product product-item">
         <a class="product-item-link" href="/a-confirmar.html">A confirmar</a>
@@ -85,6 +94,56 @@ test("el parser usa sólo los marcadores explícitos del listado para disponibil
   assert.deepEqual(
     products.map((product) => product.availability),
     ["available", "unavailable", "unknown"],
+  );
+  assert.deepEqual(
+    products.map((product) => product.sku),
+    ["SKU-CON-STOCK", "SKU-SIN-STOCK", ""],
+  );
+});
+
+test("la ficha técnica conserva SKU privado y código de barras validado", () => {
+  const identity = parseProductIdentityV69(`
+    <table><tbody>
+      <tr><th>SKU</th><td>216771</td></tr>
+      <tr><th>Código de barra</th><td data-th="C&#xF3;digo&#x20;de&#x20;barra">3337875731409</td></tr>
+    </tbody></table>
+  `);
+  assert.deepEqual(identity, { sku: "216771", barcode: "3337875731409" });
+  assert.deepEqual(
+    parseProductIdentityV69(`<tr><th>Código de barra</th><td>123</td></tr>`),
+    { sku: "", barcode: "" },
+  );
+});
+
+test("la identidad se completa sin modificar fichas ni aceptar contradicciones", async () => {
+  const base = {
+    version: 6.9,
+    products: [
+      product("p-identidad", "Producto con identidad", {
+        source: { url: "https://gpsfarma.com/producto-identidad.html" },
+      }),
+    ],
+  };
+  const enriched = await enrichCatalogIdentitiesV69(base, {
+    fetchHtml: async () => `
+      <tr><th>SKU</th><td>248860</td></tr>
+      <tr><th>Código de barras</th><td>3337875533713</td></tr>
+    `,
+    onProgress: () => {},
+  });
+  assert.equal(enriched.catalog.products[0].sku, "248860");
+  assert.equal(enriched.catalog.products[0].barcode, "3337875533713");
+  assert.equal(enriched.metrics.coverage, 1);
+
+  await assert.rejects(
+    enrichCatalogIdentitiesV69(
+      { ...base, products: [{ ...base.products[0], sku: "OTRO" }] },
+      {
+        fetchHtml: async () => `<tr><th>SKU</th><td>248860</td></tr><tr><th>Código de barra</th><td>3337875533713</td></tr>`,
+        onProgress: () => {},
+      },
+    ),
+    /contradice 1 producto/i,
   );
 });
 
@@ -100,6 +159,14 @@ test("la ubicación comercial por defecto es Rosario y valida sus identificadore
     () => inventoryScopeV69({ V69_SYNC_LOCATION_REGION_ID: "Rosario" }),
     /V69_SYNC_LOCATION_REGION_ID debe ser un entero positivo/,
   );
+  assert.throws(
+    () => inventoryScopeV69({ V69_SYNC_INVENTORY_SOURCE: "AVELL" }),
+    /sólo admite la fuente de inventario STOM/,
+  );
+  assert.throws(
+    () => inventoryScopeV69({ V69_SYNC_LOCATION_CITY_ID: "124" }),
+    /sólo admite la localidad Rosario configurada para STOM/,
+  );
 });
 
 test("la frontera HTTPS rechaza host, protocolo y credenciales ajenos", () => {
@@ -107,6 +174,94 @@ test("la frontera HTTPS rechaza host, protocolo y credenciales ajenos", () => {
   assert.throws(() => trustedGpsUrl("http://gpsfarma.com/categorias.html"), /no permitido/i);
   assert.throws(() => trustedGpsUrl("https://evil.example/categorias.html"), /no permitido/i);
   assert.throws(() => trustedGpsUrl("https://user:pass@gpsfarma.com/"), /no permitido/i);
+});
+
+test("normaliza el separador opcional antes de una medida sin perder la variante", () => {
+  const catalogTitle = "Mascarilla Capilar Vichy Dercos Kera Solutions 200ml";
+  const listingTitle = "Mascarilla Capilar Vichy Dercos Kera Solutions x 200 ml";
+  assert.equal(normalizeProductText(catalogTitle), normalizeProductText(listingTitle));
+  assert.equal(productTitleMatchScore(catalogTitle, listingTitle), 1);
+});
+
+test("Productos Saludables acepta título exacto de otra marca, pero no uno difuso", () => {
+  const healthyProduct = product("p-saludable", "Colágeno + Hialurónico VWN x 30 Cápsulas", {
+    brand: {
+      id: "9100",
+      slug: "productos-saludables",
+      name: "Productos Saludables",
+      aliases: [],
+    },
+  });
+  const exactCandidate = {
+    sourceUrl: "https://gpsfarma.com/colageno-hialuronico-vwn.html",
+    sourceName: "Colágeno + Hialurónico VWN 30 Cápsulas",
+    sourceBrand: "Vitamin Way",
+  };
+  const fuzzyCandidate = {
+    ...exactCandidate,
+    sourceUrl: "https://gpsfarma.com/colageno-hialuronico-otra-marca.html",
+    sourceName: "Colágeno + Hialurónico Otra Marca 30 Cápsulas",
+  };
+
+  assert.equal(candidateBrandMatchesProduct(healthyProduct, exactCandidate), true);
+  assert.equal(candidateBrandMatchesProduct(healthyProduct, fuzzyCandidate), false);
+  assert.equal(bestProductCandidate(healthyProduct, [exactCandidate])?.confidence, 1);
+  assert.equal(bestProductCandidate(healthyProduct, [fuzzyCandidate]), null);
+});
+
+test("un candidato reservado por URL no puede reutilizarse por título", () => {
+  const sharedUrl = "https://gpsfarma.com/colageno-hialuronico-vwn.html";
+  const virtualBrand = {
+    id: "9100",
+    slug: "productos-saludables",
+    name: "Productos Saludables",
+    aliases: [],
+  };
+  const result = synchronizeCatalog(
+    {
+      version: 6.8,
+      products: [
+        product("p-sin-url", "Colágeno + Hialurónico VWN x 30 Cápsulas", {
+          brand: virtualBrand,
+          source: {},
+        }),
+        product("p-con-url", "Colágeno + Hialurónico VWN x 30 Cápsulas", {
+          brand: virtualBrand,
+          source: { url: sharedUrl },
+        }),
+      ],
+    },
+    [
+      {
+        id: "9100",
+        catalogBrandId: "9100",
+        catalogBrandName: "Productos Saludables",
+        status: "completed",
+        pages: [{ page: 1 }],
+        products: [
+          {
+            sourceUrl: sharedUrl,
+            sourceName: "Colágeno + Hialurónico VWN 30 Cápsulas",
+            sourceBrand: "Vitamin Way",
+            availability: "available",
+            listPrice: 100,
+            offerPrice: 100,
+            savingAmount: 0,
+            discountPercent: 0,
+          },
+        ],
+      },
+    ],
+    {
+      minCoverage: 0.5,
+      minPriceCoverage: 1,
+      expectedSourceIds: ["9100"],
+    },
+  );
+
+  assert.equal(result.products[0].availability, "unknown");
+  assert.equal(result.products[1].availability, "limited");
+  assert.equal(result.commerceSync.metrics.matched, 1);
 });
 
 test("crawl sigue todo el paginado y termina sin duplicar productos", async () => {

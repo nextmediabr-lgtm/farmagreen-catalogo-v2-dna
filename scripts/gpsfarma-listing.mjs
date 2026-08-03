@@ -62,6 +62,11 @@ export function normalizeProductText(value) {
     .replace(/\b(grs?|gramos?)\b/g, "g")
     .replace(/\b(caps?|capsulas?)\b/g, "capsulas")
     .replace(/\bmililitros?\b/g, "ml")
+    .replace(/\b(\d+(?:[.,]\d+)?)(ml|mg|kg|g|l)\b/g, "$1 $2")
+    .replace(
+      /\bx\s+(?=\d+(?:[.,]\d+)?\s*(?:ml|mg|kg|g|l|capsulas|comprimidos?|tabletas?|sobres?|dosis|unidades?|ampollas?)\b)/g,
+      "",
+    )
     .replace(/\+/g, " plus ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
@@ -213,7 +218,10 @@ export function candidateBrandMatchesProduct(product, candidate) {
   const virtualBrand = normalizeIdentity(product?.brand?.slug) === "productos saludables";
   if (!virtualBrand || sourceBrand.length < 4) return false;
   const productName = normalizeIdentity(product?.name);
-  return ` ${productName} `.includes(` ${sourceBrand} `);
+  const declaredInName = ` ${productName} `.includes(` ${sourceBrand} `);
+  const exactNormalizedTitle =
+    normalizeProductText(product?.name) === normalizeProductText(candidate?.sourceName);
+  return declaredInName || exactNormalizedTitle;
 }
 
 export function bestProductCandidate(product, candidates) {
@@ -235,6 +243,7 @@ export function bestProductCandidate(product, candidates) {
   ) {
     return null;
   }
+  if (runnerUp && best.score === 1 && runnerUp.score === 1) return null;
   if (best.score < 0.98 && runnerUp && best.score - runnerUp.score < 0.035) return null;
   return { ...best.candidate, confidence: Number(best.score.toFixed(4)) };
 }

@@ -7,18 +7,19 @@ const BOOT = (() => {
 })();
 const BASE = (BOOT.base || "").replace(/\/$/, "");
 const PUBLIC_ORIGIN = BOOT.origin || window.location.origin;
-const PAGE = 24;
+const PAGE = 48;
 const ROUTE = "/catalogo-v6-9/";
 const PDP = "/producto-v6-9/";
 const CONTEXT = BOOT.context || {};
-const SORT_VALUES = new Set(["relevancia", "descuento", "precio-asc", "precio-desc", "nombre"]);
+const SORT_VALUES = new Set(["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"]);
+const DEFAULT_SORT = "descuento";
 const S = {
   all: BOOT.products || [],
   q: CONTEXT.q || "",
   brand: CONTEXT.brand || "Todas",
   need: CONTEXT.need || "Todas",
   scope: CONTEXT.scope || "ofertas",
-  sort: SORT_VALUES.has(CONTEXT.sort) ? CONTEXT.sort : "relevancia",
+  sort: SORT_VALUES.has(CONTEXT.sort) ? CONTEXT.sort : DEFAULT_SORT,
   limit: PAGE,
 };
 
@@ -87,6 +88,7 @@ function blob(product) {
       product.brand?.name,
       ...(product.brand?.aliases || []),
       product.line,
+      product.barcode,
       ...(product.aliases || []),
       ...needs,
       ...needs.map((need) => NEED_LABELS[need] || need),
@@ -161,21 +163,21 @@ function availabilityMeta(product) {
   if (product?.availability === "available_reference") {
     return {
       className: "",
-      label: "Disponible en Rosario",
+      label: "Disponible para Entrega",
       title: "Estado observado en Rosario durante la última verificación; consultá para confirmar.",
     };
   }
   if (product?.availability === "unavailable_reference") {
     return {
       className: " is-unavailable",
-      label: "Sin stock en Rosario",
+      label: "Consultar Disponibilidad",
       title: "Estado observado en Rosario durante la última verificación; consultá para confirmar.",
     };
   }
   return {
     className: " is-unverified",
-    label: "A confirmar en Rosario",
-    title: "Este producto todavía no tiene una verificación comercial reciente en Rosario; consultá para confirmar.",
+    label: "Consultar Disponibilidad",
+    title: "Confirmamos disponibilidad por WhatsApp.",
   };
 }
 
@@ -188,14 +190,15 @@ function card(product) {
     ? `<div class="v66-media"><img src="${esc(image)}" alt="${esc(name)}" loading="lazy" decoding="async"></div>`
     : `<div class="v66-media v67-image-missing" role="img" aria-label="Imagen no disponible para ${esc(name)}"></div>`;
   const stock = `<p class="v69-stock${availability.className}" title="${esc(availability.title)}"><span aria-hidden="true"></span><strong>${esc(availability.label)}</strong></p>`;
-  const cta = product?.availability === "available_reference" ? "Consultar" : "Consultar disponibilidad";
+  const needsAvailabilityConsult = product?.availability !== "available_reference";
+  const cta = "Consultar";
   const statusClass =
     product?.availability === "unavailable_reference"
       ? " v69-card-unavailable"
       : product?.availability === "unverified"
         ? " v69-card-unverified"
         : "";
-  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${url(`${PDP}${esc(product?.slug || "")}/`)}" aria-label="Ver ${esc(name)}"></a><div class="v66-card-top"><p class="v66-brand">${esc(brandName(product))}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${media}<div class="v66-card-body"><h3>${esc(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${esc(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${esc(usage(product))}</dd></div></dl>${stock}<div class="v66-price">${product.discountPercent > 0 ? `<s>${ars(product.listPrice)}</s>` : ""}<strong>${ars(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${ars(product.savingAmount)}</small>` : ""}</div><a class="ask v66-ask" href="${wa(product)}">${cta}</a></div></article>`;
+  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${url(`${PDP}${esc(product?.slug || "")}/`)}" aria-label="Ver ${esc(name)}"></a><div class="v66-card-top"><p class="v66-brand">${esc(brandName(product))}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${media}<div class="v66-card-body"><h3>${esc(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${esc(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${esc(usage(product))}</dd></div></dl>${stock}<div class="v66-price">${product.discountPercent > 0 ? `<s>${ars(product.listPrice)}</s>` : ""}<strong>${ars(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${ars(product.savingAmount)}</small>` : ""}</div><a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(product)}">${cta}</a></div></article>`;
 }
 
 function presentation(product) {
@@ -336,9 +339,23 @@ function productTie(left, right) {
   );
 }
 
+function availabilityRank(product) {
+  if (product?.availability === "available_reference") return 0;
+  if (product?.availability === "unverified") return 1;
+  return 2;
+}
+
 function sorted(products) {
   const entries = products.map((product) => ({ product, relevance: score(product) }));
-  if (S.sort === "descuento") {
+  if (S.sort === "disponibilidad") {
+    entries.sort(
+      (left, right) =>
+        availabilityRank(left.product) - availabilityRank(right.product) ||
+        (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
+        (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
+        productTie(left.product, right.product),
+    );
+  } else if (S.sort === "descuento") {
     entries.sort(
       (left, right) =>
         (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
@@ -373,7 +390,7 @@ function writeUrl(mode = "replace") {
   if (S.q) params.set("q", S.q);
   if (S.brand !== "Todas") params.set("marca", S.brand);
   if (S.need !== "Todas") params.set("need", S.need);
-  if (S.sort !== "relevancia") params.set("orden", S.sort);
+  if (S.sort !== DEFAULT_SORT) params.set("orden", S.sort);
   if (S.limit > PAGE) params.set("pagina", String(Math.ceil(S.limit / PAGE)));
   const next = `${url(ROUTE)}${params.toString() ? `?${params}` : ""}`;
   const method = mode === "push" && `${location.pathname}${location.search}` !== next ? "pushState" : "replaceState";
@@ -441,7 +458,7 @@ function render(historyMode = "replace") {
   const availabilitySummary = $("#availabilityV69");
   if (availabilitySummary) {
     const total = availability.available + availability.unavailable + availability.unverified;
-    availabilitySummary.hidden = total === 0;
+    availabilitySummary.hidden = true;
     availabilitySummary.innerHTML = total
       ? `<span><b>${availability.available}</b> disponibles</span><span><b>${availability.unavailable}</b> no disponibles</span><span><b>${availability.unverified}</b> no verificados</span>`
       : "";
@@ -451,7 +468,9 @@ function render(historyMode = "replace") {
   }
   const copy = catalogCopy();
   $("#modeV69").textContent = copy.mode;
-  $("#catalogTitleV69").textContent = copy.title;
+  const catalogTitle = $("#catalogTitleV69");
+  catalogTitle.textContent = copy.title;
+  catalogTitle.classList.toggle("v69-title-all", copy.title === "Todos los productos");
   $("#contextV69").textContent = copy.context;
   $$("[data-nav]").forEach((link) => link.classList.toggle("is-active", link.dataset.nav === copy.nav));
   const more = $("#loadMoreV69");
@@ -485,7 +504,7 @@ function reset() {
   S.brand = "Todas";
   S.need = "Todas";
   S.scope = "ofertas";
-  S.sort = "relevancia";
+  S.sort = DEFAULT_SORT;
   S.limit = PAGE;
   $("#searchV69").value = "";
   if ($("#sortV69")) $("#sortV69").value = S.sort;
@@ -496,7 +515,7 @@ function applyParams(params) {
   S.q = params.get("q") || "";
   S.brand = params.get("marca") === "Aveeno" ? "Aveno" : params.get("marca") || "Todas";
   S.need = params.get("need") || "Todas";
-  S.sort = SORT_VALUES.has(params.get("orden")) ? params.get("orden") : "relevancia";
+  S.sort = SORT_VALUES.has(params.get("orden")) ? params.get("orden") : DEFAULT_SORT;
   const validBrands = new Set(["Todas", ...S.all.map((product) => product.brand?.name).filter(Boolean)]);
   const validNeeds = new Set(["Todas", ...Object.keys(NEED_LABELS)]);
   if (!validBrands.has(S.brand)) S.brand = "Todas";
@@ -513,7 +532,8 @@ function applyParams(params) {
       : params.get("scope") === "todo"
         ? "todo"
         : "ofertas";
-  const page = Math.max(1, Math.min(10, Number.parseInt(params.get("pagina") || "1", 10) || 1));
+  const totalPages = Math.max(1, Math.ceil(S.all.length / PAGE));
+  const page = Math.max(1, Math.min(totalPages, Number.parseInt(params.get("pagina") || "1", 10) || 1));
   S.limit = page * PAGE;
 }
 
@@ -553,7 +573,7 @@ function boot() {
     render("push");
   });
   $("#sortV69")?.addEventListener("change", (event) => {
-    S.sort = SORT_VALUES.has(event.target.value) ? event.target.value : "relevancia";
+    S.sort = SORT_VALUES.has(event.target.value) ? event.target.value : DEFAULT_SORT;
     S.limit = PAGE;
     render("push");
   });

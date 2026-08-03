@@ -27,7 +27,7 @@ const NEEDS = [
 
 const NEED_LABELS = new Map<string, string>(NEEDS.map((need) => [need.slug, need.label]));
 const STOP_WORDS = new Set(["a", "al", "de", "del", "el", "la", "las", "los", "para", "por", "en", "un", "una", "unos", "unas", "y"]);
-const SORTS_V69 = ["relevancia", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
+const SORTS_V69 = ["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
 export type SortV69 = (typeof SORTS_V69)[number];
 
 export type PublicProductV69 = {
@@ -44,6 +44,7 @@ export type PublicProductV69 = {
   primaryCategory: string;
   needs: string[];
   aliases: string[];
+  barcode: string;
   listPrice: number;
   offerPrice: number;
   savingAmount: number;
@@ -121,6 +122,7 @@ export function searchTextV69(product: ProductV69) {
       brandName(product),
       ...safeList(product.brand.aliases),
       product.line,
+      product.barcode,
       ...safeList(product.aliases),
       ...needs,
       ...needs.map((need) => NEED_LABELS.get(need) || need),
@@ -148,7 +150,7 @@ export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(
     `
 <section class="v65-panel v65-search-panel v65-top-search v67-discovery" id="buscar-v69">
   <div class="v67-primary-row">
-    <div class="v67-title"><p class="v65-k">Encontrá tu producto</p><h2>Buscá como hablás</h2></div>
+    <div class="v67-title"><p class="v65-k">Encontrá tu producto</p><h2><span>Buscá como</span> <span>hablás</span></h2></div>
     <form class="v66-search v67-search" role="search">
       <label class="v67-visually-hidden" for="searchV69">Producto, marca o necesidad</label>
       <span class="v67-search-icon">${searchIcon()}</span>
@@ -204,7 +206,8 @@ export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(
       <span class="v67-menu-label">Ordenar</span>
       <select id="sortV69" name="orden">
         <option value="relevancia"${context.sort === "relevancia" ? " selected" : ""}>Relevancia</option>
-        <option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Mayor descuento</option>
+        <option value="disponibilidad"${context.sort === "disponibilidad" ? " selected" : ""}>Disponibilidad</option>
+        <option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Descuento</option>
         <option value="precio-asc"${context.sort === "precio-asc" ? " selected" : ""}>Menor precio</option>
         <option value="precio-desc"${context.sort === "precio-desc" ? " selected" : ""}>Mayor precio</option>
         <option value="nombre"${context.sort === "nombre" ? " selected" : ""}>Nombre A–Z</option>
@@ -218,17 +221,17 @@ export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(
   <div class="v65-head v66-catalog-head">
     <div>
       <p class="v65-k" id="modeV69">${e(context.mode)}</p>
-      <h1 id="catalogTitleV69">${e(context.title)}</h1>
-      <p class="v66-context" id="contextV69">${e(context.copy)}</p>
-      <p class="v69-availability-summary" id="availabilityV69">${availabilitySummaryTextV69(initialAvailability.available, initialAvailability.unavailable, initialAvailability.unverified)}</p>
-      <p class="v69-availability-note" id="availabilityNoteV69">${catalog.commerceSyncedAt ? `Estado comercial en Rosario verificado ${e(shortDateV69(catalog.commerceSyncedAt))}. Confirmamos disponibilidad por WhatsApp.` : catalog.availabilityReferenceAt ? `Verificación parcial en Rosario actualizada ${e(shortDateV69(catalog.availabilityReferenceAt))}. Confirmamos disponibilidad por WhatsApp.` : "Estado comercial en Rosario pendiente de sincronización. Confirmamos disponibilidad por WhatsApp."}</p>
+      <h1 id="catalogTitleV69"${context.title === "Todos los productos" ? ' class="v69-title-all"' : ""}>${e(context.title)}</h1>
+      <p class="v66-context" id="contextV69" hidden>${e(context.copy)}</p>
+      <p class="v69-availability-summary" id="availabilityV69" hidden>${availabilitySummaryTextV69(initialAvailability.available, initialAvailability.unavailable, initialAvailability.unverified)}</p>
+      <p class="v69-availability-note" id="availabilityNoteV69" hidden>${catalog.commerceSyncedAt ? `Estado comercial en Rosario verificado ${e(shortDateV69(catalog.commerceSyncedAt))}. Confirmamos disponibilidad por WhatsApp.` : catalog.availabilityReferenceAt ? `Verificación parcial en Rosario actualizada ${e(shortDateV69(catalog.availabilityReferenceAt))}. Confirmamos disponibilidad por WhatsApp.` : "Estado comercial en Rosario pendiente de sincronización. Confirmamos disponibilidad por WhatsApp."}</p>
     </div>
     <div class="v66-catalog-tools">
       <p id="countV69" aria-live="polite"></p>
       <button class="v65-link-button" type="button" id="showAllV69">Ver todo el catálogo</button>
     </div>
   </div>
-  <section class="v65-grid" id="gridV69">${initial.slice(0, 24).map((product) => cardV69(product, origin)).join("")}</section>
+  <section class="v65-grid" id="gridV69">${initial.slice(0, 48).map((product) => cardV69(product, origin)).join("")}</section>
   <div class="morebox"><button id="loadMoreV69" type="button" aria-label="Cargar más productos">Cargar más productos</button></div>
 </section>
 
@@ -259,6 +262,7 @@ export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(
 
 export function productPageV69(product: ProductV69, related: ProductV69[], origin = "http://127.0.0.1:8109") {
   const discount = Math.round(product.discountPercent || 0);
+  const needsAvailabilityConsult = product.availability !== "limited";
   const productUrl = absolute(origin, `/producto-v6-9/${product.slug}/`);
   return shell69(
     `${product.name} | Farmagreen Rosario`,
@@ -279,11 +283,12 @@ export function productPageV69(product: ProductV69, related: ProductV69[], origi
       <div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div>
       <div><dt>Uso</dt><dd>${e(usage(product))}</dd></div>
     </dl>
+    ${product.barcode ? `<p class="v69-barcode"><span>Código de barras</span><strong>${e(product.barcode)}</strong></p>` : ""}
     ${priceDetail(product)}
-    <a class="cta" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product.name}. Link: ${productUrl}`)}">${product.availability === "limited" ? "Consultar este producto por WhatsApp" : "Consultar disponibilidad o alternativa"}</a>
+    <a class="cta${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product.name}. Link: ${productUrl}`)}">${product.availability === "limited" ? "Consultar este producto por WhatsApp" : "Consultar"}</a>
     <ul class="v65-service-list">
-      <li>Consulta humana y directa.</li>
-      <li>Retiro coordinado en Rosario.</li>
+      <li>Consulta Personalizada por WhatsApp.</li>
+      <li>Coordinamos Retiro o Envío, Consultar formas de Pago.</li>
     </ul>
     ${productDetail(product)}
   </div>
@@ -354,7 +359,7 @@ function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
   }
   const scope: "ofertas" | "todo" = query.get("scope") === "todo" || q || brand !== "Todas" || need !== "Todas" ? "todo" : "ofertas";
   const requestedSort = query.get("orden");
-  const sort: SortV69 = SORTS_V69.includes(requestedSort as SortV69) ? (requestedSort as SortV69) : "relevancia";
+  const sort: SortV69 = SORTS_V69.includes(requestedSort as SortV69) ? (requestedSort as SortV69) : "descuento";
   const state = { q, brand, need, scope, sort };
   let mode = "Ofertas";
   let title = "Oportunidades de hoy";
@@ -408,6 +413,16 @@ export function sortProductsV69(products: ProductV69[], sort: SortV69) {
   const tie = (left: ProductV69, right: ProductV69) =>
     String(left.name || "").localeCompare(String(right.name || ""), "es") ||
     String(left.publicId || "").localeCompare(String(right.publicId || ""), "es");
+  if (sort === "disponibilidad") {
+    const availabilityRank = (product: ProductV69) => product.availability === "limited" ? 0 : product.availability === "unknown" ? 1 : 2;
+    return copy.sort(
+      (left, right) =>
+        availabilityRank(left) - availabilityRank(right) ||
+        (right.discountPercent || 0) - (left.discountPercent || 0) ||
+        (right.savingAmount || 0) - (left.savingAmount || 0) ||
+        tie(left, right),
+    );
+  }
   if (sort === "descuento") {
     return copy.sort(
       (left, right) =>
@@ -463,22 +478,23 @@ function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109") {
   const brand = brandName(product);
   const unavailable = product.availability === "out_of_stock";
   const unverified = product.availability === "unknown";
+  const needsAvailabilityConsult = unavailable || unverified;
   const statusClass = unavailable ? " v69-card-unavailable" : unverified ? " v69-card-unverified" : "";
-  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${productImage(product, "card", "v66-media")}<div class="v66-card-body"><h3>${e(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${stockBadgeV69(product)}${priceCard(product)}<a class="ask v66-ask" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(origin, productPath)}`)}">${unavailable || unverified ? "Consultar disponibilidad" : "Consultar"}</a></div></article>`;
+  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${productImage(product, "card", "v66-media")}<div class="v66-card-body"><h3>${e(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${stockBadgeV69(product)}${priceCard(product)}<a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(origin, productPath)}`)}">Consultar</a></div></article>`;
 }
 
 function stockBadgeV69(product: ProductV69, detail = false) {
   const unavailable = product.availability === "out_of_stock";
   const unverified = product.availability === "unknown";
   const label = unavailable
-    ? "Sin stock en Rosario"
+    ? "Consultar Disponibilidad"
     : unverified
-      ? "A confirmar en Rosario"
-      : "Disponible en Rosario";
+      ? "Consultar Disponibilidad"
+      : "Disponible para Entrega";
   const checked = product.availabilityCheckedAt ? shortDateV69(product.availabilityCheckedAt) : "";
   const freshness = checked
     ? `Verificado en Rosario ${checked}`
-    : "Verificación comercial pendiente";
+    : "Confirmamos disponibilidad por WhatsApp";
   return `<p class="v69-stock${unavailable ? " is-unavailable" : ""}${unverified ? " is-unverified" : ""}${detail ? " is-pdp" : ""}"><span aria-hidden="true"></span><strong>${label}</strong>${detail ? `<small>${e(freshness)}</small>` : ""}</p>`;
 }
 
@@ -602,6 +618,7 @@ function publicProductV69(product: ProductV69): PublicProductV69 {
     primaryCategory: product.primaryCategory,
     needs: safeList(product.needs),
     aliases: safeList(product.aliases),
+    barcode: String(product.barcode || ""),
     listPrice: product.listPrice,
     offerPrice: product.offerPrice,
     savingAmount: product.savingAmount,

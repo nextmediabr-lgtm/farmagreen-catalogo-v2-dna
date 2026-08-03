@@ -16,6 +16,7 @@ import {
   catalogPageV69,
   productPageV69,
   publicCatalogV69,
+  searchTextV69,
   sortProductsV69,
   type SortV69,
 } from "../src/render-v69.js";
@@ -28,7 +29,7 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CATALOG_FILE = path.join(ROOT, "data", "catalog-v69.json");
-const SORTS: SortV69[] = ["relevancia", "descuento", "precio-asc", "precio-desc", "nombre"];
+const SORTS: SortV69[] = ["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"];
 
 async function baseCatalog() {
   resetCatalogV69CacheForTests();
@@ -65,6 +66,32 @@ function publicAvailabilitySummary(products: Array<{ availability: string }>) {
   );
 }
 
+test("V6.9 trata FPS como atributo y conserva la intención principal explícita", async () => {
+  const catalog = await baseCatalog();
+  const revised = catalog.products.filter(
+    (product) => (product.taxonomy as { reasonerVersion?: string } | undefined)?.reasonerVersion === "v69.1-fps-primary-intent",
+  );
+  assert.equal(revised.length, 27);
+  assert.deepEqual(
+    revised.reduce<Record<string, number>>((counts, product) => {
+      counts[product.needs[0]] = (counts[product.needs[0]] || 0) + 1;
+      return counts;
+    }, {}),
+    { manchas: 3, antiedad: 15, hidratacion: 9 },
+  );
+  assert.ok(revised.every((product) => product.primaryCategory === "rostro" && !product.needs.includes("solares")));
+
+  const antiPigment = catalog.products.find((product) => product.publicId === "4415c97e870c");
+  const antiAge = catalog.products.find((product) => product.publicId === "d619540a5259");
+  const hydration = catalog.products.find((product) => product.publicId === "4919a122cd84");
+  const trueSolar = catalog.products.find((product) => product.publicId === "43e4da205cb5");
+  assert.deepEqual(antiPigment?.needs, ["manchas"]);
+  assert.deepEqual(antiAge?.needs, ["antiedad"]);
+  assert.deepEqual(hydration?.needs, ["hidratacion"]);
+  assert.deepEqual(trueSolar?.needs, ["solares"]);
+  assert.equal(trueSolar?.primaryCategory, "solares");
+});
+
 async function privateFixture(catalog: CatalogV69) {
   const directory = await mkdtemp(path.join(tmpdir(), "farmagreen-v69-exclusions-"));
   const file = path.join(directory, "catalog-exclusions-v69.local.json");
@@ -80,11 +107,9 @@ async function privateFixture(catalog: CatalogV69) {
   await writeFile(
     file,
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       notes: "fixture privado temporal",
-      skus: [privateSku],
-      barcodes: [privateBarcode],
-      urls: [privateUrl],
+      products: [{ sku: privateSku, barcode: privateBarcode, url: privateUrl }],
       hidden: {
         [hidden.publicId]: {
           reason: "No vender",
@@ -218,6 +243,7 @@ test("la lista privada excluye antes de publicar y nunca filtra sus identificado
     assert.equal(availability.limited + availability.out_of_stock + availability.unknown, visible.products.length);
 
     const rules = await loadExclusionsV69(fixture.file, true);
+    assert.deepEqual(rules.products, [{ sku: fixture.privateSku, barcode: fixture.privateBarcode, url: fixture.privateUrl }]);
     const sample = base.products.find((product) => !fixture.excludedIds.includes(product.publicId));
     assert.ok(sample);
     assert.equal(isExcludedV69({ ...sample, sku: ` ${fixture.privateSku} ` }, rules), true);
@@ -230,7 +256,8 @@ test("la lista privada excluye antes de publicar y nunca filtra sus identificado
     for (const secret of [fixture.privateSku, fixture.privateBarcode, fixture.privateUrl]) {
       assert.doesNotMatch(serialized, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
-    assert.doesNotMatch(serialized, /gpsfarma|provider|barcode|"sku"|"source"/i);
+    assert.doesNotMatch(serialized, /gpsfarma|provider|"sku"|"source"/i);
+    assert.ok(publicCatalog.products.every((product) => typeof product.barcode === "string"));
     assert.ok(
       publicCatalog.products.every(
         (product) =>
@@ -243,8 +270,31 @@ test("la lista privada excluye antes de publicar y nunca filtra sus identificado
   }
 });
 
-test("SSR V6.9 respeta los cinco órdenes y mantiene marca/necesidad mutuamente exclusivas", async () => {
+test("la ficha desktop puede mostrar código de barras sin publicar el SKU privado", async () => {
   const catalog = await baseCatalog();
+  const sample = catalog.products.find((product) => product.availability === "limited");
+  assert.ok(sample);
+  const html = productPageV69(
+    { ...sample, barcode: "7790000000069", sku: "SKU-PRIVADO-NO-PUBLICAR" },
+    [],
+    "http://127.0.0.1:8109",
+  );
+  assert.match(html, /class="v69-barcode"><span>Código de barras<\/span><strong>7790000000069<\/strong>/);
+  assert.doesNotMatch(html, /SKU-PRIVADO-NO-PUBLICAR|class="v69-sku"/);
+  assert.match(searchTextV69({ ...sample, barcode: "7790000000069" }), /7790000000069/);
+});
+
+test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente exclusivas", async () => {
+  const catalog = await baseCatalog();
+  const defaultHtml = catalogPageV69(
+    catalog,
+    new URLSearchParams({ scope: "todo" }),
+    "http://127.0.0.1:8109",
+  );
+  assert.equal(bootPayload(defaultHtml).context.sort, "descuento");
+  assert.match(defaultHtml, /<option value="descuento" selected>Descuento<\/option>/);
+  assert.match(defaultHtml, /id="catalogTitleV69" class="v69-title-all">Todos los productos<\/h1>/);
+
   for (const sort of SORTS) {
     const html = catalogPageV69(
       catalog,
@@ -326,6 +376,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       "aliases",
       "availability",
       "availabilityCheckedAt",
+      "barcode",
       "brand",
       "discountPercent",
       "images",
@@ -342,12 +393,13 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.ok(
       api.products.every((product) => {
         assert.deepEqual(Object.keys(product).sort(), productKeys);
-        return !["description", "detail", "source", "provider", "sku", "barcode", "syncedAt", "taxonomy"].some(
+        return !["description", "detail", "source", "provider", "sku", "syncedAt", "taxonomy"].some(
           (key) => key in product,
         );
       }),
     );
-    assert.doesNotMatch(apiText, /gpsfarma|provider|barcode|"sku"|"source"/i);
+    assert.doesNotMatch(apiText, /gpsfarma|provider|"sku"|"source"/i);
+    assert.ok(api.products.every((product) => typeof product.barcode === "string"));
     assert.equal(health.status, "ready");
     assert.equal(health.totalProducts, 686);
     assert.deepEqual(health.availabilitySummary, publicAvailabilitySummary(api.products));
@@ -363,9 +415,11 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(pdpResponse.status, 200);
     const pdp = await pdpResponse.text();
     assert.match(pdp, /class="v69-stock is-unavailable is-pdp"/);
-    assert.match(pdp, /Sin stock en Rosario/);
-    assert.match(pdp, /Consultar disponibilidad o alternativa/);
-    assert.doesNotMatch(pdp, /gpsfarma|provider|barcode|"sku"|"source"/i);
+    assert.match(pdp, /Consultar Disponibilidad/);
+    assert.match(pdp, /class="cta v69-ask-unavailable"[^>]*>Consultar<\/a>/);
+    assert.match(pdp, /Consulta Personalizada por WhatsApp\./);
+    assert.match(pdp, /Coordinamos Retiro o Envío, Consultar formas de Pago\./);
+    assert.doesNotMatch(pdp, /gpsfarma|provider|"sku"|"source"/i);
     assert.match(pdp, new RegExp(`${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/producto-v6-9/`));
   } finally {
     await close(server);

@@ -21,6 +21,7 @@ export type ProductV69 = Product & {
     url?: string;
     [key: string]: unknown;
   };
+  taxonomy?: Record<string, unknown>;
 };
 
 export type CatalogV69 = Omit<Catalog, "products"> & {
@@ -41,10 +42,17 @@ type HiddenEntryV69 = {
 export type ExclusionsV69 = {
   schemaVersion?: number;
   notes?: string;
+  products: PrivateProductIdentityV69[];
   skus: string[];
   barcodes: string[];
   urls: string[];
   hidden: Record<string, HiddenEntryV69>;
+};
+
+export type PrivateProductIdentityV69 = {
+  sku: string;
+  barcode: string;
+  url: string;
 };
 
 let cacheKey = "";
@@ -111,12 +119,17 @@ export async function loadExclusionsV69(filePath: string, required = false): Pro
 
   const value = parsed as Record<string, unknown>;
   const hidden = validateHidden(value.hidden);
+  const products = validatePrivateProducts(value.products);
+  const skus = validateStringList(value.skus, "skus");
+  const barcodes = validateStringList(value.barcodes, "barcodes");
+  const urls = validateStringList(value.urls, "urls");
   return {
     schemaVersion: typeof value.schemaVersion === "number" ? value.schemaVersion : undefined,
     notes: typeof value.notes === "string" ? value.notes : undefined,
-    skus: validateStringList(value.skus, "skus"),
-    barcodes: validateStringList(value.barcodes, "barcodes"),
-    urls: validateStringList(value.urls, "urls"),
+    products,
+    skus: [...new Set([...skus, ...products.map((product) => product.sku).filter(Boolean)])],
+    barcodes: [...new Set([...barcodes, ...products.map((product) => product.barcode).filter(Boolean)])],
+    urls: [...new Set([...urls, ...products.map((product) => product.url).filter(Boolean)])],
     hidden,
   };
 }
@@ -150,18 +163,82 @@ function cleanProductV69(product: ProductV69): ProductV69 {
       : checkedAt && (product.availability === "limited" || String(product.availability) === "available_reference")
         ? "limited"
         : "unknown";
-  return {
+  return reviseFpsPrimaryUseV69({
     ...product,
     availability,
     availabilityCheckedAt: checkedAt,
     sku: cleanOptional(product.sku),
     barcode: cleanOptional(product.barcode),
     source: product.source && typeof product.source === "object" ? { ...product.source, url: cleanOptional(product.source.url) } : undefined,
+  });
+}
+
+const EXPLICIT_SOLAR_PRODUCT_V69 =
+  /\b(protector(?:a)? solar|proteccion solar|fotoprotector\w*|fotoproteccion|anthelios|capital soleil|ideal soleil|solar|sun|fotoultra|foto ultra|fusion water|eryfotona|actinic control|after sun|post solar|autobronceante|bronceador)\b/;
+
+const FPS_PRIMARY_INTENTS_V69 = [
+  {
+    need: "manchas",
+    pattern: /\b(anti pigment\w*|antipigment\w*|anti manchas?|antimanchas?|despigment\w*|mela b3|melasma|pigment control)\b/,
+  },
+  {
+    need: "antiedad",
+    pattern: /\b(antiedad|anti edad|antiage|anti aging|antiarrugas?|arrugas?|hyaluron filler|volume lift|elasticity|ultra firmeza|ultra age|revitalift|healthy renew|age correct|age repair|uv age|retinol|filler)\b/,
+  },
+  {
+    need: "hidratacion",
+    pattern: /\b(hidrat\w*|hydra\w*|hyalu b5|aqualia|moistur\w*|humect\w*|emoliente)\b/,
+  },
+] as const;
+
+export function reviseFpsPrimaryUseV69(product: ProductV69): ProductV69 {
+  if (product.primaryCategory !== "solares") return product;
+  const evidence = normalizeIntentTextV69(product.name);
+  if (EXPLICIT_SOLAR_PRODUCT_V69.test(evidence)) return product;
+  const intent = FPS_PRIMARY_INTENTS_V69.find((candidate) => candidate.pattern.test(evidence));
+  if (!intent) return product;
+
+  const originalNeeds = Array.isArray(product.needs) ? [...product.needs] : [];
+  const originalTaxonomy = product.taxonomy && typeof product.taxonomy === "object" ? product.taxonomy : {};
+  return {
+    ...product,
+    primaryCategory: "rostro",
+    categorySlugs: [...new Set([...(product.categorySlugs || []).filter((category) => category !== "solares"), "rostro"])],
+    needs: [intent.need],
+    taxonomy: {
+      ...originalTaxonomy,
+      reasonerVersion: "v69.1-fps-primary-intent",
+      originalNeeds,
+      selected: [
+        {
+          need: intent.need,
+          confidence: 0.98,
+          source: "name",
+          field: "name",
+          rule: "fps-is-attribute-not-primary-intent",
+        },
+      ],
+      rejected: [
+        {
+          need: "solares",
+          reason: "fps-without-explicit-solar-product-intent",
+        },
+      ],
+    },
   };
 }
 
+function normalizeIntentTextV69(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function emptyExclusionsV69(): ExclusionsV69 {
-  return { skus: [], barcodes: [], urls: [], hidden: {} };
+  return { products: [], skus: [], barcodes: [], urls: [], hidden: {} };
 }
 
 function validateStringList(value: unknown, field: string) {
@@ -170,6 +247,24 @@ function validateStringList(value: unknown, field: string) {
     throw new Error(`La lista privada V6.9 tiene un campo ${field} inválido.`);
   }
   return value.map((item) => item.trim()).filter(Boolean);
+}
+
+function validatePrivateProducts(value: unknown): PrivateProductIdentityV69[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("La lista privada V6.9 tiene un campo products inválido.");
+  return value.map((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error("La lista privada V6.9 contiene una identidad de producto inválida.");
+    }
+    const entry = raw as Record<string, unknown>;
+    const sku = typeof entry.sku === "string" ? entry.sku.trim() : "";
+    const barcode = typeof entry.barcode === "string" ? entry.barcode.trim() : "";
+    const url = typeof entry.url === "string" ? entry.url.trim() : "";
+    if (!sku && !barcode && !url) {
+      throw new Error("La lista privada V6.9 contiene una identidad vacía.");
+    }
+    return { sku, barcode, url };
+  });
 }
 
 function validateHidden(value: unknown): Record<string, HiddenEntryV69> {

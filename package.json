@@ -11,6 +11,8 @@
     "build:data:v68": "node scripts/build-v68-data.mjs",
     "sync:data:v69": "node scripts/sync-catalog-commerce-v69.mjs",
     "sync:data:v69:apply": "node scripts/sync-catalog-commerce-v69.mjs --apply",
+    "sync:identities:v69": "node scripts/sync-catalog-commerce-v69.mjs --identities",
+    "sync:identities:v69:apply": "node scripts/sync-catalog-commerce-v69.mjs --identities --apply",
     "build": "tsc -p tsconfig.json",
     "export:static": "npm run build && PUBLIC_BASE_PATH=/farmagreen-catalogo-v2-dna node dist/export-static.js",
     "export:vercel:v67": "npm run build && PUBLIC_BASE_PATH= node dist/export-v67-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v67 node scripts/prepare-vercel-static.mjs",

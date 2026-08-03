@@ -13,6 +13,7 @@ export const GPS_ORIGIN = "https://gpsfarma.com";
 export const PAGE_SIZE = 36;
 export const DEFAULT_MIN_COVERAGE = 0.95;
 export const DEFAULT_MIN_PRICE_COVERAGE = 0.95;
+export const DEFAULT_MIN_IDENTITY_COVERAGE = 0.95;
 export const DEFAULT_INVENTORY_SCOPE_V69 = Object.freeze({
   label: "Rosario",
   regionId: 722,
@@ -71,18 +72,29 @@ export function inventoryScopeV69(environment = process.env) {
   if (!/^[A-Z0-9_-]{2,32}$/.test(inventorySource)) {
     throw new Error("La fuente de inventario V6.9 es inválida.");
   }
+  if (inventorySource !== DEFAULT_INVENTORY_SCOPE_V69.inventorySource) {
+    throw new Error("V6.9 Rosario sólo admite la fuente de inventario STOM.");
+  }
+  const regionId = environmentPositiveInteger(
+    environment,
+    "V69_SYNC_LOCATION_REGION_ID",
+    DEFAULT_INVENTORY_SCOPE_V69.regionId,
+  );
+  const cityId = environmentPositiveInteger(
+    environment,
+    "V69_SYNC_LOCATION_CITY_ID",
+    DEFAULT_INVENTORY_SCOPE_V69.cityId,
+  );
+  if (
+    regionId !== DEFAULT_INVENTORY_SCOPE_V69.regionId ||
+    cityId !== DEFAULT_INVENTORY_SCOPE_V69.cityId
+  ) {
+    throw new Error("V6.9 sólo admite la localidad Rosario configurada para STOM.");
+  }
   return {
     label,
-    regionId: environmentPositiveInteger(
-      environment,
-      "V69_SYNC_LOCATION_REGION_ID",
-      DEFAULT_INVENTORY_SCOPE_V69.regionId,
-    ),
-    cityId: environmentPositiveInteger(
-      environment,
-      "V69_SYNC_LOCATION_CITY_ID",
-      DEFAULT_INVENTORY_SCOPE_V69.cityId,
-    ),
+    regionId,
+    cityId,
     inventorySource,
   };
 }
@@ -184,6 +196,15 @@ function listingAvailability(block) {
   return "unknown";
 }
 
+function listingSku(block) {
+  for (const tag of String(block || "").matchAll(/<form\b([^>]*)>/gi)) {
+    const sku = htmlAttribute(tag[1], "data-product-sku").trim();
+    if (sku) return sku.slice(0, 80);
+  }
+  const initialized = String(block || "").match(/["']product_sku["']\s*:\s*["']([^"']+)["']/i)?.[1];
+  return decodeEntities(initialized || "").trim().slice(0, 80);
+}
+
 export function computePricing(listPriceValue, offerPriceValue) {
   const rawList = Number(listPriceValue);
   const rawOffer = Number(offerPriceValue);
@@ -236,11 +257,29 @@ export function parseListingProducts(html, source) {
       sourceBrand,
       listedBrand,
       imageUrl: normalizeGpsImagePath(imageUrl) ? trustedGpsUrl(imageUrl) : "",
+      sku: listingSku(block),
       availability: listingAvailability(block),
       ...pricing,
     });
   }
   return products;
+}
+
+export function parseProductIdentityV69(html) {
+  let sku = "";
+  let barcode = "";
+  for (const row of String(html || "").matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const labelHtml = row[1].match(/<th\b[^>]*>([\s\S]*?)<\/th>/i)?.[1] || "";
+    const valueHtml = row[1].match(/<td\b[^>]*>([\s\S]*?)<\/td>/i)?.[1] || "";
+    const label = normalizeProductText(textFromHtml(labelHtml));
+    const value = textFromHtml(valueHtml).trim();
+    if (label === "sku" && value) sku = value.slice(0, 80);
+    if (/^codigo de barras?$/.test(label)) {
+      const digits = value.replace(/\D/g, "");
+      if (/^\d{8,14}$/.test(digits)) barcode = digits;
+    }
+  }
+  return { sku, barcode };
 }
 
 export function parseNextPageUrl(html) {
@@ -405,6 +444,7 @@ function updatedMatchedProduct(product, candidate, completedAt) {
   return {
     ...product,
     ...pricing,
+    sku: candidate?.sku || product?.sku,
     availability,
     availabilityCheckedAt: availability === "unknown" ? null : completedAt,
     source: {
@@ -497,6 +537,11 @@ export function synchronizeCatalog(
     ]),
   );
   const usedCandidateUrls = new Set();
+  const reservedCandidateUrls = new Set(
+    baseCatalog.products
+      .map((product) => normalizeGpsProductUrl(product?.source?.url))
+      .filter(Boolean),
+  );
   let matchedByUrl = 0;
   let matchedByImage = 0;
   let matchedByTitle = 0;
@@ -531,7 +576,7 @@ export function synchronizeCatalog(
     const candidatesByImage = uniqueCandidatesByImage(source.products);
     const knownUrl = normalizeGpsProductUrl(product?.source?.url);
     const exact = knownUrl ? candidatesByUrl.get(knownUrl) : null;
-    if (exact) {
+    if (exact && !usedCandidateUrls.has(normalizeGpsProductUrl(exact.sourceUrl))) {
       matchedByUrl += 1;
       metric.matchedByUrl += 1;
       if (validPricing(exact)) {
@@ -545,7 +590,14 @@ export function synchronizeCatalog(
     const productImageKey = normalizeGpsImagePath(
       product?.images?.original || product?.images?.detail || product?.images?.card,
     );
-    const imageMatch = productImageKey ? candidatesByImage.get(productImageKey) : null;
+    const imageCandidate = productImageKey ? candidatesByImage.get(productImageKey) : null;
+    const imageCandidateUrl = normalizeGpsProductUrl(imageCandidate?.sourceUrl);
+    const imageMatch =
+      imageCandidate &&
+      !usedCandidateUrls.has(imageCandidateUrl) &&
+      !reservedCandidateUrls.has(imageCandidateUrl)
+        ? imageCandidate
+        : null;
     if (imageMatch) {
       matchedByImage += 1;
       metric.matchedByImage += 1;
@@ -557,7 +609,15 @@ export function synchronizeCatalog(
       return trackAvailability(updatedMatchedProduct(product, imageMatch, completedAt), metric);
     }
 
-    const candidate = bestProductCandidate(product, source.products);
+    const titleCandidates = source.products.filter((candidate) => {
+      const candidateUrl = normalizeGpsProductUrl(candidate.sourceUrl);
+      return (
+        candidateUrl &&
+        !usedCandidateUrls.has(candidateUrl) &&
+        !reservedCandidateUrls.has(candidateUrl)
+      );
+    });
+    const candidate = bestProductCandidate(product, titleCandidates);
     if (candidate && Number(candidate.confidence) >= minTitleConfidence) {
       matchedByTitle += 1;
       metric.matchedByTitle += 1;
@@ -672,6 +732,129 @@ export async function runCommercialSync({
     written: apply,
     catalog,
     commerceSync: catalog.commerceSync,
+  };
+}
+
+export async function enrichCatalogIdentitiesV69(
+  catalog,
+  { fetchHtml, concurrency = 3, onProgress = defaultIdentityProgress } = {},
+) {
+  if (!catalog || !Array.isArray(catalog.products) || !catalog.products.length) {
+    throw new Error("Catálogo V6.9 inválido para completar identidades.");
+  }
+  if (typeof fetchHtml !== "function") {
+    throw new Error("La extracción de identidades V6.9 requiere una sesión comercial.");
+  }
+
+  let processed = 0;
+  const statuses = await mapLimit(catalog.products, concurrency, async (product) => {
+    const existingSku = String(product?.sku || "").trim();
+    const existingBarcode = String(product?.barcode || "").replace(/\D/g, "");
+    if (existingSku && existingBarcode) {
+      processed += 1;
+      onProgress?.({ processed, total: catalog.products.length, status: "complete", product });
+      return { product, status: "complete" };
+    }
+
+    let sourceUrl;
+    try {
+      sourceUrl = trustedGpsUrl(product?.source?.url || "");
+    } catch {
+      processed += 1;
+      onProgress?.({ processed, total: catalog.products.length, status: "missing-url", product });
+      return { product, status: "missing-url" };
+    }
+
+    try {
+      const identity = parseProductIdentityV69(await fetchHtml(sourceUrl));
+      if (existingSku && identity.sku && existingSku !== identity.sku) {
+        return { product, status: "conflict", field: "sku" };
+      }
+      if (existingBarcode && identity.barcode && existingBarcode !== identity.barcode) {
+        return { product, status: "conflict", field: "barcode" };
+      }
+      const enriched = {
+        ...product,
+        sku: existingSku || identity.sku || undefined,
+        barcode: existingBarcode || identity.barcode || undefined,
+      };
+      const status = enriched.sku && enriched.barcode ? "complete" : enriched.sku || enriched.barcode ? "partial" : "missing";
+      processed += 1;
+      onProgress?.({ processed, total: catalog.products.length, status, product: enriched });
+      return { product: enriched, status };
+    } catch (error) {
+      processed += 1;
+      onProgress?.({ processed, total: catalog.products.length, status: "failed", product, error });
+      return { product, status: "failed" };
+    }
+  });
+
+  const conflicts = statuses.filter((entry) => entry.status === "conflict");
+  if (conflicts.length) {
+    throw new Error(`La identidad comercial contradice ${conflicts.length} producto(s); no se escribió ningún cambio.`);
+  }
+  const products = statuses.map((entry) => entry.product);
+  const complete = products.filter((product) => product.sku && product.barcode).length;
+  const withSku = products.filter((product) => product.sku).length;
+  const withBarcode = products.filter((product) => product.barcode).length;
+  const metrics = {
+    products: products.length,
+    complete,
+    withSku,
+    withBarcode,
+    partial: statuses.filter((entry) => entry.status === "partial").length,
+    missing: statuses.filter((entry) => entry.status === "missing").length,
+    missingUrl: statuses.filter((entry) => entry.status === "missing-url").length,
+    failed: statuses.filter((entry) => entry.status === "failed").length,
+    coverage: Number((complete / products.length).toFixed(4)),
+  };
+  return { catalog: { ...catalog, products }, metrics };
+}
+
+export async function runIdentitySync({
+  rootDir = ROOT,
+  apply = false,
+  providedCatalog,
+  fetchHtml,
+  inventoryScope = inventoryScopeV69(),
+  now = () => new Date(),
+  minCoverage = environmentNumber("V69_MIN_IDENTITY_COVERAGE", DEFAULT_MIN_IDENTITY_COVERAGE),
+  onProgress = defaultIdentityProgress,
+  writeCatalog = writeJsonAtomically,
+} = {}) {
+  const outputPath = path.join(rootDir, "data", "catalog-v69.json");
+  const inputPath = (await fileExists(outputPath))
+    ? outputPath
+    : path.join(rootDir, "data", "catalog-v68.json");
+  const baseCatalog = providedCatalog || JSON.parse(await fs.readFile(inputPath, "utf8"));
+  const scopedFetchHtml =
+    fetchHtml ||
+    (await createLocationScopedFetchV69({
+      inventoryScope,
+    }));
+  const enriched = await enrichCatalogIdentitiesV69(baseCatalog, {
+    fetchHtml: scopedFetchHtml,
+    onProgress,
+  });
+  if (enriched.metrics.coverage < minCoverage) {
+    throw new Error(
+      `Cobertura de identidad insuficiente: ${(enriched.metrics.coverage * 100).toFixed(1)}%.`,
+    );
+  }
+  const completedAt = now().toISOString();
+  const catalog = {
+    ...enriched.catalog,
+    identitySyncedAt: completedAt,
+    identitySync: { completedAt, status: "completed", metrics: enriched.metrics },
+  };
+  if (apply) await writeCatalog(outputPath, catalog);
+  return {
+    mode: apply ? "apply" : "dry-run",
+    inputPath,
+    outputPath,
+    written: apply,
+    catalog,
+    identitySync: catalog.identitySync,
   };
 }
 
@@ -804,6 +987,12 @@ function defaultProgress(result) {
   );
 }
 
+function defaultIdentityProgress({ processed, total, status }) {
+  if (processed === total || processed % 25 === 0) {
+    process.stderr.write(`[identity-v69] ${processed}/${total} (${status}).\n`);
+  }
+}
+
 async function mapLimit(items, limit, worker) {
   const results = new Array(items.length);
   let cursor = 0;
@@ -854,10 +1043,11 @@ async function fileExists(filePath) {
 }
 
 function cliOptions(argv) {
-  const unknown = argv.filter((argument) => !["--apply", "--dry-run", "--help"].includes(argument));
+  const unknown = argv.filter((argument) => !["--apply", "--dry-run", "--identities", "--help"].includes(argument));
   if (unknown.length) throw new Error(`Argumento no reconocido: ${unknown[0]}`);
   return {
     apply: argv.includes("--apply"),
+    identities: argv.includes("--identities"),
     help: argv.includes("--help"),
   };
 }
@@ -867,7 +1057,21 @@ export async function main(argv = process.argv.slice(2)) {
   if (options.help) {
     process.stdout.write(
       "Uso: node scripts/sync-catalog-commerce-v69.mjs [--dry-run|--apply]\n" +
-        "Sin --apply valida las 11 fuentes y no escribe archivos.\n",
+        "       node scripts/sync-catalog-commerce-v69.mjs --identities [--dry-run|--apply]\n" +
+        "Sin --apply valida y no escribe archivos.\n",
+    );
+    return;
+  }
+  if (options.identities) {
+    const result = await runIdentitySync({ apply: options.apply });
+    process.stdout.write(
+      `${JSON.stringify({
+        mode: result.mode,
+        written: result.written,
+        output: path.relative(ROOT, result.outputPath),
+        completedAt: result.identitySync.completedAt,
+        metrics: result.identitySync.metrics,
+      })}\n`,
     );
     return;
   }
