@@ -430,7 +430,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
   try {
     const response = await fetch(`${productionOrigin}/catalogo-v6-9/`);
     assert.equal(response.status, 503);
-    assert.match(await response.text(), /únicamente como revisión local/);
+    assert.match(await response.text(), /todavía no está habilitada/);
   } finally {
     await close(production);
     if (previous.catalog === undefined) delete process.env.V69_CATALOG_FILE;
@@ -445,5 +445,28 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
 
   assert.equal(catalogReadyForRuntimeV69(base, { NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" }), true);
   assert.equal(catalogReadyForRuntimeV69(base, { NODE_ENV: "production", V69_LOCAL_PREVIEW: "1" }), false);
+  const productionReady = {
+    ...base,
+    version: 6.9 as const,
+    commerceSyncedAt: "2026-08-03T10:00:00.000Z",
+    products: base.products.map((product) => ({
+      ...product,
+      availability: "limited" as const,
+      availabilityCheckedAt: "2026-08-03T10:00:00.000Z",
+      images: {
+        ...product.images,
+        card: "https://storage.googleapis.com/farmagreen-catalog-images/v69/card.jpg",
+        detail: "https://storage.googleapis.com/farmagreen-catalog-images/v69/detail.jpg",
+      },
+    })),
+  };
+  assert.equal(
+    catalogReadyForRuntimeV69(productionReady, {
+      NODE_ENV: "production",
+      V69_ENABLE_PRODUCTION: "1",
+      PUBLIC_ORIGIN: "https://farmagreen-v69-preprod.example",
+    }),
+    true,
+  );
   assert.equal(sourceImageBridgeEnabled({ NODE_ENV: "production", V69_LOCAL_PREVIEW: "1" }), false);
 });

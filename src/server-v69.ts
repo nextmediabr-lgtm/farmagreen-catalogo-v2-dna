@@ -1,6 +1,11 @@
 import type http from "node:http";
 import type { CatalogV69 } from "./data-v69.js";
 import {
+  RuntimeHttpErrorV69,
+  createCommerceRuntimeV69,
+  type CommerceRuntimeV69,
+} from "./commerce-runtime-v69.js";
+import {
   catalogPageV69,
   catalogV69,
   isPrivateSourceImageV69,
@@ -39,8 +44,32 @@ export function sourceImageBridgeEnabled(environment: Environment = process.env)
   );
 }
 
-export function catalogReadyForRuntimeV69(_catalog: CatalogV69, environment: Environment = process.env) {
-  return environment.NODE_ENV !== "production" && environment.V69_LOCAL_PREVIEW === "1";
+export function catalogReadyForRuntimeV69(catalog: CatalogV69, environment: Environment = process.env) {
+  if (environment.NODE_ENV !== "production") return environment.V69_LOCAL_PREVIEW === "1";
+  if (environment.V69_ENABLE_PRODUCTION !== "1") return false;
+  try {
+    publicOriginV69("http://invalid.local", environment);
+  } catch {
+    return false;
+  }
+  return (
+    catalog.version === 6.9 &&
+    Boolean(catalog.commerceSyncedAt) &&
+    catalog.products.length > 0 &&
+    catalog.products.every(
+      (product) =>
+        product.availability !== "unknown" &&
+        Boolean(product.availabilityCheckedAt) &&
+        (["card", "detail"] as const).every((kind) => {
+          try {
+            const image = new URL(sourceImageV69(product, kind));
+            return image.protocol === "https:" && image.hostname === "storage.googleapis.com";
+          } catch {
+            return false;
+          }
+        }),
+    )
+  );
 }
 
 export function publicOriginV69(requestOrigin: string, environment: Environment = process.env) {
@@ -71,18 +100,48 @@ export async function handleV69Request(
   url: URL,
   pathname: string,
   environment: Environment = process.env,
+  commerceRuntime: CommerceRuntimeV69 = createCommerceRuntimeV69(environment),
+  request?: http.IncomingMessage,
 ) {
   const isV69Route =
     pathname === "/catalogo-v6-9" ||
     pathname === "/api/catalog-v6-9" ||
     pathname === "/api/catalog-v6-9/health" ||
+    pathname === "/internal/catalog-v6-9/refresh" ||
     pathname.startsWith("/producto-v6-9/") ||
     pathname.startsWith("/media-v6-9/");
   if (!isV69Route) return false;
 
+  try {
+    await commerceRuntime.initialize();
+  } catch {
+    sendTextV69(response, "V6.9 no pudo inicializarse.", 503);
+    return true;
+  }
+
+  if (pathname === "/internal/catalog-v6-9/refresh") {
+    if ((request?.method || "GET").toUpperCase() !== "POST") {
+      sendJsonV69(response, { error: "Método no permitido." }, 405, { allow: "POST" });
+      return true;
+    }
+    try {
+      await commerceRuntime.authorizeSchedulerRequest(request?.headers.authorization);
+      const result = await commerceRuntime.refresh(schedulerIdempotencyKeyV69(request));
+      sendJsonV69(response, result, 200, { "cache-control": "no-store" });
+    } catch (error) {
+      const status = error instanceof RuntimeHttpErrorV69 ? error.status : 500;
+      const message =
+        error instanceof RuntimeHttpErrorV69
+          ? error.message
+          : "No se pudo actualizar el catálogo.";
+      sendJsonV69(response, { error: message }, status, { "cache-control": "no-store" });
+    }
+    return true;
+  }
+
   const catalog = await catalogV69();
   if (!catalogReadyForRuntimeV69(catalog, environment)) {
-    sendTextV69(response, "V6.9 está habilitada únicamente como revisión local.", 503);
+    sendTextV69(response, "V6.9 todavía no está habilitada para esta ejecución.", 503);
     return true;
   }
 
@@ -108,7 +167,12 @@ export async function handleV69Request(
   }
 
   if (pathname === "/api/catalog-v6-9/health") {
-    sendJsonV69(response, catalogHealthV69(catalog), 200, { "cache-control": "no-store" });
+    sendJsonV69(
+      response,
+      { ...catalogHealthV69(catalog), runtime: commerceRuntime.health() },
+      200,
+      { "cache-control": "no-store" },
+    );
     return true;
   }
 
@@ -118,6 +182,18 @@ export async function handleV69Request(
   }
 
   return true;
+}
+
+function schedulerIdempotencyKeyV69(request: http.IncomingMessage | undefined) {
+  if (!request) return "";
+  const jobName = headerV69(request, "x-cloudscheduler-jobname");
+  const scheduleTime = headerV69(request, "x-cloudscheduler-schedule-time");
+  return [jobName, scheduleTime].filter(Boolean).join("|");
+}
+
+function headerV69(request: http.IncomingMessage, name: string) {
+  const value = request.headers[name];
+  return Array.isArray(value) ? value[0] || "" : String(value || "");
 }
 
 function sendHtmlV69(response: http.ServerResponse, body: string, status = 200) {

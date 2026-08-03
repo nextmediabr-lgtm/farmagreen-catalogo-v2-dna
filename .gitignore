@@ -8,5 +8,6 @@ dist/
 .vercel
 .gstack/
 .codex-artifacts/
+.gcp-v69/
 data/catalog-exclusions-v69.local.json
 data/catalog-v69.json

@@ -13,6 +13,7 @@
     "sync:data:v69:apply": "node scripts/sync-catalog-commerce-v69.mjs --apply",
     "sync:identities:v69": "node scripts/sync-catalog-commerce-v69.mjs --identities",
     "sync:identities:v69:apply": "node scripts/sync-catalog-commerce-v69.mjs --identities --apply",
+    "prepare:gcp:v69": "npm run build && node scripts/prepare-gcp-catalog-v69.mjs",
     "build": "tsc -p tsconfig.json",
     "export:static": "npm run build && PUBLIC_BASE_PATH=/farmagreen-catalogo-v2-dna node dist/export-static.js",
     "export:vercel:v67": "npm run build && PUBLIC_BASE_PATH= node dist/export-v67-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v67 node scripts/prepare-vercel-static.mjs",
@@ -24,8 +25,9 @@
     "test:unit": "node --import tsx --test tests/*.test.ts",
     "test:layout:v68": "node --test tests/v68-layout.e2e.mjs",
     "test:layout:v69": "node --test tests/v69-layout.e2e.mjs",
-    "test:sync:v69": "node --test tests/v69-commerce-sync.test.mjs",
+    "test:sync:v69": "node --test tests/v69-commerce-sync.test.mjs tests/v69-gcp-preparation.test.mjs",
     "verify:v69": "npm run build && npm run test:unit && npm run test:sync:v69 && npm run test:layout:v69",
+    "verify:sync:v69": "npm run build && node --import tsx --test tests/v69-commerce-runtime.test.ts tests/v69-commerce-sync.test.mjs",
     "verify": "npm run build:data:v68 && npm run build && npm run test:unit",
     "verify:release:v68": "npm run verify && npm run test:layout:v68"
   },
@@ -34,5 +36,8 @@
     "playwright-core": "^1.62.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "google-auth-library": "^10.9.1"
   }
 }

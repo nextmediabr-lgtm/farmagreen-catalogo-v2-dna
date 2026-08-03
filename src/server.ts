@@ -7,6 +7,7 @@ import { catalogPage, notFound, productPage } from "./render.js";
 import { catalogPageV67, catalogV67, notFoundPageV67, productPageV67, productV67, similarV67 } from "./render-v67.js";
 import { handleV68Request, headersV68, type Environment } from "./server-v68.js";
 import { handleV69Request } from "./server-v69.js";
+import { createCommerceRuntimeV69 } from "./commerce-runtime-v69.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = path.join(ROOT, "public");
@@ -33,6 +34,7 @@ const PUBLIC_ASSETS = new Set([
 ]);
 
 export function app(environment: Environment = process.env) {
+  const commerceRuntimeV69 = createCommerceRuntimeV69(environment);
   return http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", `http://${request.headers.host || "local"}`);
@@ -42,7 +44,7 @@ export function app(environment: Environment = process.env) {
         sendRedirect(response, DEFAULT_ROUTE);
         return;
       }
-      if (await handleV69Request(response, url, pathname, environment)) return;
+      if (await handleV69Request(response, url, pathname, environment, commerceRuntimeV69, request)) return;
       if (await handleV68Request(response, url, pathname, environment)) return;
 
       if (pathname === "/catalogo-v6-7") {

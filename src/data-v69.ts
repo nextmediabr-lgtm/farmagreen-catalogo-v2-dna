@@ -57,8 +57,10 @@ export type PrivateProductIdentityV69 = {
 
 let cacheKey = "";
 let cache: CatalogV69 | null = null;
+let runtimeCatalog: CatalogV69 | null = null;
 
 export async function catalogV69Data(environment: NodeJS.ProcessEnv = process.env): Promise<CatalogV69> {
+  if (runtimeCatalog) return runtimeCatalog;
   const catalogPath = environment.V69_CATALOG_FILE?.trim() || (await exists(SYNCED_CATALOG) ? SYNCED_CATALOG : FALLBACK_CATALOG);
   const exclusionsPath = environment.V69_EXCLUSIONS_FILE?.trim() || DEFAULT_EXCLUSIONS;
   const key = [
@@ -74,28 +76,29 @@ export async function catalogV69Data(environment: NodeJS.ProcessEnv = process.en
   };
   if (!Array.isArray(parsed.products)) throw new Error("Catálogo base V6.9 inválido.");
 
-  const products = parsed.products.map(cleanProductV69);
   const exclusions = await loadExclusionsV69(exclusionsPath, environment.V69_REQUIRE_EXCLUSIONS === "1");
-  const visible = products.filter((product) => !isExcludedV69(product, exclusions));
-  const commerceSyncedAt = validTimestamp(parsed.commerceSyncedAt || parsed.commerceSync?.completedAt);
-  const latestAvailabilityCheck =
-    visible
-      .map((product) => product.availabilityCheckedAt)
-      .filter((value): value is string => Boolean(value))
-      .sort()
-      .at(-1) || null;
 
   cacheKey = key;
-  cache = {
-    ...parsed,
-    version: 6.9,
-    syncedAt: parsed.syncedAt,
-    availabilityReferenceAt: commerceSyncedAt || latestAvailabilityCheck,
-    commerceSyncedAt,
-    totalProducts: visible.length,
-    products: visible,
-  };
+  cache = normalizeCatalogV69(parsed, exclusions);
   return cache;
+}
+
+export async function setCatalogV69Data(
+  value: unknown,
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Snapshot V6.9 inválido.");
+  }
+  const exclusionsPath = environment.V69_EXCLUSIONS_FILE?.trim() || DEFAULT_EXCLUSIONS;
+  const exclusions = await loadExclusionsV69(
+    exclusionsPath,
+    environment.V69_REQUIRE_EXCLUSIONS === "1",
+  );
+  runtimeCatalog = normalizeCatalogV69(value as CatalogV69, exclusions);
+  cache = runtimeCatalog;
+  cacheKey = "runtime";
+  return runtimeCatalog;
 }
 
 export async function loadExclusionsV69(filePath: string, required = false): Promise<ExclusionsV69> {
@@ -153,6 +156,35 @@ export function publicAvailabilityV69(product: Pick<ProductV69, "availability">)
 export function resetCatalogV69CacheForTests() {
   cache = null;
   cacheKey = "";
+  runtimeCatalog = null;
+}
+
+function normalizeCatalogV69(
+  parsed: Omit<CatalogV69, "version" | "availabilityReferenceAt" | "commerceSyncedAt"> & {
+    commerceSyncedAt?: unknown;
+    commerceSync?: { completedAt?: string };
+  },
+  exclusions: ExclusionsV69,
+): CatalogV69 {
+  if (!Array.isArray(parsed.products)) throw new Error("Catálogo base V6.9 inválido.");
+  const products = parsed.products.map(cleanProductV69);
+  const visible = products.filter((product) => !isExcludedV69(product, exclusions));
+  const commerceSyncedAt = validTimestamp(parsed.commerceSyncedAt || parsed.commerceSync?.completedAt);
+  const latestAvailabilityCheck =
+    visible
+      .map((product) => product.availabilityCheckedAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) || null;
+  return {
+    ...parsed,
+    version: 6.9,
+    syncedAt: parsed.syncedAt,
+    availabilityReferenceAt: commerceSyncedAt || latestAvailabilityCheck,
+    commerceSyncedAt,
+    totalProducts: visible.length,
+    products: visible,
+  };
 }
 
 function cleanProductV69(product: ProductV69): ProductV69 {
