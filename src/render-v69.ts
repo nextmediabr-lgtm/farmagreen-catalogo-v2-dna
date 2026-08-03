@@ -319,7 +319,7 @@ export function productPageV69(product: ProductV69, related: ProductV69[], origi
       ogType: "product",
       ogImage: safeImage(product, "detail"),
       homeHref: "/catalogo-v6-9/",
-      links: [{ href: "/catalogo-v6-9/#productos-v69", label: "Catálogo" }],
+      links: [{ href: "#", label: "Volver", historyBack: true }],
     },
   );
 }
@@ -450,7 +450,7 @@ function currentPriceV69(product: ProductV69) {
   return Math.round(Number(product.offerPrice || product.listPrice || 0));
 }
 
-type ShellLink = { href: string; label: string; nav?: string };
+type ShellLink = { href: string; label: string; nav?: string; historyBack?: boolean };
 type ShellOptions = {
   homeHref?: string;
   links?: ShellLink[];
@@ -468,7 +468,7 @@ function shell69(title: string, description: string, body: string, options: Shel
   const canonical = canonicalUrl ? `<link rel="canonical" href="${e(canonicalUrl)}">` : "";
   const ogImage = options.ogImage ? new URL(options.ogImage, options.origin || "http://127.0.0.1:8109").toString() : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImage ? `<meta property="og:image" content="${e(ogImage)}">` : ""}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-5.css")}"><link rel="stylesheet" href="${u("/styles-v6-6.css")}"><link rel="stylesheet" href="${u("/styles-v6-7.css")}"><link rel="stylesheet" href="${u("/styles-v6-9.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.nav ? ` data-nav="${e(link.nav)}"` : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main><a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9.js")}"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-5.css")}"><link rel="stylesheet" href="${u("/styles-v6-6.css")}"><link rel="stylesheet" href="${u("/styles-v6-7.css")}"><link rel="stylesheet" href="${u("/styles-v6-9.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main><a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9.js")}"></script></body></html>`;
 }
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109") {

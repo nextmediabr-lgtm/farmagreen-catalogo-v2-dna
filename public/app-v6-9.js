@@ -559,9 +559,13 @@ function boot() {
   $("#searchV69")?.addEventListener("input", (event) => {
     closeFilterMenus();
     S.q = event.target.value;
+    if (!S.q.trim()) {
+      reset();
+      return;
+    }
     S.brand = "Todas";
     S.need = "Todas";
-    S.scope = S.q ? "todo" : S.scope;
+    S.scope = "todo";
     S.limit = PAGE;
     render();
   });
@@ -639,7 +643,17 @@ function boot() {
   });
 }
 
+function wireHistoryBack() {
+  $$('[data-history-back]').forEach((link) =>
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      history.back();
+    }),
+  );
+}
+
 wireImageFallbacks();
+wireHistoryBack();
 boot();
 refreshFloatingWhatsapp();
 window.matchMedia("(max-width: 760px)").addEventListener?.("change", refreshFloatingWhatsapp);

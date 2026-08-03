@@ -395,6 +395,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.locator(".v69-stock.is-pdp").waitFor();
+    assert.equal((await page.locator("[data-history-back]").innerText()).trim(), "Volver");
     assert.match(await page.locator(".v69-stock.is-pdp").innerText(), /Disponible para Entrega/i);
     assert.doesNotMatch(await page.locator(".cta").getAttribute("class"), /v69-ask-unavailable/);
     assert.match(await page.locator(".cta").innerText(), /Consultar este producto por WhatsApp/i);
@@ -462,9 +463,14 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator("#gridV69 .v69-stock").count(), 48);
     assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
     assert.equal(new URL(page.url()).searchParams.has("orden"), false);
+    assert.equal(await page.locator("#clearFiltersV69").isVisible(), false);
+    assert.equal(await page.locator(".toplinks").isVisible(), false);
     const compactMobile = await page.evaluate(() => {
       const header = document.querySelector(".top");
+      const logo = document.querySelector(".brandmark img");
       const searchTitle = document.querySelector(".v67-title h2");
+      const search = document.querySelector("#searchV69");
+      const sort = document.querySelector(".v69-sort");
       const catalogTitle = document.querySelector("#catalogTitleV69");
       const titleLines = new Set(
         [...(searchTitle?.querySelectorAll("span") || [])].map((span) => Math.round(span.getBoundingClientRect().top)),
@@ -472,6 +478,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       const catalogStyle = catalogTitle ? getComputedStyle(catalogTitle) : null;
       return {
         headerHeight: Math.round(header?.getBoundingClientRect().height || 0),
+        logoWidth: Math.round(logo?.getBoundingClientRect().width || 0),
+        searchWidth: Math.round(search?.getBoundingClientRect().width || 0),
+        searchTitleWidth: Math.round(searchTitle?.getBoundingClientRect().width || 0),
+        sortHeight: Math.round(sort?.getBoundingClientRect().height || 0),
         searchTitleLines: titleLines.size,
         catalogTitleHeight: Math.round(catalogTitle?.getBoundingClientRect().height || 0),
         catalogTitleLineHeight: catalogStyle ? Number.parseFloat(catalogStyle.lineHeight) : 0,
@@ -479,6 +489,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       };
     });
     assert.ok(compactMobile.headerHeight <= 52, `El header móvil mide ${compactMobile.headerHeight}px.`);
+    assert.ok(compactMobile.logoWidth >= 185, `El logo móvil mide ${compactMobile.logoWidth}px.`);
+    assert.ok(compactMobile.searchWidth >= compactMobile.searchTitleWidth * 3);
+    assert.ok(compactMobile.sortHeight <= 32, `El selector de orden mide ${compactMobile.sortHeight}px.`);
     assert.equal(compactMobile.searchTitleLines, 2);
     assert.ok(compactMobile.catalogTitleHeight <= compactMobile.catalogTitleLineHeight + 2);
     assert.equal(compactMobile.catalogTitleFits, true);
@@ -499,6 +512,34 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.ok(mobileType.brand >= 17);
     assert.ok(mobileType.title >= 15.5);
     assert.ok(mobileType.fact < mobileType.title, "La información secundaria no debe competir con el título.");
+
+    await page.locator("#searchV69").fill("eucerin");
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("q") === "eucerin");
+    await page.locator("#searchV69").fill("");
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("scope"));
+    assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
+
+    const mobileReturnUrl = page.url();
+    await page.goto(`${runtime.origin}/producto-v6-9/${available.slug}/`, {
+      waitUntil: "domcontentloaded",
+    });
+    assert.equal(await page.locator(".toplinks").isVisible(), true);
+    assert.equal((await page.locator(".toplinks").innerText()).trim(), "Volver");
+    assert.equal(await page.locator(".float").isVisible(), false);
+    assert.deepEqual(
+      await page.locator(".cta").evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          alignItems: style.alignItems,
+          justifyContent: style.justifyContent,
+          textAlign: style.textAlign,
+        };
+      }),
+      { alignItems: "center", justifyContent: "center", textAlign: "center" },
+    );
+
+    await page.locator("[data-history-back]").click();
+    await page.waitForURL(mobileReturnUrl);
 
     await page.setViewportSize({ width: 360, height: 800 });
     assert.equal(await firstRowColumns(page), 2);

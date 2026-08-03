@@ -431,23 +431,24 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
 }
 
 @media(max-width:760px){
-  /* Encabezado móvil compacto: marca, navegación y WhatsApp en una sola fila. */
+  /* Encabezado móvil: la navegación completa vive en el catálogo, no en la barra sticky. */
   body.v69 .top{
-    grid-template-columns:108px minmax(0,1fr) 36px;
-    grid-template-areas:"brand links action";
-    gap:6px;
-    min-height:48px;
-    padding:6px 8px;
+    grid-template-columns:minmax(0,1fr) 38px;
+    grid-template-areas:"brand action";
+    gap:10px;
+    min-height:52px;
+    padding:6px 10px;
   }
   body.v69 .brandmark{padding:0}
-  body.v69 .top img{max-width:108px;max-height:31px}
+  body.v69 .top img{max-width:192px;max-height:36px}
   body.v69 .toplinks{
-    justify-content:center;
-    gap:6px;
-    min-width:0;
-    padding:0;
-    overflow:hidden;
+    display:none;
   }
+  body.v69.product-detail .top{
+    grid-template-columns:minmax(0,1fr) auto 38px;
+    grid-template-areas:"brand links action";
+  }
+  body.v69.product-detail .toplinks{display:flex;justify-content:center;min-width:0;padding:0}
   body.v69 .toplinks a{
     min-width:0;
     padding:6px 0;
@@ -456,18 +457,29 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
     line-height:1;
     white-space:nowrap;
   }
-  body.v69 .topwa{width:36px;height:36px;padding:0}
-  body.v69 .topwa svg{width:20px;height:20px}
+  body.v69 .topwa{width:38px;height:38px;padding:0}
+  body.v69 .topwa svg{width:22px;height:22px}
   body.v69 #buscar-v69,
   body.v69 #marcas-v69,
-  body.v69 #productos-v69{scroll-margin-top:58px}
-  body.v69 .v67-primary-row{grid-template-columns:118px minmax(0,1fr) 56px}
-  body.v69 .v67-title h2{font-size:20px;line-height:.92}
+  body.v69 #productos-v69{scroll-margin-top:62px}
+  body.v69 .v67-primary-row{
+    grid-template-columns:82px minmax(0,1fr);
+    grid-template-areas:"title search";
+    gap:7px;
+  }
+  body.v69 #clearFiltersV69{display:none}
+  body.v69 .v67-title h2{font-size:16px;line-height:.92}
   body.v69 .v67-title h2 span{display:block;white-space:nowrap}
-  body.v69 .v67-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  body.v69 .v69-sort{grid-column:1/-1}
-  body.v69 .v69-sort select{font-size:15px}
   body.v69 .v67-search input{font-size:15.5px}
+  body.v69 .v67-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  body.v69 .v69-sort{
+    grid-column:1/-1;
+    height:32px;
+    min-height:32px;
+    padding:2px 9px;
+  }
+  body.v69 .v69-sort .v67-menu-label{font-size:8px;line-height:1}
+  body.v69 .v69-sort select{font-size:15px;line-height:1}
   body.v69 .v67-menu-label{font-size:12px;letter-spacing:.07em}
   body.v69 .v67-menu-trigger strong{font-size:15px}
   body.v69 .v67-need-option{font-size:12px}
@@ -514,6 +526,23 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
   body.v69.product-detail .v69-detail h2{font-size:25px}
   body.v69.product-detail .v69-detail-section{margin-top:14px;padding-top:12px}
   body.v69.product-detail .v69-detail-section h3{font-size:17px}
+  body.v69.product-detail .cta{
+    align-items:center;
+    justify-content:center;
+    min-height:58px;
+    padding:11px 14px;
+    line-height:1.15;
+    text-align:center;
+  }
+  body.v69 .float{
+    right:8px;
+    bottom:calc(8px + env(safe-area-inset-bottom));
+    width:48px;
+    height:48px;
+    opacity:.94;
+  }
+  body.v69 .float svg{width:22px;height:22px}
+  body.v69.product-detail .float{display:none}
   body.v69 .float.is-cta-visible{opacity:0;pointer-events:none}
   body.v69 #catalogTitleV69.v69-title-all{
     font-size:clamp(27px,7.8vw,31px);
@@ -524,20 +553,21 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
 
 @media(max-width:370px){
   body.v69 .top{
-    grid-template-columns:88px minmax(0,1fr) 32px;
-    gap:3px;
-    min-height:44px;
-    padding:6px;
+    grid-template-columns:minmax(0,1fr) 36px;
+    gap:7px;
+    min-height:48px;
+    padding:5px 6px;
   }
-  body.v69 .top img{max-width:88px;max-height:27px}
-  body.v69 .toplinks{gap:3px}
+  body.v69.product-detail .top{grid-template-columns:minmax(0,1fr) auto 36px}
+  body.v69 .top img{max-width:172px;max-height:33px}
   body.v69 .toplinks a{font-size:11.5px}
-  body.v69 .topwa{width:32px;height:32px}
-  body.v69 .v67-primary-row{grid-template-columns:108px minmax(0,1fr) 50px;gap:5px}
-  body.v69 .v67-title h2{font-size:18.5px}
+  body.v69 .topwa{width:36px;height:36px}
+  body.v69 .v67-primary-row{grid-template-columns:74px minmax(0,1fr);gap:5px}
+  body.v69 .v67-title h2{font-size:14.5px}
   body.v69 .v67-menu-label{font-size:9.5px}
   body.v69 .v69-sort{padding-right:7px;padding-left:7px}
-  body.v69 .v69-sort select{font-size:11.5px}
+  body.v69 .v69-sort .v67-menu-label{font-size:7.5px}
+  body.v69 .v69-sort select{font-size:13px}
   body.v69 .v66-card .v69-stock{font-size:8px;letter-spacing:-.01em}
   body.v69.product-detail .v66-pdp-facts dt{font-size:9px}
   body.v69.product-detail .v66-pdp-facts dd{font-size:13px}
