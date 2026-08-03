@@ -443,6 +443,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(html, /gpsfarma/i);
     assert.match(home, /class="v69-home-sections"/);
     assert.match(root, /class="v69-home-sections"/);
+    assert.match(root, /<meta name="robots" content="index,follow">/);
     assert.match(root, /id="marca-eucerin"/);
     assert.ok(
       root.indexOf('id="marca-eucerin"') < root.indexOf('id="marca-dermaglos"'),

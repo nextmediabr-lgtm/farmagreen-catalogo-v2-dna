@@ -31,7 +31,6 @@ export function headersV69(extra: Record<string, string> = {}) {
     "x-frame-options": "SAMEORIGIN",
     "referrer-policy": "no-referrer",
     "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
-    "x-robots-tag": "noindex,nofollow",
     "content-security-policy": V69_CSP,
     ...extra,
   };
