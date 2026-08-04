@@ -45,7 +45,6 @@ const SEARCH_ALIASES = {
   "la roche": ["la roche posay"],
   lrp: ["la roche posay"],
   dermaglo: ["dermaglos"],
-  vichi: ["vichy"],
   loreal: ["l oreal revitalift", "l oreal", "l oréal revitalift"],
   isdin: ["isdin"],
   cetafil: ["cetaphil"],
@@ -54,6 +53,27 @@ const SEARCH_ALIASES = {
   ena: ["ena", "ena suplementos", "ena sport"],
 };
 const SEARCH_STOPWORDS = new Set(["a", "al", "de", "del", "el", "la", "las", "los", "para", "por", "en", "un", "una", "unos", "unas", "y"]);
+const SEARCH_MIN_CHARS = 3;
+const SHORT_EXACT_SEARCH_TERMS = new Set(["ena", "lrp", "gel", "fps", "spf", "uv", "b5", "ha", "oil"]);
+const SEARCH_CONCEPTS = [
+  { exact: ["marcas"], stems: ["cicatr", "estria"], targets: ["reparacion", "manchas", "cicatriz", "estrias"] },
+  { stems: ["cuerp", "corpor"], targets: ["cuerpo", "corporal"] },
+  { stems: ["cara", "faci", "rostr"], targets: ["cara", "facial", "rostro"] },
+  {
+    stems: ["arrug", "antiarrug", "antiedad", "antiage", "linea", "expresion", "flex", "elast", "firme", "flacid", "lifting", "envejec"],
+    targets: ["antiedad", "antiarrugas", "arrugas", "lineas expresion", "firmeza", "elasticidad"],
+  },
+  { stems: ["manch", "pigment", "melasm"], targets: ["manchas", "antimanchas", "pigmentacion", "melasma"] },
+  {
+    stems: ["sec", "resec", "deshidra", "agriet", "agriat", "griet", "xerosis", "tirante", "asper", "descam"],
+    targets: ["hidratacion", "reparacion", "sequedad"],
+  },
+  { stems: ["hidra", "humect", "moistur"], targets: ["hidratacion", "hidratante", "humectante"] },
+  { stems: ["crem", "locion", "emulsion", "balsam", "pomad", "unguent"], targets: ["crema", "locion", "emulsion", "balsamo", "pomada", "unguento"] },
+  { stems: ["serum", "suero", "concentr", "booster", "ampoll"], targets: ["serum", "suero", "concentrado", "booster", "ampolla"] },
+  { stems: ["cabell", "pelo", "capilar"], targets: ["cabello", "pelo", "capilar"] },
+  { stems: ["acne", "grano", "imperfec", "gras"], targets: ["acne", "granos", "imperfecciones", "piel grasa"] },
+];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -77,8 +97,51 @@ function brandName(product) {
   return product?.brand?.name || "Farmagreen";
 }
 
-function productImage(product) {
+function productImageUrl(product) {
   return product?.images?.card || product?.images?.detail || "";
+}
+
+function responsiveVariants(product, format) {
+  const variants = product?.images?.responsive?.card?.[format];
+  if (!variants || typeof variants !== "object") return "";
+  return Object.entries(variants)
+    .map(([width, source]) => [Number.parseInt(width, 10), String(source || "")])
+    .filter(([width, source]) => Number.isInteger(width) && width > 0 && source)
+    .sort((left, right) => left[0] - right[0])
+    .map(([width, source]) => `${esc(source)} ${width}w`)
+    .join(", ");
+}
+
+function productImageMarkup(product, priority = false) {
+  const image = productImageUrl(product);
+  const name = product?.name || "Producto Farmagreen";
+  if (!image) {
+    return `<div class="v66-media v67-image-missing" role="img" aria-label="Imagen no disponible para ${esc(name)}"></div>`;
+  }
+  const responsive = product?.images?.responsive?.card;
+  const width = Number.isInteger(Number(responsive?.width)) && Number(responsive.width) > 0 ? Number(responsive.width) : 1000;
+  const height = Number.isInteger(Number(responsive?.height)) && Number(responsive.height) > 0 ? Number(responsive.height) : 1000;
+  const sizes = "(max-width: 760px) calc((100vw - 52px) / 2), (max-width: 980px) calc((100vw - 72px) / 3), calc((100vw - 112px) / 5)";
+  const avif = responsiveVariants(product, "avif");
+  const webp = responsiveVariants(product, "webp");
+  const sources = `${avif ? `<source type="image/avif" srcset="${avif}" sizes="${sizes}">` : ""}${webp ? `<source type="image/webp" srcset="${webp}" sizes="${sizes}">` : ""}`;
+  return `<div class="v66-media"><picture>${sources}<img src="${esc(image)}" alt="${esc(name)}" width="${width}" height="${height}" decoding="async"${priority ? ' loading="eager" fetchpriority="high"' : ' loading="lazy"'}></picture></div>`;
+}
+
+function derivedSearchSignals(product) {
+  const name = norm(product?.name);
+  const signals = [];
+  if (/\b(piel (muy )?(seca|reseca|resecada|agrietada)|labios? (secos?|agrietados?)|manos? (secas?|agrietadas?))\b/.test(name)) {
+    signals.push("sequedad");
+  }
+  if (
+    (product?.needs || []).includes("nutricion") &&
+    /\b\d+(?:[.,]\d+)?\s*(g|gr|grs|kg)\b/.test(name) &&
+    !/(caps|capsula|comprim|tableta|sobre|gomita|unidad)/.test(name)
+  ) {
+    signals.push("polvo");
+  }
+  return signals;
 }
 
 function blob(product) {
@@ -91,8 +154,24 @@ function blob(product) {
       product.line,
       product.barcode,
       ...(product.aliases || []),
+      product.primaryCategory,
       ...needs,
       ...needs.map((need) => NEED_LABELS[need] || need),
+      ...derivedSearchSignals(product),
+    ].join(" "),
+  );
+}
+
+function semanticBlob(product) {
+  const needs = product.needs || [];
+  return norm(
+    [
+      product.name,
+      product.line,
+      product.primaryCategory,
+      ...needs,
+      ...needs.map((need) => NEED_LABELS[need] || need),
+      ...derivedSearchSignals(product),
     ].join(" "),
   );
 }
@@ -108,45 +187,226 @@ function levenshtein(left, right) {
         matrix[row][column - 1] + 1,
         matrix[row - 1][column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
       );
+      if (
+        row > 1 &&
+        column > 1 &&
+        left[row - 1] === right[column - 2] &&
+        left[row - 2] === right[column - 1]
+      ) {
+        matrix[row][column] = Math.min(matrix[row][column], matrix[row - 2][column - 2] + 1);
+      }
     }
   }
   return matrix[left.length][right.length];
 }
 
-function fuzzyIncludes(text, rawTerm) {
+function isSearchStopWordLike(term) {
+  if (SHORT_EXACT_SEARCH_TERMS.has(term) || /^\d+$/.test(term)) return false;
+  if (SEARCH_STOPWORDS.has(term)) return true;
+  if (directConceptIndexes(term).length) return false;
+  if (term.length < SEARCH_MIN_CHARS) return false;
+  return [...SEARCH_STOPWORDS].some(
+    (stopWord) =>
+      stopWord.length >= SEARCH_MIN_CHARS &&
+      (stopWord.startsWith(term) ||
+        (Math.abs(stopWord.length - term.length) <= 1 && levenshtein(stopWord, term) <= 1)),
+  );
+}
+
+function directConceptIndexes(rawTerm) {
   const term = norm(rawTerm);
-  if (!term) return true;
-  const words = text.split(" ");
-  for (const alias of SEARCH_ALIASES[term] || []) if (text.includes(norm(alias))) return true;
-  if (term.length < 4) return words.includes(term);
-  if (text.includes(term)) return true;
-  return words.some((word) => word.length >= 4 && (word.includes(term) || levenshtein(word, term) <= (term.length > 7 ? 2 : 1)));
+  if (!term) return [];
+  return SEARCH_CONCEPTS.flatMap((concept, index) =>
+    (concept.exact || []).includes(term) ||
+    (concept.stems || []).some(
+      (stem) => term.startsWith(stem) || (term.length >= SEARCH_MIN_CHARS && stem.startsWith(term)),
+    )
+      ? [index]
+      : [],
+  );
+}
+
+function searchDistanceLimit(term) {
+  if (term.length < 4) return 0;
+  return term.length > 7 ? 2 : 1;
+}
+
+function fuzzyConceptIndexes(rawTerm) {
+  const term = norm(rawTerm);
+  const limit = searchDistanceLimit(term);
+  if (!limit) return [];
+  let bestDistance = limit + 1;
+  const bestIndexes = new Set();
+  SEARCH_CONCEPTS.forEach((concept, index) => {
+    const lexemes = [
+      ...(concept.exact || []),
+      ...(concept.stems || []),
+      ...concept.targets.flatMap((target) => norm(target).split(" ")),
+    ]
+      .map(norm)
+      .filter((lexeme) => lexeme.length >= SEARCH_MIN_CHARS && Math.abs(lexeme.length - term.length) <= limit);
+    for (const lexeme of lexemes) {
+      const distance = levenshtein(lexeme, term);
+      if (distance > limit || distance > bestDistance) continue;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndexes.clear();
+      }
+      bestIndexes.add(index);
+    }
+  });
+  if (bestIndexes.size <= 1) return [...bestIndexes];
+  const fingerprints = new Set(
+    [...bestIndexes].map((index) => SEARCH_CONCEPTS[index].targets.map(norm).sort().join("|")),
+  );
+  return fingerprints.size === 1 ? [...bestIndexes] : [];
 }
 
 function searchTerms(value) {
-  return norm(value)
+  const terms = norm(value)
     .split(" ")
-    .filter((term) => term && !SEARCH_STOPWORDS.has(term));
+    .filter((term) => term && !isSearchStopWordLike(term))
+    .filter(
+      (term) =>
+        term.length >= SEARCH_MIN_CHARS ||
+        SHORT_EXACT_SEARCH_TERMS.has(term) ||
+        /^\d+$/.test(term),
+    );
+  if (!terms.length) return [];
+  const first = terms[0];
+  if (first.length < SEARCH_MIN_CHARS && !SHORT_EXACT_SEARCH_TERMS.has(first) && !/^\d{8,14}$/.test(first)) return [];
+  return terms;
 }
 
-function searchedBrand() {
-  const query = norm(S.q);
-  if (!query) return "";
-  const direct = S.all.find((product) => norm(product.brand?.name) === query || (product.brand?.aliases || []).some((alias) => norm(alias) === query));
-  if (direct) return direct.brand.name;
-  const aliases = (SEARCH_ALIASES[query] || []).map(norm);
-  return S.all.find((product) => aliases.includes(norm(product.brand?.name)))?.brand?.name || "";
+function searchQueryReady(value) {
+  return searchTerms(value).length > 0;
 }
 
-function matches(product, queryBrand = "") {
+const SEARCH_INDEX_CACHE = new WeakMap();
+
+function searchIndex(products) {
+  const cached = SEARCH_INDEX_CACHE.get(products);
+  if (cached) return cached;
+  const index = {
+    allIds: new Set(),
+    lexicalTextById: new Map(),
+    semanticTextById: new Map(),
+    vocabulary: new Map(),
+  };
+  for (const product of products) {
+    const id = product.publicId;
+    const lexicalText = blob(product);
+    index.allIds.add(id);
+    index.lexicalTextById.set(id, lexicalText);
+    index.semanticTextById.set(id, semanticBlob(product));
+    for (const word of new Set(lexicalText.split(" ").filter(Boolean))) {
+      if (word.length < SEARCH_MIN_CHARS && !/^\d+$/.test(word)) continue;
+      const ids = index.vocabulary.get(word) || new Set();
+      ids.add(id);
+      index.vocabulary.set(word, ids);
+    }
+  }
+  SEARCH_INDEX_CACHE.set(products, index);
+  return index;
+}
+
+function unionIds(target, source = []) {
+  for (const id of source) target.add(id);
+  return target;
+}
+
+function directLexicalIds(index, rawTerm) {
+  const term = norm(rawTerm);
+  const result = new Set();
+  for (const alias of SEARCH_ALIASES[term] || []) {
+    const target = norm(alias);
+    for (const [id, text] of index.lexicalTextById) if (text.includes(target)) result.add(id);
+  }
+  for (const [word, ids] of index.vocabulary) {
+    const found = /^\d+$/.test(term)
+      ? word === term
+      : term.length === SEARCH_MIN_CHARS
+        ? word.startsWith(term)
+        : word === term || word.startsWith(term);
+    if (found) unionIds(result, ids);
+  }
+  return result;
+}
+
+function fuzzyLexicalIds(index, rawTerm) {
+  const term = norm(rawTerm);
+  const limit = searchDistanceLimit(term);
+  if (!limit || /^\d+$/.test(term)) return new Set();
+  let bestDistance = limit + 1;
+  let candidates = [];
+  for (const word of index.vocabulary.keys()) {
+    if (word.length < 4 || Math.abs(word.length - term.length) > limit) continue;
+    const distance = levenshtein(word, term);
+    if (distance > limit || distance > bestDistance) continue;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      candidates = [];
+    }
+    candidates.push(word);
+  }
+  if (!candidates.length) return new Set();
+  const families = new Set(candidates.map((word) => word.slice(0, SEARCH_MIN_CHARS)));
+  if (families.size > 1) return new Set();
+  return candidates.reduce((ids, word) => unionIds(ids, index.vocabulary.get(word)), new Set());
+}
+
+function semanticTextMatchesTarget(text, rawTarget) {
+  const target = norm(rawTarget);
+  if (!target) return false;
+  if (target.includes(" ")) return text.includes(target);
+  return text.split(" ").some((word) => word === target || word.startsWith(target));
+}
+
+function conceptIds(index, conceptIndexes) {
+  const targets = [...new Set(conceptIndexes.flatMap((conceptIndex) => SEARCH_CONCEPTS[conceptIndex].targets.map(norm)))];
+  const ids = new Set();
+  for (const [id, text] of index.semanticTextById) {
+    if (targets.some((target) => semanticTextMatchesTarget(text, target))) ids.add(id);
+  }
+  return ids;
+}
+
+function searchClause(index, term) {
+  const directConcepts = directConceptIndexes(term);
+  if (directConcepts.length) return { term, kind: "concept", productIds: conceptIds(index, directConcepts) };
+  const directLexical = directLexicalIds(index, term);
+  if (directLexical.size) return { term, kind: "lexical", productIds: directLexical };
+  const fuzzyConcepts = fuzzyConceptIndexes(term);
+  if (fuzzyConcepts.length) return { term, kind: "concept", productIds: conceptIds(index, fuzzyConcepts) };
+  const fuzzyLexical = fuzzyLexicalIds(index, term);
+  if (fuzzyLexical.size) return { term, kind: "lexical", productIds: fuzzyLexical };
+  return { term, kind: "unresolved", productIds: new Set() };
+}
+
+function compileSearchPlan(products, query) {
+  const terms = searchTerms(query);
+  const index = searchIndex(products);
+  const clauses = terms.map((term) => searchClause(index, term));
+  let productIds = new Set(index.allIds);
+  for (const clause of clauses) {
+    productIds = new Set([...productIds].filter((id) => clause.productIds.has(id)));
+    if (!productIds.size) break;
+  }
+  return { terms, clauses, productIds: terms.length ? productIds : new Set() };
+}
+
+function filterProductsBySearch(products, query) {
+  if (!norm(query)) return [...products];
+  const plan = compileSearchPlan(products, query);
+  if (!plan.terms.length) return [];
+  return products.filter((product) => plan.productIds.has(product.publicId));
+}
+
+function matches(product, searchIds, hasQuery) {
   if (S.scope === "ofertas" && !(product.discountPercent > 0)) return false;
   if (S.brand !== "Todas" && brandName(product) !== S.brand) return false;
   if (S.need !== "Todas" && !(product.needs || []).includes(S.need)) return false;
-  if (queryBrand && brandName(product) !== queryBrand) return false;
-  const terms = searchTerms(S.q);
-  if (!terms.length) return true;
-  const text = blob(product);
-  return terms.every((term) => fuzzyIncludes(text, term));
+  return !hasQuery || searchIds.has(product.publicId);
 }
 
 function score(product) {
@@ -154,7 +414,6 @@ function score(product) {
   const query = searchTerms(S.q).join(" ");
   const text = blob(product);
   if (query && text.includes(query)) value += 22;
-  if (query && fuzzyIncludes(text, query)) value += 10;
   if (S.brand !== "Todas" && brandName(product) === S.brand) value += 9;
   if (S.need !== "Todas" && (product.needs || []).includes(S.need)) value += 8;
   return value;
@@ -182,14 +441,11 @@ function availabilityMeta(product) {
   };
 }
 
-function card(product) {
+function card(product, priority = false) {
   const discount = Math.round(product.discountPercent || 0);
   const name = product?.name || "Producto Farmagreen";
-  const image = productImage(product);
   const availability = availabilityMeta(product);
-  const media = image
-    ? `<div class="v66-media"><img src="${esc(image)}" alt="${esc(name)}" loading="lazy" decoding="async"></div>`
-    : `<div class="v66-media v67-image-missing" role="img" aria-label="Imagen no disponible para ${esc(name)}"></div>`;
+  const media = productImageMarkup(product, priority);
   const stock = `<p class="v69-stock${availability.className}" title="${esc(availability.title)}"><span aria-hidden="true"></span><strong>${esc(availability.label)}</strong></p>`;
   const needsAvailabilityConsult = product?.availability !== "available_reference";
   const cta = "Consultar";
@@ -440,11 +696,12 @@ function catalogCopy() {
 }
 
 function render(historyMode = "replace") {
-  const brandFromQuery = searchedBrand();
-  const items = sorted(S.all.filter((product) => matches(product, brandFromQuery)));
+  const searchIds = new Set(filterProductsBySearch(S.all, S.q).map((product) => product.publicId));
+  const hasQuery = Boolean(norm(S.q));
+  const items = sorted(S.all.filter((product) => matches(product, searchIds, hasQuery)));
   const shown = Math.min(S.limit, items.length);
   $("#gridV69").innerHTML = items.length
-    ? items.slice(0, shown).map(card).join("")
+    ? items.slice(0, shown).map((product, index) => card(product, index === 0)).join("")
     : `<div class="v66-empty"><strong>No encontramos coincidencias.</strong><span>Probá otra palabra o limpiá los filtros.</span></div>`;
   $("#countV69").textContent = items.length ? `${shown} de ${items.length}` : "Sin resultados";
   const availability = items.reduce(
@@ -513,7 +770,8 @@ function reset() {
 }
 
 function applyParams(params) {
-  S.q = params.get("q") || "";
+  const requestedQuery = params.get("q") || "";
+  S.q = searchQueryReady(requestedQuery) ? requestedQuery : "";
   S.brand = params.get("marca") === "Aveeno" ? "Aveno" : params.get("marca") || "Todas";
   S.need = params.get("need") || "Todas";
   S.sort = SORT_VALUES.has(params.get("orden")) ? params.get("orden") : DEFAULT_SORT;
@@ -553,7 +811,9 @@ function bootHomeDiscovery() {
   wireFilterMenus();
   $(".v66-search")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    openCatalogFromHome({ q: $("#searchV69")?.value || "" });
+    const query = $("#searchV69")?.value || "";
+    if (query.trim() && !searchQueryReady(query)) return;
+    openCatalogFromHome({ q: query });
   });
   $("#clearFiltersV69")?.addEventListener("click", () => {
     closeFilterMenus();
@@ -612,7 +872,9 @@ async function boot() {
   $(".v66-search")?.addEventListener("submit", (event) => {
     event.preventDefault();
     closeFilterMenus();
-    S.q = $("#searchV69").value;
+    const query = $("#searchV69").value;
+    if (query.trim() && !searchQueryReady(query)) return;
+    S.q = query;
     S.brand = "Todas";
     S.need = "Todas";
     S.scope = "todo";
@@ -623,11 +885,23 @@ async function boot() {
 
   $("#searchV69")?.addEventListener("input", (event) => {
     closeFilterMenus();
-    S.q = event.target.value;
-    if (!S.q.trim()) {
+    const query = event.target.value;
+    if (!query.trim()) {
       reset();
       return;
     }
+    if (!searchQueryReady(query)) {
+      if (S.q) {
+        S.q = "";
+        S.brand = "Todas";
+        S.need = "Todas";
+        S.scope = "todo";
+        S.limit = PAGE;
+        render();
+      }
+      return;
+    }
+    S.q = query;
     S.brand = "Todas";
     S.need = "Todas";
     S.scope = "todo";

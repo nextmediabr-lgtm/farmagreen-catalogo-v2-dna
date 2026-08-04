@@ -1,0 +1,14 @@
+.gcloudignore
+.git
+.git/**
+node_modules
+dist
+.DS_Store
+*.log
+.env
+.env.*
+.vercel
+.gstack
+.codex-artifacts
+.gcp-v69
+data/catalog-v69.json

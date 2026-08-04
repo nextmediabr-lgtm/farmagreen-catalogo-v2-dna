@@ -14,7 +14,8 @@
     "sync:identities:v69": "node scripts/sync-catalog-commerce-v69.mjs --identities",
     "sync:identities:v69:apply": "node scripts/sync-catalog-commerce-v69.mjs --identities --apply",
     "prepare:gcp:v69": "npm run build && node scripts/prepare-gcp-catalog-v69.mjs",
-    "build": "tsc -p tsconfig.json",
+    "build:css:v69": "node scripts/build-v69-css.mjs",
+    "build": "npm run build:css:v69 && tsc -p tsconfig.json",
     "export:static": "npm run build && PUBLIC_BASE_PATH=/farmagreen-catalogo-v2-dna node dist/export-static.js",
     "export:vercel:v67": "npm run build && PUBLIC_BASE_PATH= node dist/export-v67-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v67 node scripts/prepare-vercel-static.mjs",
     "export:vercel:v68": "npm run verify && PUBLIC_ORIGIN=https://farmagreen-v6-8-public-test.vercel.app node dist/export-v68-static.js && VERCEL_STATIC_SOURCE=dist/vercel-v68 VERCEL_STATIC_CONFIG=dist/vercel-v68-config.json node scripts/prepare-vercel-static.mjs",
@@ -38,6 +39,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "google-auth-library": "^10.9.1"
+    "google-auth-library": "^10.9.1",
+    "sharp": "0.35.3"
   }
 }

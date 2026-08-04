@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { resetCatalogV69CacheForTests } from "../dist/data-v69.js";
+import { filterProductsBySearchV69 } from "../dist/render-v69.js";
 import { app } from "../dist/server.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -39,7 +40,7 @@ async function exclusionFixture() {
       urls: [`${limited[0].source.url}?e2e_private=1`],
       hidden: {
         [limited[1].publicId]: {
-          reason: "No vender",
+          reason: "Discontinuado",
           at: "2026-07-30T00:00:00.000Z",
         },
       },
@@ -187,9 +188,11 @@ async function cardVisualState(page, origin, product) {
       actionText: action?.textContent?.trim(),
       actionHeight: Math.round(action?.getBoundingClientRect().height || 0),
       actionColor: action ? getComputedStyle(action).backgroundColor : "",
+      actionTextColor: action ? getComputedStyle(action).color : "",
       stockWidth: Math.round(stock?.getBoundingClientRect().width || 0),
       stockHeight: Math.round(stock?.getBoundingClientRect().height || 0),
       stockWeight: Number.parseInt(stockText ? getComputedStyle(stockText).fontWeight : "0", 10),
+      stockFontSize: Number.parseFloat(stockText ? getComputedStyle(stockText).fontSize : "0"),
       stockOverflows: Boolean(
         stock &&
           (stock.scrollWidth > stock.clientWidth + 1 ||
@@ -253,6 +256,13 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
         body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"></svg>',
       }),
     );
+    await page.route("https://storage.googleapis.com/**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"></svg>',
+      }),
+    );
 
     const apiResponse = await fetch(`${runtime.origin}/api/catalog-v6-9`);
     assert.equal(apiResponse.status, 200);
@@ -291,10 +301,66 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.locator("#gridV69 .v66-card").first().waitFor();
+    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-1\.css\?v=20260804-1735$/);
+    const localCssResponse = await page.request.get(`${runtime.origin}/styles-v6-9-1.css`);
+    assert.equal(localCssResponse.status(), 200);
+    if (!remoteOrigin) assert.equal(localCssResponse.headers()["cache-control"], "no-store");
     assert.equal(await firstRowColumns(page), 5);
     assert.equal(await hasHorizontalOverflow(page), false);
     assert.equal(await page.locator("#gridV69 .v66-card").count(), 48);
     assert.equal(await page.locator("#gridV69 .v69-stock").count(), 48);
+    assert.equal(await page.locator(".v69-footer").count(), 1);
+    const instagram = page.locator(".v69-footer-instagram");
+    assert.equal(await instagram.getAttribute("href"), "https://www.instagram.com/farmagreenrosario");
+    assert.equal(await instagram.getAttribute("target"), "_blank");
+    assert.match(await instagram.getAttribute("rel"), /noopener/);
+    assert.equal(await instagram.locator("svg").count(), 1);
+    assert.equal((await instagram.innerText()).trim(), "@farmagreenrosario");
+    assert.equal(await instagram.evaluate((link) => link.parentElement?.classList.contains("v69-footer")), true);
+    const desktopInstagramGeometry = await instagram.evaluate((link) => {
+      const footer = link.parentElement;
+      const svg = link.querySelector("svg");
+      const footerRect = footer?.getBoundingClientRect();
+      const linkRect = link.getBoundingClientRect();
+      const svgRect = svg?.getBoundingClientRect();
+      return {
+        centerDelta: footerRect ? Math.abs(linkRect.left + linkRect.width / 2 - (footerRect.left + footerRect.width / 2)) : 99,
+        svgWidth: Math.round(svgRect?.width || 0),
+        svgHeight: Math.round(svgRect?.height || 0),
+        hasBrandGradient: Boolean(svg?.querySelector("#v69-instagram-gradient")),
+      };
+    });
+    assert.ok(desktopInstagramGeometry.centerDelta <= 1);
+    assert.deepEqual(
+      { width: desktopInstagramGeometry.svgWidth, height: desktopInstagramGeometry.svgHeight },
+      { width: 34, height: 34 },
+    );
+    assert.equal(desktopInstagramGeometry.hasBrandGradient, true);
+    const desktopCardWidth = await page.locator("#gridV69 .v66-card").first().evaluate((card) => card.getBoundingClientRect().width);
+    assert.ok(desktopCardWidth >= 272, `La ficha desktop mide ${desktopCardWidth}px.`);
+    const desktopCardSpacing = await page.locator("#gridV69 .v66-card").evaluateAll((cards) => {
+      const first = cards[0].getBoundingClientRect();
+      const second = cards[1].getBoundingClientRect();
+      const fifth = cards[4].getBoundingClientRect();
+      return { left: first.left, between: second.left - first.right, right: innerWidth - fifth.right };
+    });
+    assert.ok(desktopCardSpacing.left >= 7 && desktopCardSpacing.right >= 7);
+    assert.ok(desktopCardSpacing.between >= 11);
+    assert.ok(Math.abs(desktopCardSpacing.left - desktopCardSpacing.right) <= 1);
+    const firstImage = page.locator("#gridV69 .v66-media img").first();
+    assert.equal(await firstImage.getAttribute("width"), "1000");
+    assert.equal(await firstImage.getAttribute("height"), "1000");
+    assert.equal(await firstImage.getAttribute("loading"), "eager");
+    assert.equal(await firstImage.getAttribute("fetchpriority"), "high");
+    assert.equal(await page.locator("#gridV69 .v66-media img").nth(1).getAttribute("loading"), "lazy");
+    assert.equal(
+      await page.locator("#gridV69 .v66-discount").first().evaluate((badge) => getComputedStyle(badge).backgroundColor),
+      "rgb(255, 92, 45)",
+    );
+    assert.equal(
+      await page.locator("#loadMoreV69").evaluate((button) => getComputedStyle(button).backgroundColor),
+      "rgb(255, 92, 45)",
+    );
     assert.deepEqual(await page.locator("#sortV69 option").evaluateAll((options) => options.map((option) => option.value)), [
       "relevancia",
       "disponibilidad",
@@ -431,6 +497,30 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.match(await page.locator(".cta").innerText(), /Consultar este producto por WhatsApp/i);
     assert.match(await page.locator(".v65-service-list").innerText(), /Consulta Personalizada por WhatsApp/i);
     assert.match(await page.locator(".v65-service-list").innerText(), /Coordinamos Retiro o Envío, Consultar formas de Pago/i);
+    const relatedStockGeometry = await page
+      .locator(".v65-related .v66-card .v69-stock")
+      .evaluateAll((stocks) => stocks.map((stock) => {
+        const price = stock.nextElementSibling;
+        const stockRect = stock.getBoundingClientRect();
+        const priceRect = price?.getBoundingClientRect();
+        return {
+          text: stock.textContent?.trim(),
+          height: Math.round(stockRect.height),
+          overflows: stock.scrollHeight > stock.clientHeight + 1 || stock.scrollWidth > stock.clientWidth + 1,
+          overlapsPrice: Boolean(priceRect && stockRect.bottom > priceRect.top),
+        };
+      }));
+    assert.ok(relatedStockGeometry.length >= 5);
+    assert.equal(
+      relatedStockGeometry.every(
+        (stock) =>
+          stock.text === "Disponible para Entrega" &&
+          stock.height === 24 &&
+          stock.overflows === false &&
+          stock.overlapsPrice === false,
+      ),
+      true,
+    );
 
     const unavailable = api.products.find((product) => product.availability === "unavailable_reference");
     assert.ok(unavailable);
@@ -453,9 +543,12 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(new Set(cardStates.map((state) => state.stockWidth)).size, 1);
     assert.equal(new Set(cardStates.map((state) => state.stockHeight)).size, 1);
     assert.ok(cardStates.every((state) => state.stockWeight <= 650));
+    assert.ok(cardStates.every((state) => state.stockFontSize >= 10));
     assert.ok(cardStates.every((state) => !state.stockOverflows));
     assert.equal(cardStates[0].actionColor, "rgb(37, 211, 102)");
+    assert.equal(cardStates[0].actionTextColor, "rgb(255, 255, 255)");
     assert.equal(cardStates[1].actionColor, "rgb(255, 209, 1)");
+    assert.equal(cardStates[1].actionTextColor, "rgb(255, 255, 255)");
 
     await page.setViewportSize({ width: 981, height: 900 });
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
@@ -508,8 +601,40 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
     await page.locator("#gridV69 .v66-card").first().waitFor();
+    await page.waitForFunction(() => {
+      const cards = [...document.querySelectorAll("#gridV69 .v66-card")].slice(0, 2);
+      if (cards.length < 2) return false;
+      const [first, second] = cards.map((card) => card.getBoundingClientRect());
+      return Math.abs(first.top - second.top) < 2 && first.width >= 188 && second.width >= 188;
+    });
     assert.equal(await firstRowColumns(page), 2);
     assert.equal(await hasHorizontalOverflow(page), false);
+    const mobileCardWidth = await page.locator("#gridV69 .v66-card").first().evaluate((card) => card.getBoundingClientRect().width);
+    assert.ok(mobileCardWidth >= 188, `La ficha móvil mide ${mobileCardWidth}px.`);
+    const mobileCardSpacing = await page.locator("#gridV69 .v66-card").evaluateAll((cards) => {
+      const first = cards[0].getBoundingClientRect();
+      const second = cards[1].getBoundingClientRect();
+      return { left: first.left, between: second.left - first.right, right: innerWidth - second.right };
+    });
+    assert.ok(mobileCardSpacing.left >= 2.5 && mobileCardSpacing.right >= 2.5);
+    assert.ok(mobileCardSpacing.between >= 5.5);
+    assert.ok(Math.abs(mobileCardSpacing.left - mobileCardSpacing.right) <= 1);
+    const mobileInstagramGeometry = await page.locator(".v69-footer-instagram").evaluate((link) => {
+      const footer = link.parentElement;
+      const footerRect = footer?.getBoundingClientRect();
+      const linkRect = link.getBoundingClientRect();
+      const svgRect = link.querySelector("svg")?.getBoundingClientRect();
+      return {
+        centerDelta: footerRect ? Math.abs(linkRect.left + linkRect.width / 2 - (footerRect.left + footerRect.width / 2)) : 99,
+        svgWidth: Math.round(svgRect?.width || 0),
+        svgHeight: Math.round(svgRect?.height || 0),
+      };
+    });
+    assert.ok(mobileInstagramGeometry.centerDelta <= 1);
+    assert.deepEqual(
+      { width: mobileInstagramGeometry.svgWidth, height: mobileInstagramGeometry.svgHeight },
+      { width: 34, height: 34 },
+    );
     assert.equal(await page.locator("#gridV69 .v69-stock").count(), 48);
     assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
     assert.deepEqual(
@@ -599,6 +724,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${runtime.origin}/catalogo/?scope=todo`, { waitUntil: "domcontentloaded" });
     await page.locator("#gridV69 .v66-card").first().waitFor();
+    await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
 
     await page.locator("#searchV69").fill("eucerin");
     await page.waitForFunction(() => new URL(location.href).searchParams.get("q") === "eucerin");
@@ -652,7 +778,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       true,
     );
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
-    await page.locator("#gridV69 .v66-ask").nth(1).scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
+    await page.locator("#gridV69 .v66-ask").first().waitFor();
+    await page.evaluate(() => document.querySelector("#gridV69 .v66-ask")?.scrollIntoView({ block: "center" }));
     await page.waitForTimeout(250);
     const floatingInterception = await page.evaluate(() => {
       const floating = document.querySelector(".float");
@@ -687,11 +815,72 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator(".v69-barcode").isVisible(), false);
 
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
 
     await page.locator("#searchV69").fill("protetor solar bebe");
     await page.waitForFunction(() => document.querySelector("#countV69")?.textContent === "2 de 2");
     assert.equal(await page.locator("#gridV69 .v66-card").count(), 2);
     assert.match(await page.locator("#catalogTitleV69").textContent(), /protetor solar bebe/i);
+
+    const browserSearchIds = async (query) => {
+      const expected = filterProductsBySearchV69(api.products, query).length;
+      await page.locator("#searchV69").fill(query);
+      await page.waitForFunction(
+        ({ query, expected }) =>
+          new URL(location.href).searchParams.get("q") === query &&
+          document.querySelector("#countV69")?.textContent === `${Math.min(48, expected)} de ${expected}`,
+        { query, expected },
+      );
+      return page.locator("#gridV69 .v65-hit").evaluateAll((links) =>
+        links.map((link) => link.getAttribute("href")?.match(/\/p\/([^/?#]+)/)?.[1]).filter(Boolean),
+      );
+    };
+
+    const canonicalAntiAgeIds = await browserSearchIds("crema arruga");
+    assert.ok(canonicalAntiAgeIds.length > 0);
+    for (const variant of ["crem pa arru", "crma pra arru", "crema pra arru", "crma pr arru", "crem pra arru"]) {
+      assert.deepEqual(await browserSearchIds(variant), canonicalAntiAgeIds, variant);
+    }
+
+    for (const query of [
+      "crema para el cuer",
+      "crema hidratante para el cuerpo",
+      "crema par arruga",
+      "crem pra arruga",
+      "colageno polvo",
+      "arrug",
+      "cicatrices",
+      "agriatado",
+      "flex",
+      "hidra",
+    ]) {
+      const expected = filterProductsBySearchV69(api.products, query).length;
+      assert.ok(expected > 0, query);
+      await page.locator("#searchV69").fill(query);
+      await page.waitForFunction(
+        ({ query, expected }) =>
+          new URL(location.href).searchParams.get("q") === query &&
+          document.querySelector("#countV69")?.textContent === `${Math.min(48, expected)} de ${expected}`,
+        { query, expected },
+      );
+      assert.equal(await page.locator("#gridV69 .v66-card").count(), Math.min(48, expected), query);
+    }
+
+    await page.locator("#searchV69").fill("cr");
+    await page.waitForFunction(
+      (expected) =>
+        !new URL(location.href).searchParams.has("q") &&
+        document.querySelector("#countV69")?.textContent === `48 de ${expected}`,
+      api.totalProducts,
+    );
+    await page.locator("#searchV69").fill("cre");
+    const creamCount = filterProductsBySearchV69(api.products, "cre").length;
+    await page.waitForFunction(
+      (expected) =>
+        new URL(location.href).searchParams.get("q") === "cre" &&
+        document.querySelector("#countV69")?.textContent === `${Math.min(48, expected)} de ${expected}`,
+      creamCount,
+    );
     assert.deepEqual(providerRequests, []);
     assert.deepEqual(consoleErrors, []);
     assert.deepEqual(failedResponses, []);

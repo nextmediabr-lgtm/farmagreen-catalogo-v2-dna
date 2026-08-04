@@ -15,7 +15,9 @@ import {
   productPageV69,
   productV69,
   publicCatalogV69,
+  robotsTxtV69,
   similarV69,
+  sitemapXmlV69,
   sourceImageV69,
 } from "./render-v69.js";
 
@@ -25,6 +27,7 @@ const V69_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://storage.googleapis.com; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
 const PUBLIC_HTML_CACHE = "public, max-age=0, s-maxage=300, stale-while-revalidate=60";
 const PUBLIC_CATALOG_CACHE = "public, max-age=60, s-maxage=300, stale-while-revalidate=60";
+const PUBLIC_DISCOVERY_CACHE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=300";
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -71,8 +74,28 @@ export function catalogReadyForRuntimeV69(catalog: CatalogV69, environment: Envi
             return false;
           }
         }),
-    )
+    ) &&
+    (environment.V691_REQUIRE_RESPONSIVE_IMAGES !== "1" || catalog.products.every(responsiveImagesReadyV691))
   );
+}
+
+export function responsiveImagesReadyV691(product: CatalogV69["products"][number]) {
+  return (["card", "detail"] as const).every((kind) => {
+    const set = product.images?.responsive?.[kind];
+    if (!set || !Number.isInteger(set.width) || !Number.isInteger(set.height) || set.width <= 0 || set.height <= 0) return false;
+    return (["webp", "avif"] as const).every((format) => {
+      const variants = Object.entries(set[format] || {});
+      return variants.length > 0 && variants.every(([width, value]) => {
+        if (!/^\d+$/.test(width)) return false;
+        try {
+          const url = new URL(String(value || ""));
+          return url.protocol === "https:" && url.hostname === "storage.googleapis.com";
+        } catch {
+          return false;
+        }
+      });
+    });
+  });
 }
 
 export function publicOriginV69(requestOrigin: string, environment: Environment = process.env) {
@@ -119,6 +142,8 @@ export async function handleV69Request(
     pathname === "/catalogo-v6-9" ||
     pathname === "/api/catalog-v6-9" ||
     pathname === "/api/catalog-v6-9/health" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml" ||
     pathname === "/internal/catalog-v6-9/refresh" ||
     pathname.startsWith("/producto-v6-9/") ||
     servesShortProduct ||
@@ -208,6 +233,28 @@ export async function handleV69Request(
     return true;
   }
 
+  if (pathname === "/robots.txt") {
+    sendDocumentV69(
+      response,
+      robotsTxtV69(publicOriginV69(url.origin, environment)),
+      "text/plain; charset=utf-8",
+      PUBLIC_DISCOVERY_CACHE,
+      request,
+    );
+    return true;
+  }
+
+  if (pathname === "/sitemap.xml") {
+    sendDocumentV69(
+      response,
+      sitemapXmlV69(catalog, publicOriginV69(url.origin, environment)),
+      "application/xml; charset=utf-8",
+      PUBLIC_DISCOVERY_CACHE,
+      request,
+    );
+    return true;
+  }
+
   if (pathname.startsWith("/media-v6-9/")) {
     await sendSourceImageV69(response, pathname.slice("/media-v6-9/".length), environment);
     return true;
@@ -241,6 +288,25 @@ function sendHtmlV69(
     headersV69({
       "content-type": "text/html; charset=utf-8",
       "cache-control": status === 200 ? PUBLIC_HTML_CACHE : "no-store",
+    }),
+    request,
+  );
+}
+
+function sendDocumentV69(
+  response: http.ServerResponse,
+  body: string,
+  contentType: string,
+  cacheControl: string,
+  request?: http.IncomingMessage,
+) {
+  sendEncodedV69(
+    response,
+    body,
+    200,
+    headersV69({
+      "content-type": contentType,
+      "cache-control": cacheControl,
     }),
     request,
   );

@@ -26,17 +26,22 @@ const PUBLIC_ASSETS = new Set([
   "/styles-v6-7.css",
   "/styles-v6-8.css",
   "/styles-v6-9.css",
+  "/styles-v6-9-1.css",
   "/app.js",
   "/app-v6-7.js",
   "/app-v6-8.js",
   "/app-v6-9.js",
   "/app-v6-9-r20260803.js",
+  "/app-v6-9-1.js",
+  "/app-v6-9-2.js",
   "/logo_farmagreen.png",
   "/farmagreen-social-preview-v69.png",
   "/farmagreen-social-preview-v69-social-2.png",
 ]);
 const PUBLIC_ALIASES = new Map([
   ["/app-v6-9-r20260803.js", "/app-v6-9.js"],
+  ["/app-v6-9-1.js", "/app-v6-9.js"],
+  ["/app-v6-9-2.js", "/app-v6-9.js"],
   ["/farmagreen-social-preview-v69-social-2.png", "/farmagreen-social-preview-v69.png"],
 ]);
 
@@ -80,11 +85,14 @@ export function app(environment: Environment = process.env) {
 
       if (PUBLIC_ASSETS.has(pathname)) {
         const file = path.join(PUBLIC, PUBLIC_ALIASES.get(pathname) || pathname);
+        const localV69Asset = environment.V69_LOCAL_PREVIEW === "1" && pathname.includes("v6-9");
         sendBinary(
           response,
           await fs.readFile(file),
           MIME[path.extname(file)] || "application/octet-stream",
-          pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js"
+          localV69Asset
+            ? "no-store"
+            : pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js" || pathname === "/app-v6-9-1.js" || pathname === "/app-v6-9-2.js" || pathname === "/styles-v6-9-1.css"
             ? "public, max-age=31536000, immutable"
             : pathname.includes("v6-9")
               ? "public, max-age=300, s-maxage=300, stale-while-revalidate=60"

@@ -5,6 +5,7 @@ import {
   type ProductV69,
   type PublicAvailabilityV69,
 } from "./data-v69.js";
+import type { ResponsiveImageSet } from "./data.js";
 
 const BASE = (process.env.PUBLIC_BASE_PATH || "").replace(/\/$/, "");
 const W = "5493417234000";
@@ -13,6 +14,9 @@ const SOCIAL_DESCRIPTION = "Farmacia y Dermocosmetica, Catalogo de Precios y Pro
 const HOME_ROUTE = "/";
 const CATALOG_ROUTE = "/catalogo";
 const PRODUCT_ROUTE = "/p/";
+const BUSINESS_NAME = "Farmagreen Rosario";
+const BUSINESS_ADDRESS = "Bv. Avellaneda Bis 524, Rosario, Santa Fe";
+const INSTAGRAM_URL = "https://www.instagram.com/farmagreenrosario";
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
 const NEEDS = [
@@ -31,6 +35,41 @@ const NEEDS = [
 
 const NEED_LABELS = new Map<string, string>(NEEDS.map((need) => [need.slug, need.label]));
 const STOP_WORDS = new Set(["a", "al", "de", "del", "el", "la", "las", "los", "para", "por", "en", "un", "una", "unos", "unas", "y"]);
+const SEARCH_MIN_CHARS = 3;
+const SHORT_EXACT_SEARCH_TERMS = new Set(["ena", "lrp", "gel", "fps", "spf", "uv", "b5", "ha", "oil"]);
+const SEARCH_ALIASES_V69 = new Map<string, string[]>([
+  ["eucrin", ["eucerin"]],
+  ["eucerim", ["eucerin"]],
+  ["laroche", ["la roche posay"]],
+  ["la roche", ["la roche posay"]],
+  ["lrp", ["la roche posay"]],
+  ["dermaglo", ["dermaglos"]],
+  ["loreal", ["l oreal revitalift", "l oreal", "l oréal revitalift"]],
+  ["cetafil", ["cetaphil"]],
+  ["aveno", ["aveno", "aveeno"]],
+  ["aveeno", ["aveeno", "aveno"]],
+  ["ena", ["ena", "ena suplementos", "ena sport"]],
+]);
+type SearchConceptV69 = { exact?: string[]; stems?: string[]; targets: string[] };
+const SEARCH_CONCEPTS_V69: SearchConceptV69[] = [
+  { exact: ["marcas"], stems: ["cicatr", "estria"], targets: ["reparacion", "manchas", "cicatriz", "estrias"] },
+  { stems: ["cuerp", "corpor"], targets: ["cuerpo", "corporal"] },
+  { stems: ["cara", "faci", "rostr"], targets: ["cara", "facial", "rostro"] },
+  {
+    stems: ["arrug", "antiarrug", "antiedad", "antiage", "linea", "expresion", "flex", "elast", "firme", "flacid", "lifting", "envejec"],
+    targets: ["antiedad", "antiarrugas", "arrugas", "lineas expresion", "firmeza", "elasticidad"],
+  },
+  { stems: ["manch", "pigment", "melasm"], targets: ["manchas", "antimanchas", "pigmentacion", "melasma"] },
+  {
+    stems: ["sec", "resec", "deshidra", "agriet", "agriat", "griet", "xerosis", "tirante", "asper", "descam"],
+    targets: ["hidratacion", "reparacion", "sequedad"],
+  },
+  { stems: ["hidra", "humect", "moistur"], targets: ["hidratacion", "hidratante", "humectante"] },
+  { stems: ["crem", "locion", "emulsion", "balsam", "pomad", "unguent"], targets: ["crema", "locion", "emulsion", "balsamo", "pomada", "unguento"] },
+  { stems: ["serum", "suero", "concentr", "booster", "ampoll"], targets: ["serum", "suero", "concentrado", "booster", "ampolla"] },
+  { stems: ["cabell", "pelo", "capilar"], targets: ["cabello", "pelo", "capilar"] },
+  { stems: ["acne", "grano", "imperfec", "gras"], targets: ["acne", "granos", "imperfecciones", "piel grasa"] },
+];
 const SORTS_V69 = ["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
 export type SortV69 = (typeof SORTS_V69)[number];
 
@@ -58,6 +97,10 @@ export type PublicProductV69 = {
   images: {
     card: string;
     detail: string;
+    responsive?: {
+      card?: ResponsiveImageSet;
+      detail?: ResponsiveImageSet;
+    };
   };
 };
 
@@ -128,10 +171,42 @@ export function searchTextV69(product: ProductV69) {
       product.line,
       product.barcode,
       ...safeList(product.aliases),
+      product.primaryCategory,
       ...needs,
       ...needs.map((need) => NEED_LABELS.get(need) || need),
+      ...derivedSearchSignalsV69(product),
     ].join(" "),
   );
+}
+
+function semanticSearchTextV69(product: ProductV69) {
+  const needs = safeList(product.needs);
+  return normalize(
+    [
+      product.name,
+      product.line,
+      product.primaryCategory,
+      ...needs,
+      ...needs.map((need) => NEED_LABELS.get(need) || need),
+      ...derivedSearchSignalsV69(product),
+    ].join(" "),
+  );
+}
+
+function derivedSearchSignalsV69(product: ProductV69) {
+  const name = normalize(product.name);
+  const signals: string[] = [];
+  if (/\b(piel (muy )?(seca|reseca|resecada|agrietada)|labios? (secos?|agrietados?)|manos? (secas?|agrietadas?))\b/.test(name)) {
+    signals.push("sequedad");
+  }
+  if (
+    safeList(product.needs).includes("nutricion") &&
+    /\b\d+(?:[.,]\d+)?\s*(g|gr|grs|kg)\b/.test(name) &&
+    !/(caps|capsula|comprim|tableta|sobre|gomita|unidad)/.test(name)
+  ) {
+    signals.push("polvo");
+  }
+  return signals;
 }
 
 export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(), origin = "http://127.0.0.1:8109") {
@@ -159,7 +234,7 @@ ${discoveryPanelV69(catalog, context, initial.length)}
       <button class="v65-link-button" type="button" id="showAllV69">Ver todo el catálogo</button>
     </div>
   </div>
-  <section class="v65-grid" id="gridV69">${initial.slice(0, 48).map((product) => cardV69(product, origin)).join("")}</section>
+  <section class="v65-grid" id="gridV69">${initial.slice(0, 48).map((product, index) => cardV69(product, origin, index === 0)).join("")}</section>
   <div class="morebox"><button id="loadMoreV69" type="button" aria-label="Cargar más productos">Cargar más productos</button></div>
 </section>
 
@@ -211,14 +286,14 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
       </form>
       <button class="v65-link-button" id="clearFiltersV69" type="button">Limpiar</button>
     </div>
-    <div class="v67-filter-grid" aria-label="Filtros del catálogo">
+    <div class="v67-filter-grid" role="group" aria-label="Filtros del catálogo">
       <div class="v67-filter-menu v67-need-menu" data-filter-menu="need">
-        <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="need" aria-expanded="false" aria-controls="needMenuV69">
+        <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="need" aria-expanded="false" aria-controls="needMenuV69" aria-haspopup="dialog">
           <span class="v67-menu-label">¿Qué necesitás?</span>
           <strong id="needSummaryV69">${e(initialNeedLabel)}</strong>
           ${chevronIcon()}
         </button>
-        <div class="v67-menu-popover v67-need-popover" id="needMenuV69" data-filter-menu-popover aria-hidden="true" aria-label="Elegir necesidad" inert>
+        <div class="v67-menu-popover v67-need-popover" id="needMenuV69" data-filter-menu-popover aria-hidden="true" aria-label="Elegir necesidad" role="dialog" inert>
           <div class="v67-need-options">
             <button class="v67-need-option${context.need === "Todas" ? " on" : ""}" type="button" data-need="Todas" aria-pressed="${context.need === "Todas"}">
               ${needIcon("Todas")}<span>Todas</span>${optionCheckIcon()}
@@ -232,12 +307,12 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
         </div>
       </div>
       <div class="v67-filter-menu v67-brand-menu" data-filter-menu="brand" id="marcas-v69">
-        <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="brand" aria-expanded="false" aria-controls="brandMenuV69">
+        <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="brand" aria-expanded="false" aria-controls="brandMenuV69" aria-haspopup="dialog">
           <span class="v67-menu-label">Marca</span>
           <strong id="brandSummaryV69">${e(initialBrandLabel)}</strong>
           ${chevronIcon()}
         </button>
-        <div class="v67-menu-popover v67-brand-popover" id="brandMenuV69" data-filter-menu-popover aria-hidden="true" aria-label="Elegir marca" inert>
+        <div class="v67-menu-popover v67-brand-popover" id="brandMenuV69" data-filter-menu-popover aria-hidden="true" aria-label="Elegir marca" role="dialog" inert>
           <div class="v67-brand-options">
             <button class="v67-brand-option${context.brand === "Todas" ? " on" : ""}" type="button" data-brand="Todas" aria-pressed="${context.brand === "Todas"}">
               <span class="v67-brand-copy"><strong>Todas</strong><small>${catalog.totalProducts} productos</small></span>
@@ -275,7 +350,7 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
   const brands = [...new Set(catalog.products.map(brandName))];
   const homeContext = pageContext(catalog, new URLSearchParams({ scope: "todo" }));
   const sections = brands
-    .map((brand) => {
+    .map((brand, brandIndex) => {
       const products = sortProductsV69(
         catalog.products.filter((product) => brandName(product) === brand),
         "disponibilidad",
@@ -287,7 +362,7 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
           <div><p class="v65-k">Marca</p><h2 id="${e(`${sectionId}-title`)}">${e(brand)}</h2></div>
           <div class="v69-home-brand-actions"><span>${products.length} productos</span><a href="${u(brandHref)}">Ver toda la marca</a></div>
         </div>
-        <div class="v65-grid v69-home-grid">${products.slice(0, 10).map((product) => cardV69(product, origin)).join("")}</div>
+        <div class="v65-grid v69-home-grid">${products.slice(0, 10).map((product, productIndex) => cardV69(product, origin, brandIndex === 0 && productIndex === 0)).join("")}</div>
       </section>`;
     })
     .join("");
@@ -295,8 +370,10 @@ export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109
   return shell69(
     "Farmagreen Rosario | Marcas y productos",
     SOCIAL_DESCRIPTION,
-    `${discoveryPanelV69(catalog, homeContext, catalog.totalProducts)}
+    `<h1 class="v67-visually-hidden">Farmagreen Rosario: catálogo de precios y promociones</h1>
+    ${discoveryPanelV69(catalog, homeContext, catalog.totalProducts)}
     <div class="v69-home-sections" id="marcas-inicio-v69">${sections}</div>
+    <script type="application/ld+json">${json(pharmacySchemaV69(origin))}</script>
     <script type="application/json" id="fg69-data">${json({
       base: BASE,
       origin,
@@ -340,7 +417,7 @@ export function productPageV69(product: ProductV69, related: ProductV69[], origi
     <p class="v66-brand">${e(brandName(product))}</p>
     ${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}
   </div>
-  ${productImage(product, "detail", "photo v65-photo")}
+  ${productImage(product, "detail", "photo v65-photo", true)}
   <div class="buybox v65-buybox">
     <h1>${e(product.name)}</h1>
     <p class="v65-meta">${e(product.line)} · ${e(categoryLabel(product.primaryCategory))}</p>
@@ -363,21 +440,7 @@ export function productPageV69(product: ProductV69, related: ProductV69[], origi
   <div class="v65-head"><div><p class="v65-k">Similares</p><h2>También puede servirte</h2></div><p>Misma marca, categoría o necesidad.</p></div>
   <section class="v65-grid">${related.map((item) => cardV69(item, origin)).join("")}</section>
 </section>
-<script type="application/ld+json">${json({
-      "@context": "https://schema.org",
-      "@type": "Product",
-      name: product.name,
-      image: new URL(safeImage(product, "detail"), origin).toString(),
-      description: product.description,
-      url: productUrl,
-      category: categoryLabel(product.primaryCategory),
-      brand: { "@type": "Brand", name: brandName(product) },
-      offers: {
-        "@type": "Offer",
-        priceCurrency: "ARS",
-        price: product.offerPrice || product.listPrice,
-      },
-    })}</script>`,
+<script type="application/ld+json">${json(productSchemaV69(product, productUrl, origin))}</script>`,
     {
       bodyClass: "v65 v66 v67 v69 product-detail",
       origin,
@@ -399,6 +462,117 @@ export function notFoundPageV69(origin = "http://127.0.0.1:8109") {
   );
 }
 
+export function robotsTxtV69(origin: string) {
+  const base = new URL(origin).origin;
+  return `User-agent: *\nAllow: /\nSitemap: ${base}/sitemap.xml\n`;
+}
+
+export function sitemapXmlV69(catalog: CatalogV69, origin: string) {
+  const base = new URL(origin).origin;
+  const lastmod = sitemapLastmodV69(catalog);
+  const urls = [
+    absolute(base, HOME_ROUTE),
+    absolute(base, CATALOG_ROUTE),
+    ...catalog.products.map((product) => absolute(base, publicProductPathV69(product))),
+  ];
+  const entries = urls
+    .map((url) => `<url><loc>${xml(url)}</loc><lastmod>${lastmod}</lastmod></url>`)
+    .join("");
+  return `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries}</urlset>`;
+}
+
+export function sitemapLastmodV69(catalog: Pick<CatalogV69, "commerceSyncedAt" | "syncedAt">) {
+  const value = catalog.commerceSyncedAt || catalog.syncedAt;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
+}
+
+function productSchemaV69(product: ProductV69, productUrl: string, origin: string) {
+  const gtin = validGtinV69(product.barcode);
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Product",
+        "@id": `${productUrl}#product`,
+        name: product.name,
+        image: new URL(safeImage(product, "detail"), origin).toString(),
+        description: product.description,
+        url: productUrl,
+        category: categoryLabel(product.primaryCategory),
+        brand: { "@type": "Brand", name: brandName(product) },
+        ...(gtin ? { [gtin.key]: gtin.value } : {}),
+        offers: {
+          "@type": "Offer",
+          url: productUrl,
+          priceCurrency: "ARS",
+          price: product.offerPrice || product.listPrice,
+          availability: schemaAvailabilityV69(product),
+          itemCondition: "https://schema.org/NewCondition",
+        },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Inicio", item: absolute(origin, HOME_ROUTE) },
+          { "@type": "ListItem", position: 2, name: "Catálogo", item: absolute(origin, CATALOG_ROUTE) },
+          { "@type": "ListItem", position: 3, name: product.name, item: productUrl },
+        ],
+      },
+    ],
+  };
+}
+
+function schemaAvailabilityV69(product: ProductV69) {
+  if (product.availability === "limited") return "https://schema.org/InStock";
+  if (product.availability === "out_of_stock") return "https://schema.org/OutOfStock";
+  return "https://schema.org/LimitedAvailability";
+}
+
+export function validGtinV69(value: unknown) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (![8, 12, 13, 14].includes(digits.length)) return null;
+  const body = digits.slice(0, -1);
+  let sum = 0;
+  for (let index = body.length - 1, position = 0; index >= 0; index -= 1, position += 1) {
+    sum += Number(body[index]) * (position % 2 === 0 ? 3 : 1);
+  }
+  if ((10 - (sum % 10)) % 10 !== Number(digits.at(-1))) return null;
+  return { key: `gtin${digits.length}`, value: digits };
+}
+
+function pharmacySchemaV69(origin: string) {
+  const url = absolute(origin, HOME_ROUTE);
+  return {
+    "@context": "https://schema.org",
+    "@type": "Pharmacy",
+    "@id": `${url}#pharmacy`,
+    name: BUSINESS_NAME,
+    description: SOCIAL_DESCRIPTION,
+    url,
+    logo: absolute(origin, "/logo_farmagreen.png"),
+    telephone: "+54 9 341 723-4000",
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: "Bv. Avellaneda Bis 524",
+      addressLocality: "Rosario",
+      addressRegion: "Santa Fe",
+      addressCountry: "AR",
+    },
+    contactPoint: {
+      "@type": "ContactPoint",
+      contactType: "customer service",
+      telephone: "+54 9 341 723-4000",
+      availableLanguage: "Spanish",
+    },
+    sameAs: [INSTAGRAM_URL],
+  };
+}
+
+function footerV69() {
+  return `<footer class="v69-footer" aria-label="Información de Farmagreen Rosario"><div class="v69-footer-business"><strong>${BUSINESS_NAME}</strong><span>${BUSINESS_ADDRESS}</span></div><a class="v69-footer-instagram" href="${INSTAGRAM_URL}" target="_blank" rel="noopener noreferrer" aria-label="Instagram de Farmagreen Rosario">${instagramIcon()}<span>@farmagreenrosario</span></a><div class="v69-footer-contact"><span>Horarios: consultá por WhatsApp</span><a href="${wa("Hola Farmagreen Rosario, quiero consultar horarios y disponibilidad.")}">WhatsApp +54 9 341 723-4000</a></div></footer>`;
+}
+
 type QueryState = { q: string; brand: string; need: string; scope: "ofertas" | "todo"; sort: SortV69 };
 type PageContext = QueryState & {
   state: QueryState;
@@ -416,7 +590,8 @@ function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
   let brand = availableBrands.has(requestedBrand) ? requestedBrand : "Todas";
   const requestedNeed = query.get("need") || "";
   let need = NEED_LABELS.has(requestedNeed) ? requestedNeed : "Todas";
-  const q = String(query.get("q") || "").trim();
+  const requestedQuery = String(query.get("q") || "").trim();
+  const q = isSearchQueryReadyV69(requestedQuery) ? requestedQuery : "";
   if (q) {
     brand = "Todas";
     need = "Todas";
@@ -455,22 +630,258 @@ function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
 }
 
 export function normalizeQueryTermsV69(value: string) {
-  return normalize(value)
+  const terms = normalize(value)
     .split(" ")
-    .filter((term) => term && !STOP_WORDS.has(term));
+    .filter((term) => term && !isSearchStopWordLikeV69(term))
+    .filter(
+      (term) =>
+        term.length >= SEARCH_MIN_CHARS ||
+        SHORT_EXACT_SEARCH_TERMS.has(term) ||
+        /^\d+$/.test(term),
+    );
+  if (!terms.length) return [];
+  const first = terms[0];
+  if (first.length < SEARCH_MIN_CHARS && !SHORT_EXACT_SEARCH_TERMS.has(first) && !/^\d{8,14}$/.test(first)) return [];
+  return terms;
+}
+
+export function isSearchQueryReadyV69(value: string) {
+  return normalizeQueryTermsV69(value).length > 0;
+}
+
+function levenshteinV69(left: string, right: string) {
+  if (Math.abs(left.length - right.length) > 2) return 9;
+  const matrix = Array.from({ length: left.length + 1 }, (_, index) => [index]);
+  for (let column = 1; column <= right.length; column += 1) matrix[0][column] = column;
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      matrix[row][column] = Math.min(
+        matrix[row - 1][column] + 1,
+        matrix[row][column - 1] + 1,
+        matrix[row - 1][column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+      if (
+        row > 1 &&
+        column > 1 &&
+        left[row - 1] === right[column - 2] &&
+        left[row - 2] === right[column - 1]
+      ) {
+        matrix[row][column] = Math.min(matrix[row][column], matrix[row - 2][column - 2] + 1);
+      }
+    }
+  }
+  return matrix[left.length][right.length];
+}
+
+function isSearchStopWordLikeV69(term: string) {
+  if (SHORT_EXACT_SEARCH_TERMS.has(term) || /^\d+$/.test(term)) return false;
+  if (STOP_WORDS.has(term)) return true;
+  if (directConceptIndexesV69(term).length) return false;
+  if (term.length < SEARCH_MIN_CHARS) return false;
+  return [...STOP_WORDS].some(
+    (stopWord) =>
+      stopWord.length >= SEARCH_MIN_CHARS &&
+      (stopWord.startsWith(term) ||
+        (Math.abs(stopWord.length - term.length) <= 1 && levenshteinV69(stopWord, term) <= 1)),
+  );
+}
+
+function directConceptIndexesV69(rawTerm: string) {
+  const term = normalize(rawTerm);
+  if (!term) return [];
+  return SEARCH_CONCEPTS_V69.flatMap((concept, index) =>
+    safeList(concept.exact).includes(term) ||
+    safeList(concept.stems).some(
+      (stem) => term.startsWith(stem) || (term.length >= SEARCH_MIN_CHARS && stem.startsWith(term)),
+    )
+      ? [index]
+      : [],
+  );
+}
+
+function searchDistanceLimitV69(term: string) {
+  if (term.length < 4) return 0;
+  return term.length > 7 ? 2 : 1;
+}
+
+function fuzzyConceptIndexesV69(rawTerm: string) {
+  const term = normalize(rawTerm);
+  const limit = searchDistanceLimitV69(term);
+  if (!limit) return [];
+  let bestDistance = limit + 1;
+  const bestIndexes = new Set<number>();
+  SEARCH_CONCEPTS_V69.forEach((concept, index) => {
+    const lexemes = [
+      ...safeList(concept.exact),
+      ...safeList(concept.stems),
+      ...concept.targets.flatMap((target) => normalize(target).split(" ")),
+    ]
+      .map(normalize)
+      .filter((lexeme) => lexeme.length >= SEARCH_MIN_CHARS && Math.abs(lexeme.length - term.length) <= limit);
+    for (const lexeme of lexemes) {
+      const distance = levenshteinV69(lexeme, term);
+      if (distance > limit || distance > bestDistance) continue;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndexes.clear();
+      }
+      bestIndexes.add(index);
+    }
+  });
+  if (bestIndexes.size <= 1) return [...bestIndexes];
+  const fingerprints = new Set(
+    [...bestIndexes].map((index) => SEARCH_CONCEPTS_V69[index].targets.map(normalize).sort().join("|")),
+  );
+  return fingerprints.size === 1 ? [...bestIndexes] : [];
+}
+
+type SearchIndexV69 = {
+  allIds: Set<string>;
+  lexicalTextById: Map<string, string>;
+  semanticTextById: Map<string, string>;
+  vocabulary: Map<string, Set<string>>;
+};
+
+export type SearchPlanV69 = {
+  terms: string[];
+  clauses: Array<{ term: string; kind: "concept" | "lexical" | "unresolved"; productIds: Set<string> }>;
+  productIds: Set<string>;
+};
+
+const SEARCH_INDEX_CACHE_V69 = new WeakMap<ProductV69[], SearchIndexV69>();
+
+function searchIndexV69(products: ProductV69[]) {
+  const cached = SEARCH_INDEX_CACHE_V69.get(products);
+  if (cached) return cached;
+  const index: SearchIndexV69 = {
+    allIds: new Set(),
+    lexicalTextById: new Map(),
+    semanticTextById: new Map(),
+    vocabulary: new Map(),
+  };
+  for (const product of products) {
+    const id = product.publicId;
+    const lexicalText = searchTextV69(product);
+    index.allIds.add(id);
+    index.lexicalTextById.set(id, lexicalText);
+    index.semanticTextById.set(id, semanticSearchTextV69(product));
+    for (const word of new Set(lexicalText.split(" ").filter(Boolean))) {
+      if (word.length < SEARCH_MIN_CHARS && !/^\d+$/.test(word)) continue;
+      const ids = index.vocabulary.get(word) || new Set<string>();
+      ids.add(id);
+      index.vocabulary.set(word, ids);
+    }
+  }
+  SEARCH_INDEX_CACHE_V69.set(products, index);
+  return index;
+}
+
+function unionIdsV69(target: Set<string>, source?: Set<string>) {
+  for (const id of source || []) target.add(id);
+  return target;
+}
+
+function directLexicalIdsV69(index: SearchIndexV69, rawTerm: string) {
+  const term = normalize(rawTerm);
+  const result = new Set<string>();
+  for (const alias of SEARCH_ALIASES_V69.get(term) || []) {
+    const target = normalize(alias);
+    for (const [id, text] of index.lexicalTextById) if (text.includes(target)) result.add(id);
+  }
+  for (const [word, ids] of index.vocabulary) {
+    const matches = /^\d+$/.test(term)
+      ? word === term
+      : term.length === SEARCH_MIN_CHARS
+        ? word.startsWith(term)
+        : word === term || word.startsWith(term);
+    if (matches) unionIdsV69(result, ids);
+  }
+  return result;
+}
+
+function fuzzyLexicalIdsV69(index: SearchIndexV69, rawTerm: string) {
+  const term = normalize(rawTerm);
+  const limit = searchDistanceLimitV69(term);
+  if (!limit || /^\d+$/.test(term)) return new Set<string>();
+  let bestDistance = limit + 1;
+  let candidates: string[] = [];
+  for (const word of index.vocabulary.keys()) {
+    if (word.length < 4 || Math.abs(word.length - term.length) > limit) continue;
+    const distance = levenshteinV69(word, term);
+    if (distance > limit || distance > bestDistance) continue;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      candidates = [];
+    }
+    candidates.push(word);
+  }
+  if (!candidates.length) return new Set<string>();
+  const families = new Set(candidates.map((word) => word.slice(0, SEARCH_MIN_CHARS)));
+  if (families.size > 1) return new Set<string>();
+  return candidates.reduce((ids, word) => unionIdsV69(ids, index.vocabulary.get(word)), new Set<string>());
+}
+
+function semanticTextMatchesTargetV69(text: string, rawTarget: string) {
+  const target = normalize(rawTarget);
+  if (!target) return false;
+  if (target.includes(" ")) return text.includes(target);
+  return text.split(" ").some((word) => word === target || word.startsWith(target));
+}
+
+function conceptIdsV69(index: SearchIndexV69, conceptIndexes: number[]) {
+  const targets = [
+    ...new Set(conceptIndexes.flatMap((conceptIndex) => SEARCH_CONCEPTS_V69[conceptIndex].targets.map(normalize))),
+  ];
+  const ids = new Set<string>();
+  for (const [id, text] of index.semanticTextById) {
+    if (targets.some((target) => semanticTextMatchesTargetV69(text, target))) ids.add(id);
+  }
+  return ids;
+}
+
+function searchClauseV69(index: SearchIndexV69, term: string) {
+  const directConcepts = directConceptIndexesV69(term);
+  if (directConcepts.length) return { term, kind: "concept" as const, productIds: conceptIdsV69(index, directConcepts) };
+  const directLexical = directLexicalIdsV69(index, term);
+  if (directLexical.size) return { term, kind: "lexical" as const, productIds: directLexical };
+  const fuzzyConcepts = fuzzyConceptIndexesV69(term);
+  if (fuzzyConcepts.length) return { term, kind: "concept" as const, productIds: conceptIdsV69(index, fuzzyConcepts) };
+  const fuzzyLexical = fuzzyLexicalIdsV69(index, term);
+  if (fuzzyLexical.size) return { term, kind: "lexical" as const, productIds: fuzzyLexical };
+  return { term, kind: "unresolved" as const, productIds: new Set<string>() };
+}
+
+export function compileSearchPlanV69(products: ProductV69[], query: string): SearchPlanV69 {
+  const terms = normalizeQueryTermsV69(query);
+  const index = searchIndexV69(products);
+  const clauses = terms.map((term) => searchClauseV69(index, term));
+  let productIds = new Set(index.allIds);
+  for (const clause of clauses) {
+    productIds = new Set([...productIds].filter((id) => clause.productIds.has(id)));
+    if (!productIds.size) break;
+  }
+  return { terms, clauses, productIds: terms.length ? productIds : new Set<string>() };
+}
+
+export function filterProductsBySearchV69(products: ProductV69[], query: string) {
+  if (!normalize(query)) return [...products];
+  const plan = compileSearchPlanV69(products, query);
+  if (!plan.terms.length) return [];
+  return products.filter((product) => plan.productIds.has(product.publicId));
+}
+
+export function matchesSearchQueryV69(product: ProductV69, query: string, products: ProductV69[] = [product]) {
+  return compileSearchPlanV69(products, query).productIds.has(product.publicId);
 }
 
 function filteredProducts(products: ProductV69[], state: QueryState) {
-  const terms = normalizeQueryTermsV69(state.q);
+  const searchIds = new Set(filterProductsBySearchV69(products, state.q).map((product) => product.publicId));
+  const hasQuery = Boolean(normalize(state.q));
   const filtered = products
     .filter((product) => state.scope !== "ofertas" || product.discountPercent > 0)
     .filter((product) => state.brand === "Todas" || brandName(product) === state.brand)
     .filter((product) => state.need === "Todas" || safeList(product.needs).includes(state.need))
-    .filter((product) => {
-      if (!terms.length) return true;
-      const text = searchTextV69(product);
-      return terms.every((term) => text.includes(term));
-    });
+    .filter((product) => !hasQuery || searchIds.has(product.publicId));
   return sortProductsV69(filtered, state.sort);
 }
 
@@ -541,10 +952,10 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-5.css")}"><link rel="stylesheet" href="${u("/styles-v6-6.css")}"><link rel="stylesheet" href="${u("/styles-v6-7.css")}"><link rel="stylesheet" href="${u("/styles-v6-9.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main><a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-r20260803.js")}"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260804-1735")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-2.js")}"></script></body></html>`;
 }
 
-function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109") {
+function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority = false) {
   const discount = Math.round(product.discountPercent || 0);
   const productPath = publicProductPathV69(product);
   const name = String(product.name || "Producto Farmagreen");
@@ -553,7 +964,7 @@ function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109") {
   const unverified = product.availability === "unknown";
   const needsAvailabilityConsult = unavailable || unverified;
   const statusClass = unavailable ? " v69-card-unavailable" : unverified ? " v69-card-unverified" : "";
-  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${productImage(product, "card", "v66-media")}<div class="v66-card-body"><h3>${e(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${stockBadgeV69(product)}${priceCard(product)}<a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(origin, productPath)}`)}">Consultar</a></div></article>`;
+  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${productImage(product, "card", "v66-media", priority)}<div class="v66-card-body"><h3>${e(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${stockBadgeV69(product)}${priceCard(product)}<a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(origin, productPath)}`)}">Consultar</a></div></article>`;
 }
 
 function publicProductPathV69(product: ProductV69) {
@@ -705,16 +1116,77 @@ function publicProductV69(product: ProductV69): PublicProductV69 {
     images: {
       card: safeImage(product, "card"),
       detail: safeImage(product, "detail"),
+      responsive: safeResponsiveImagesV69(product),
     },
   };
 }
 
-function productImage(product: Partial<ProductV69>, kind: "card" | "detail", className: string) {
+function productImage(product: Partial<ProductV69>, kind: "card" | "detail", className: string, priority = false) {
   const image = safeImage(product, kind);
   const name = String(product.name || "Producto Farmagreen");
+  const responsive = safeResponsiveImagesV69(product)?.[kind];
+  const width = responsive?.width || 1000;
+  const height = responsive?.height || 1000;
+  const sizes = kind === "card"
+    ? "(max-width: 760px) calc((100vw - 52px) / 2), (max-width: 980px) calc((100vw - 72px) / 3), calc((100vw - 112px) / 5)"
+    : "(max-width: 760px) calc(100vw - 36px), 50vw";
+  const sources = responsive
+    ? `${responsive.avif ? `<source type="image/avif" srcset="${e(srcsetV69(responsive.avif))}" sizes="${e(sizes)}">` : ""}${responsive.webp ? `<source type="image/webp" srcset="${e(srcsetV69(responsive.webp))}" sizes="${e(sizes)}">` : ""}`
+    : "";
   return image
-    ? `<div class="${className}"><img src="${e(image)}" alt="${e(name)}"${kind === "card" ? ' loading="lazy" decoding="async"' : ""}></div>`
+    ? `<div class="${className}"><picture>${sources}<img src="${e(image)}" alt="${e(name)}" width="${width}" height="${height}" decoding="async"${priority ? ' loading="eager" fetchpriority="high"' : ' loading="lazy"'}></picture></div>`
     : `<div class="${className} v67-image-missing" role="img" aria-label="Imagen no disponible para ${e(name)}"></div>`;
+}
+
+function safeResponsiveImagesV69(product: Partial<ProductV69> | undefined) {
+  const source = product?.images?.responsive;
+  if (!source || typeof source !== "object") return undefined;
+  const output: { card?: ResponsiveImageSet; detail?: ResponsiveImageSet } = {};
+  for (const kind of ["card", "detail"] as const) {
+    const candidate = source[kind];
+    if (!candidate || typeof candidate !== "object") continue;
+    const width = positiveInteger(candidate.width);
+    const height = positiveInteger(candidate.height);
+    if (!width || !height) continue;
+    const avif = safeVariantMapV69(candidate.avif);
+    const webp = safeVariantMapV69(candidate.webp);
+    if (!avif && !webp) continue;
+    output[kind] = { width, height, ...(avif ? { avif } : {}), ...(webp ? { webp } : {}) };
+  }
+  return output.card || output.detail ? output : undefined;
+}
+
+function safeVariantMapV69(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value)
+    .map(([width, url]) => [positiveInteger(width), String(url || "")] as const)
+    .filter(([width, url]) => width && safePublicImageUrlV69(url))
+    .sort((left, right) => left[0] - right[0]);
+  return entries.length ? Object.fromEntries(entries.map(([width, url]) => [String(width), url])) : undefined;
+}
+
+function safePublicImageUrlV69(value: string) {
+  if (value.startsWith("/")) return !value.startsWith("//");
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && parsed.hostname === "storage.googleapis.com" && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}
+
+function srcsetV69(variants: Record<string, string>) {
+  return Object.entries(variants)
+    .map(([width, url]) => [positiveInteger(width), url] as const)
+    .filter(([width, url]) => width && safePublicImageUrlV69(url))
+    .sort((left, right) => left[0] - right[0])
+    .map(([width, url]) => `${url} ${width}w`)
+    .join(", ");
+}
+
+function positiveInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : 0;
 }
 
 type V69DetailSection = {
@@ -791,8 +1263,13 @@ function waIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.1 4.9A9.86 9.86 0 0 0 12.06 2C6.59 2 2.13 6.42 2.13 11.89c0 1.75.46 3.45 1.34 4.94L2 22l5.32-1.39a9.96 9.96 0 0 0 4.74 1.2h.01c5.47 0 9.93-4.42 9.93-9.89a9.8 9.8 0 0 0-2.9-7.02Zm-7.04 15.24h-.01a8.3 8.3 0 0 1-4.23-1.16l-.3-.18-3.16.82.84-3.08-.2-.32a8.2 8.2 0 0 1-1.28-4.33c0-4.54 3.72-8.24 8.29-8.24 2.21 0 4.3.86 5.87 2.42a8.18 8.18 0 0 1 2.42 5.83c0 4.55-3.72 8.24-8.24 8.24Zm4.53-6.18c-.25-.12-1.47-.73-1.7-.81-.23-.08-.39-.12-.56.12-.17.24-.64.81-.79.98-.15.17-.3.19-.55.06-.25-.12-1.07-.39-2.04-1.24-.75-.67-1.27-1.49-1.42-1.74-.15-.24-.02-.37.11-.49.11-.11.25-.29.37-.44.12-.14.16-.24.24-.41.08-.17.04-.31-.02-.44-.06-.12-.56-1.34-.76-1.84-.2-.47-.4-.41-.56-.42h-.48c-.17 0-.44.06-.67.31-.23.24-.88.86-.88 2.11s.9 2.45 1.02 2.62c.12.17 1.77 2.7 4.29 3.79.6.26 1.07.41 1.44.52.61.19 1.17.16 1.61.1.49-.07 1.47-.6 1.68-1.19.21-.58.21-1.09.15-1.19-.06-.1-.23-.16-.48-.29Z"/></svg>`;
 }
 
+function instagramIcon() {
+  return `<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><defs><linearGradient id="v69-instagram-gradient" x1="3" y1="29" x2="29" y2="3" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#feda75"/><stop offset=".28" stop-color="#fa7e1e"/><stop offset=".52" stop-color="#d62976"/><stop offset=".76" stop-color="#962fbf"/><stop offset="1" stop-color="#4f5bd5"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#v69-instagram-gradient)"/><rect x="8" y="8" width="16" height="16" rx="5" fill="none" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="4" fill="none" stroke="#fff" stroke-width="2"/><circle cx="21.5" cy="10.5" r="1.25" fill="#fff"/></svg>`;
+}
+
 const u = (value: string) => `${BASE}${value}`;
 const absolute = (origin: string, value: string) => new URL(u(value), origin).toString();
 const wa = (message: string) => `https://wa.me/${W}?text=${encodeURIComponent(message)}`;
 const e = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
+const xml = (value: unknown) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&apos;", '"': "&quot;" })[character] || character);
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");

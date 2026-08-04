@@ -31,7 +31,7 @@ export type CatalogV69 = Omit<Catalog, "products"> & {
   products: ProductV69[];
 };
 
-export const HIDDEN_REASONS_V69 = ["No vender", "Sin stock", "Imagen mala", "Precio dudoso", "Otro"] as const;
+export const HIDDEN_REASONS_V69 = ["Discontinuado"] as const;
 export type HiddenReasonV69 = (typeof HIDDEN_REASONS_V69)[number];
 
 type HiddenEntryV69 = {

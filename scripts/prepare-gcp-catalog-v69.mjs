@@ -2,10 +2,12 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_IMAGE_BYTES = 12_000_000;
 const DEFAULT_CONCURRENCY = 8;
+const RESPONSIVE_WIDTHS = [320, 640, 1000];
 
 export function privateImageUrlV69(value) {
   try {
@@ -90,18 +92,32 @@ export function imageObjectNameV69(sourceUrl, prefix, contentType) {
   return `${cleanPrefix(prefix)}/${digest}.${extension}`;
 }
 
-export function rewriteCatalogImagesV69(catalog, replacements) {
+export function responsiveObjectNameV69(sourceUrl, prefix, width, format) {
+  if (!RESPONSIVE_WIDTHS.includes(Number(width))) throw new Error(`Ancho responsivo inválido: ${width}`);
+  if (!['webp', 'avif'].includes(format)) throw new Error(`Formato responsivo inválido: ${format}`);
+  const digest = crypto.createHash("sha256").update(sourceUrl).digest("hex").slice(0, 32);
+  return `${cleanPrefix(prefix)}/${digest}-${width}.${format}`;
+}
+
+export function rewriteCatalogImagesV69(catalog, replacements, responsiveBySource = new Map()) {
   return {
     ...catalog,
-    products: catalog.products.map((product) => ({
-      ...product,
-      images: Object.fromEntries(
-        Object.entries(product.images || {}).map(([kind, value]) => [
-          kind,
-          replacements.get(String(value || "")) || value,
-        ]),
-      ),
-    })),
+    products: catalog.products.map((product) => {
+      const sourceImages = product.images || {};
+      const images = { ...sourceImages };
+      for (const kind of ["card", "detail", "original"]) {
+        const value = sourceImages[kind];
+        if (typeof value === "string") images[kind] = replacements.get(value) || value;
+      }
+      const responsive = {};
+      for (const kind of ["card", "detail"]) {
+        const value = sourceImages[kind];
+        const variants = typeof value === "string" ? responsiveBySource.get(value) : undefined;
+        if (variants) responsive[kind] = variants;
+      }
+      if (Object.keys(responsive).length) images.responsive = responsive;
+      return { ...product, images };
+    }),
   };
 }
 
@@ -126,12 +142,14 @@ export async function prepareGcpCatalogV69({
   const sourceUrls = [
     ...new Set(
       filtered.products
-        .flatMap((product) => Object.values(product.images || {}))
+        .flatMap((product) => [product.images?.card, product.images?.detail])
         .map((value) => String(value || ""))
-        .filter(privateImageUrlV69),
+        .filter(publicSourceImageUrlV69),
     ),
   ];
   const replacements = new Map();
+  const responsiveBySource = new Map();
+  let generatedDerivatives = 0;
   await fs.mkdir(storeDirectory, { recursive: true });
 
   await mapLimit(sourceUrls, concurrency, async (sourceUrl) => {
@@ -150,20 +168,35 @@ export async function prepareGcpCatalogV69({
     if (declaredSize > MAX_IMAGE_BYTES) throw new Error(`Imagen demasiado grande: ${sourceUrl}`);
     const body = Buffer.from(await response.arrayBuffer());
     if (!body.length || body.length > MAX_IMAGE_BYTES) throw new Error(`Imagen inválida: ${sourceUrl}`);
-    const objectName = imageObjectNameV69(sourceUrl, prefix, contentType);
-    const localPath = path.join(storeDirectory, path.basename(objectName));
-    await fs.writeFile(localPath, body, { flag: "wx" }).catch(async (error) => {
-      if (error?.code !== "EEXIST") throw error;
-      const existing = await fs.readFile(localPath);
-      if (!existing.equals(body)) throw new Error(`Colisión de imagen: ${localPath}`);
-    });
-    replacements.set(
-      sourceUrl,
-      `https://storage.googleapis.com/${bucket}/${objectName}`,
-    );
+    if (privateImageUrlV69(sourceUrl)) {
+      const objectName = imageObjectNameV69(sourceUrl, prefix, contentType);
+      await writePreparedAsset(path.join(storeDirectory, path.basename(objectName)), body);
+      replacements.set(sourceUrl, `https://storage.googleapis.com/${bucket}/${objectName}`);
+    }
+
+    const metadata = await sharp(body, { failOn: "error" }).metadata();
+    const sourceWidth = Number(metadata.autoOrient?.width || metadata.width || 0);
+    const sourceHeight = Number(metadata.autoOrient?.height || metadata.height || 0);
+    if (!sourceWidth || !sourceHeight) throw new Error(`Dimensiones de imagen inválidas: ${sourceUrl}`);
+    const variants = { width: sourceWidth, height: sourceHeight, webp: {}, avif: {} };
+    for (const requestedWidth of RESPONSIVE_WIDTHS) {
+      const width = Math.min(requestedWidth, sourceWidth);
+      if (variants.webp[String(width)] && variants.avif[String(width)]) continue;
+      for (const format of ["webp", "avif"]) {
+        const pipeline = sharp(body, { failOn: "error" }).rotate().resize({ width, withoutEnlargement: true });
+        const { data, info } = await (format === "webp"
+          ? pipeline.webp({ quality: 82, effort: 4 })
+          : pipeline.avif({ quality: 62, effort: 4 })).toBuffer({ resolveWithObject: true });
+        const objectName = responsiveObjectNameV69(sourceUrl, prefix, requestedWidth, format);
+        await writePreparedAsset(path.join(storeDirectory, path.basename(objectName)), data);
+        generatedDerivatives += 1;
+        variants[format][String(info.width)] = `https://storage.googleapis.com/${bucket}/${objectName}`;
+      }
+    }
+    responsiveBySource.set(sourceUrl, variants);
   });
 
-  const rewritten = rewriteCatalogImagesV69(filtered, replacements);
+  const rewritten = rewriteCatalogImagesV69(filtered, replacements, responsiveBySource);
   const invalidImages = rewritten.products.flatMap((product) =>
     [product.images?.card, product.images?.detail].filter((value) => {
       try {
@@ -175,15 +208,42 @@ export async function prepareGcpCatalogV69({
     }),
   );
   if (invalidImages.length) throw new Error(`Quedaron ${invalidImages.length} imágenes fuera de GCS.`);
+  const incompleteResponsive = rewritten.products.filter((product) =>
+    [product.images?.responsive?.card, product.images?.responsive?.detail].some(
+      (set) => !set?.width || !set?.height || Object.keys(set.webp || {}).length < 1 || Object.keys(set.avif || {}).length < 1,
+    ),
+  );
+  if (incompleteResponsive.length) {
+    throw new Error(`Quedaron ${incompleteResponsive.length} productos sin derivados responsivos completos.`);
+  }
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, `${JSON.stringify(rewritten)}\n`, { encoding: "utf8" });
   return {
     catalog: rewritten,
     products: rewritten.products.length,
     downloadedImages: sourceUrls.length,
+    generatedDerivatives,
     outputPath,
     storeDirectory,
   };
+}
+
+export function publicSourceImageUrlV69(value) {
+  if (privateImageUrlV69(value)) return true;
+  try {
+    const parsed = new URL(String(value || ""));
+    return parsed.protocol === "https:" && parsed.hostname === "storage.googleapis.com" && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}
+
+async function writePreparedAsset(filePath, body) {
+  await fs.writeFile(filePath, body, { flag: "wx" }).catch(async (error) => {
+    if (error?.code !== "EEXIST") throw error;
+    const existing = await fs.readFile(filePath);
+    if (!existing.equals(body)) throw new Error(`Colisión de imagen: ${filePath}`);
+  });
 }
 
 function normalizeSku(value) {
@@ -266,6 +326,7 @@ async function main(argv = process.argv.slice(2)) {
     `${JSON.stringify({
       products: result.products,
       downloadedImages: result.downloadedImages,
+      generatedDerivatives: result.generatedDerivatives,
       output: path.relative(ROOT, result.outputPath),
       store: path.relative(ROOT, result.storeDirectory),
     })}\n`,

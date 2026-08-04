@@ -14,17 +14,25 @@ import {
 } from "../src/data-v69.js";
 import {
   catalogPageV69,
+  filterProductsBySearchV69,
   homePageV69,
+  isSearchQueryReadyV69,
+  normalizeQueryTermsV69,
   productPageV69,
   publicCatalogV69,
+  robotsTxtV69,
   searchTextV69,
+  sitemapLastmodV69,
+  sitemapXmlV69,
   sortProductsV69,
+  validGtinV69,
   type SortV69,
 } from "../src/render-v69.js";
 import { app } from "../src/server.js";
 import {
   catalogHealthV69,
   catalogReadyForRuntimeV69,
+  responsiveImagesReadyV691,
   sourceImageBridgeEnabled,
 } from "../src/server-v69.js";
 
@@ -113,7 +121,7 @@ async function privateFixture(catalog: CatalogV69) {
       products: [{ sku: privateSku, barcode: privateBarcode, url: privateUrl }],
       hidden: {
         [hidden.publicId]: {
-          reason: "No vender",
+          reason: "Discontinuado",
           at: "2026-07-30T00:00:00.000Z",
         },
       },
@@ -146,6 +154,12 @@ function firstGridProductId(html: string) {
   const publicId = grid.match(/href="\/p\/([^/"]+)"/)?.[1];
   assert.ok(publicId, "La grilla SSR V6.9 no contiene productos.");
   return publicId;
+}
+
+function structuredData(html: string) {
+  return [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((match) =>
+    JSON.parse(match[1]) as Record<string, unknown>,
+  );
 }
 
 async function listen(server: ReturnType<typeof app>) {
@@ -287,6 +301,95 @@ test("la ficha desktop puede mostrar código de barras sin publicar el SKU priva
   assert.match(searchTextV69({ ...sample, barcode: "7790000000069" }), /7790000000069/);
 });
 
+test("el buscador semántico se activa con tres caracteres en la primera palabra útil", async () => {
+  const catalog = await baseCatalog();
+  const matches = (query: string) => filterProductsBySearchV69(catalog.products, query);
+  const ids = (query: string) => matches(query).map((product) => product.publicId).sort();
+
+  assert.equal(isSearchQueryReadyV69("cr"), false);
+  assert.equal(isSearchQueryReadyV69("la cr"), false);
+  assert.equal(isSearchQueryReadyV69("cre"), true);
+  assert.equal(isSearchQueryReadyV69("la crema"), true);
+  assert.equal(isSearchQueryReadyV69("ENA"), true);
+  assert.equal(isSearchQueryReadyV69("LRP"), true);
+  assert.equal(isSearchQueryReadyV69("7790000000069"), true);
+  assert.equal(matches("cr").length, 0);
+  assert.deepEqual(normalizeQueryTermsV69("crema par arruga"), ["crema", "arruga"]);
+  assert.deepEqual(normalizeQueryTermsV69("crema gel b5 50"), ["crema", "gel", "b5", "50"]);
+  assert.deepEqual(ids("crema par arruga"), ids("crema arruga"));
+  assert.ok(matches("crema par arruga").length > 0);
+  assert.ok(matches("cre").length > 0);
+  assert.deepEqual(ids("Vichi"), ids("Vichy"));
+  assert.deepEqual(ids("Vichg"), ids("Vichy"));
+
+  const powder = matches("colageno polvo");
+  assert.equal(powder.length, 2);
+  assert.ok(powder.every((product) => product.needs.includes("nutricion")));
+  assert.ok(powder.every((product) => /\b\d+(?:[.,]\d+)?\s*(g|gr|grs|kg)\b/i.test(product.name)));
+  assert.ok(powder.every((product) => !/(caps|comprim|tableta|sobre|gomita|unidad)/i.test(product.name)));
+
+  const bodyMoisturizers = matches("crema hidratante para el cuerpo");
+  assert.ok(bodyMoisturizers.length > 0);
+  assert.ok(bodyMoisturizers.some((product) => /loción corporal hidratante/i.test(product.name)));
+  assert.ok(bodyMoisturizers.every((product) => !product.needs.includes("nutricion")));
+
+  const antiAge = ids("arrugas");
+  assert.ok(antiAge.length > 0);
+  assert.deepEqual(ids("arrug"), antiAge);
+  assert.deepEqual(ids("lineas de expresion"), antiAge);
+  assert.deepEqual(ids("flex"), antiAge);
+
+  const scars = ids("cicatrices");
+  assert.ok(scars.length > 0);
+  assert.deepEqual(ids("marcas"), scars);
+
+  const drySkin = ids("piel reseca");
+  assert.ok(drySkin.length > 0);
+  assert.deepEqual(ids("agriatado"), ids("seco"));
+  assert.deepEqual(ids("reseco"), ids("seco"));
+
+  const serumWrinkles = matches("serum arrugas");
+  assert.ok(serumWrinkles.length > 0);
+  assert.ok(
+    serumWrinkles.every((product) =>
+      /(serum|sérum|suero|concentr|booster|ampolla)/i.test(`${product.name} ${product.line}`),
+    ),
+  );
+
+  assert.equal(matches("protetor solar bebe").length, 2);
+  assert.equal(matches("infantil").length, 5);
+});
+
+test("V6.9.1 publica imágenes responsivas con dimensiones y prioridad sólo para la primera", async () => {
+  const catalog = await baseCatalog();
+  const responsive = {
+    width: 1000,
+    height: 1000,
+    webp: {
+      "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/sample-320.webp",
+      "640": "https://storage.googleapis.com/farmagreen-catalog-images/v69/sample-640.webp",
+    },
+    avif: {
+      "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/sample-320.avif",
+      "640": "https://storage.googleapis.com/farmagreen-catalog-images/v69/sample-640.avif",
+    },
+  };
+  const prepared = {
+    ...catalog,
+    products: catalog.products.map((product) => ({
+      ...product,
+      images: { ...product.images, responsive: { card: responsive, detail: responsive } },
+    })),
+  };
+  const html = catalogPageV69(prepared, new URLSearchParams({ scope: "todo" }), "https://farmagreenrosario.web.app");
+  assert.match(html, /<source type="image\/avif" srcset="[^"]+320w, [^"]+640w" sizes="[^"]+">/);
+  assert.match(html, /<source type="image\/webp" srcset="[^"]+320w, [^"]+640w" sizes="[^"]+">/);
+  assert.match(html, /<img [^>]*width="1000" height="1000"[^>]*loading="eager" fetchpriority="high">/);
+  assert.match(html, /<img [^>]*width="1000" height="1000"[^>]*loading="lazy">/);
+  const api = publicCatalogV69(prepared);
+  assert.deepEqual(api.products[0].images.responsive?.card, responsive);
+});
+
 test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente exclusivas", async () => {
   const catalog = await baseCatalog();
   const defaultHtml = catalogPageV69(
@@ -307,8 +410,9 @@ test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente e
     assert.equal(bootPayload(html).context.sort, sort);
     assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-r20260803\.js/);
-    assert.match(html, /styles-v6-9\.css/);
+    assert.match(html, /app-v6-9-2\.js/);
+    assert.match(html, /styles-v6-9-1\.css/);
+    assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
     assert.doesNotMatch(html, /gpsfarma/i);
   }
@@ -340,6 +444,10 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
   assert.match(html, /id="needSummaryV69">Todas<\/strong>/);
   assert.match(html, new RegExp(`id="brandSummaryV69">Todas · ${catalog.totalProducts}<\\/strong>`));
   assert.match(html, /id="sortV69" name="orden"/);
+  assert.match(html, /data-filter-menu-trigger="need"[^>]*aria-haspopup="dialog"/);
+  assert.match(html, /id="needMenuV69" data-filter-menu-popover[^>]*role="dialog"/);
+  assert.match(html, /data-filter-menu-trigger="brand"[^>]*aria-haspopup="dialog"/);
+  assert.match(html, /id="brandMenuV69" data-filter-menu-popover[^>]*role="dialog"/);
   assert.match(html, /Ver toda la marca/);
   assert.match(
     html,
@@ -353,6 +461,21 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
   assert.match(html, /<meta property="og:image:height" content="630">/);
   assert.match(html, /<meta property="og:image:type" content="image\/png">/);
   assert.match(html, /<meta name="twitter:card" content="summary_large_image">/);
+  assert.match(html, /<h1 class="v67-visually-hidden">Farmagreen Rosario: catálogo de precios y promociones<\/h1>/);
+  assert.match(html, /class="v69-footer"/);
+  assert.match(html, /Bv\. Avellaneda Bis 524, Rosario, Santa Fe/);
+  assert.match(html, /Horarios: consultá por WhatsApp/);
+  const pharmacy = structuredData(html).find((entry) => entry["@type"] === "Pharmacy");
+  assert.ok(pharmacy);
+  assert.equal(pharmacy.name, "Farmagreen Rosario");
+  assert.deepEqual(pharmacy.address, {
+    "@type": "PostalAddress",
+    streetAddress: "Bv. Avellaneda Bis 524",
+    addressLocality: "Rosario",
+    addressRegion: "Santa Fe",
+    addressCountry: "AR",
+  });
+  assert.equal("openingHours" in pharmacy, false);
   assert.doesNotMatch(html, /gpsfarma|provider|"sku"|"source"/i);
 
   for (const brand of brands) {
@@ -366,6 +489,40 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
     assert.match(section, new RegExp(`/p/${brandProducts[0].publicId}`), brand);
     assert.equal((section.match(/class="v66-card(?: |")/g) || []).length, 10, brand);
   }
+});
+
+test("V6.9.1 publica robots y un sitemap completo con fecha de sincronización", async () => {
+  const catalog = await baseCatalog();
+  const origin = "https://farmagreenrosario.web.app";
+  const robots = robotsTxtV69(origin);
+  const sitemap = sitemapXmlV69(catalog, origin);
+  assert.equal(robots, `User-agent: *\nAllow: /\nSitemap: ${origin}/sitemap.xml\n`);
+  assert.equal((sitemap.match(/<url>/g) || []).length, catalog.products.length + 2);
+  assert.equal((sitemap.match(/<loc>/g) || []).length, catalog.products.length + 2);
+  assert.match(sitemap, new RegExp(`<loc>${origin}/<\\/loc>`));
+  assert.match(sitemap, new RegExp(`<loc>${origin}/catalogo<\\/loc>`));
+  assert.ok(catalog.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));
+  assert.equal((sitemap.match(new RegExp(`<lastmod>${sitemapLastmodV69(catalog)}</lastmod>`, "g")) || []).length, catalog.products.length + 2);
+});
+
+test("V6.9.1 valida GTIN antes de publicarlo como dato estructurado", () => {
+  assert.deepEqual(validGtinV69("4005800269776"), { key: "gtin13", value: "4005800269776" });
+  assert.equal(validGtinV69("4005800269777"), null);
+  assert.equal(validGtinV69("123"), null);
+});
+
+test("V6.9.1 consolida los cuatro CSS y conserva la paleta visual aprobada", async () => {
+  const css = await readFile(path.join(ROOT, "public", "styles-v6-9-1.css"), "utf8");
+  const markers = ["styles-v6-5.css", "styles-v6-6.css", "styles-v6-7.css", "styles-v6-9.css"];
+  const positions = markers.map((marker) => css.indexOf(`/* ${marker} */`));
+  assert.ok(positions.every((position) => position >= 0));
+  assert.deepEqual([...positions].sort((left, right) => left - right), positions);
+  assert.doesNotMatch(css, /@import\s/i);
+  assert.match(css, /--v691-cta:#25d366/);
+  assert.match(css, /--v691-badge:#ff5c2d/);
+  assert.match(css, /background:var\(--v69-consult\)!important/);
+  assert.match(css, /color:#fff!important/);
+  assert.match(css, /:focus-visible/);
 });
 
 test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza producción", async () => {
@@ -384,16 +541,18 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
   const server = app({ ...process.env, NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" });
   const origin = await listen(server);
   try {
-    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, cssResponse, socialImageResponse] = await Promise.all([
+    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, cssResponse, socialImageResponse, robotsResponse, sitemapResponse] = await Promise.all([
       fetch(`${origin}/`),
       fetch(`${origin}/inicio-v6-9/`),
       fetch(`${origin}/catalogo/`),
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-r20260803.js`),
-      fetch(`${origin}/styles-v6-9.css`),
+      fetch(`${origin}/app-v6-9-2.js`),
+      fetch(`${origin}/styles-v6-9-1.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
+      fetch(`${origin}/robots.txt`),
+      fetch(`${origin}/sitemap.xml`),
     ]);
     assert.equal(rootResponse.status, 200);
     assert.equal(homeResponse.status, 200);
@@ -402,9 +561,16 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(apiResponse.status, 200);
     assert.equal(healthResponse.status, 200);
     assert.equal(appResponse.status, 200);
-    assert.equal(appResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
+    assert.equal(appResponse.headers.get("cache-control"), "no-store");
     assert.equal(cssResponse.status, 200);
+    assert.equal(cssResponse.headers.get("cache-control"), "no-store");
     assert.equal(socialImageResponse.status, 200);
+    assert.equal(robotsResponse.status, 200);
+    assert.equal(sitemapResponse.status, 200);
+    assert.equal(robotsResponse.headers.get("content-type"), "text/plain; charset=utf-8");
+    assert.equal(sitemapResponse.headers.get("content-type"), "application/xml; charset=utf-8");
+    assert.equal(robotsResponse.headers.get("cache-control"), "public, max-age=300, s-maxage=3600, stale-while-revalidate=300");
+    assert.equal(sitemapResponse.headers.get("cache-control"), "public, max-age=300, s-maxage=3600, stale-while-revalidate=300");
     assert.equal(socialImageResponse.headers.get("content-type"), "image/png");
     assert.equal(apiResponse.headers.get("cache-control"), "public, max-age=60, s-maxage=300, stale-while-revalidate=60");
     assert.equal(healthResponse.headers.get("cache-control"), "no-store");
@@ -415,6 +581,8 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     const apiText = await apiResponse.text();
     const health = await healthResponse.json() as ReturnType<typeof catalogHealthV69>;
     const appSource = await appResponse.text();
+    const robots = await robotsResponse.text();
+    const sitemap = await sitemapResponse.text();
     const api = JSON.parse(apiText) as ReturnType<typeof publicCatalogV69>;
     assert.equal(api.totalProducts, base.products.length - fixture.excludedIds.length);
     assert.deepEqual(api.availabilitySummary, publicAvailabilitySummary(api.products));
@@ -470,6 +638,12 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(root, /<link rel="canonical" href="http:\/\/127\.0\.0\.1:\d+\/">/);
     assert.match(root, /Farmacia y Dermocosmetica, Catalogo de Precios y Promociones/);
     assert.match(root, /farmagreen-social-preview-v69-social-2\.png/);
+    assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
+    assert.match(root, /styles-v6-9-1\.css/);
+    assert.match(root, /app-v6-9-2\.js/);
+    assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
+    assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
+    assert.ok(api.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));
     assert.doesNotMatch(root, /"products":\[/);
     assert.doesNotMatch(html, /"products":\[/);
     assert.equal(bootPayload(root).totalProducts, api.totalProducts);
@@ -501,6 +675,18 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(pdp, /gpsfarma|provider|"sku"|"source"/i);
     assert.match(pdp, new RegExp(`${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/p/${unavailable.publicId}`));
     assert.match(pdp, /class="brandmark"/);
+    assert.match(pdp, /class="v69-footer"/);
+    const pdpSchema = structuredData(pdp).find((entry) => Array.isArray(entry["@graph"]));
+    assert.ok(pdpSchema);
+    const graph = pdpSchema["@graph"] as Array<Record<string, unknown>>;
+    const productNode = graph.find((entry) => entry["@type"] === "Product");
+    const breadcrumbNode = graph.find((entry) => entry["@type"] === "BreadcrumbList");
+    assert.ok(productNode);
+    assert.ok(breadcrumbNode);
+    assert.equal((productNode.offers as Record<string, unknown>).availability, "https://schema.org/OutOfStock");
+    const gtin = validGtinV69(unavailable.barcode);
+    if (gtin) assert.equal(productNode[gtin.key], gtin.value);
+    assert.equal((breadcrumbNode.itemListElement as unknown[]).length, 3);
   } finally {
     await close(server);
   }
@@ -544,6 +730,49 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     catalogReadyForRuntimeV69(productionReady, {
       NODE_ENV: "production",
       V69_ENABLE_PRODUCTION: "1",
+      PUBLIC_ORIGIN: "https://farmagreen-v69-preprod.example",
+    }),
+    true,
+  );
+  assert.equal(responsiveImagesReadyV691(productionReady.products[0]), false);
+  assert.equal(
+    catalogReadyForRuntimeV69(productionReady, {
+      NODE_ENV: "production",
+      V69_ENABLE_PRODUCTION: "1",
+      V691_REQUIRE_RESPONSIVE_IMAGES: "1",
+      PUBLIC_ORIGIN: "https://farmagreen-v69-preprod.example",
+    }),
+    false,
+  );
+  const responsiveReady = {
+    ...productionReady,
+    products: productionReady.products.map((product) => ({
+      ...product,
+      images: {
+        ...product.images,
+        responsive: {
+          card: {
+            width: 1000,
+            height: 1000,
+            webp: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/card-320.webp" },
+            avif: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/card-320.avif" },
+          },
+          detail: {
+            width: 1000,
+            height: 1000,
+            webp: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/detail-320.webp" },
+            avif: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/detail-320.avif" },
+          },
+        },
+      },
+    })),
+  };
+  assert.equal(responsiveImagesReadyV691(responsiveReady.products[0]), true);
+  assert.equal(
+    catalogReadyForRuntimeV69(responsiveReady, {
+      NODE_ENV: "production",
+      V69_ENABLE_PRODUCTION: "1",
+      V691_REQUIRE_RESPONSIVE_IMAGES: "1",
       PUBLIC_ORIGIN: "https://farmagreen-v69-preprod.example",
     }),
     true,
