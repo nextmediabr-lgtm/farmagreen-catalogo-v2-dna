@@ -6,6 +6,7 @@ import {
   filterProductsBySearchV69,
   isSearchQueryReadyV69,
   normalizeQueryTermsV69,
+  sortProductsV69,
 } from "../src/render-v69.ts";
 
 const catalogPromise = catalogV69();
@@ -19,6 +20,12 @@ async function ids(query: string) {
 
 function sameResults(left: string, right: string) {
   return Promise.all([ids(left), ids(right)]).then(([leftIds, rightIds]) => assert.deepEqual(leftIds, rightIds));
+}
+
+async function ranked(query: string) {
+  const catalog = await catalogPromise;
+  const matches = filterProductsBySearchV69(catalog.products, query);
+  return sortProductsV69(matches, "relevancia", query);
 }
 
 test("01 - no activa una primera palabra de dos letras", () => {
@@ -133,4 +140,43 @@ test("23 - no transforma marca en cara", async () => {
 
 test("24 - el resultado global es determinista entre repeticiones", async () => {
   assert.deepEqual(await ids("crma pra arru"), await ids("crma pra arru"));
+});
+
+test("25 - relevancia prioriza la intención funcional antes que el descuento", async () => {
+  for (const [query, expectedNeed] of [
+    ["protector solar", "solares"],
+    ["limpieza facial", "limpieza"],
+    ["piel sensible", "piel-sensible"],
+  ] as const) {
+    const results = await ranked(query);
+    const leading = results.slice(0, Math.min(10, results.length));
+    assert.ok(leading.length > 0, query);
+    assert.ok(
+      leading.every((product) => product.needs.includes(expectedNeed)),
+      `${query}: ${leading.map((product) => `${product.name} [${product.needs.join(",")}]`).join(" | ")}`,
+    );
+  }
+});
+
+test("26 - relevancia prioriza el tipo de producto escrito por el usuario", async () => {
+  const results = await ranked("shampoo capilar");
+  const shampoos = results.filter((product) => /shampoo/i.test(product.name));
+  assert.ok(shampoos.length >= 5);
+  assert.ok(
+    results.slice(0, 5).every((product) => /shampoo/i.test(product.name)),
+    results.slice(0, 5).map((product) => product.name).join(" | "),
+  );
+});
+
+test("27 - el ranking conserva candidatos, semántica AND y determinismo", async () => {
+  const query = "protector solar";
+  const catalog = await catalogPromise;
+  const matches = filterProductsBySearchV69(catalog.products, query);
+  const first = await ranked(query);
+  const second = await ranked(query);
+  assert.deepEqual(first.map((product) => product.publicId), second.map((product) => product.publicId));
+  assert.deepEqual(
+    first.map((product) => product.publicId).sort(),
+    matches.map((product) => product.publicId).sort(),
+  );
 });

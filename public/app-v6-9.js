@@ -363,7 +363,7 @@ function semanticTextMatchesTarget(text, rawTarget) {
 }
 
 function conceptIds(index, conceptIndexes) {
-  const targets = [...new Set(conceptIndexes.flatMap((conceptIndex) => SEARCH_CONCEPTS[conceptIndex].targets.map(norm)))];
+  const targets = conceptTargets(conceptIndexes);
   const ids = new Set();
   for (const [id, text] of index.semanticTextById) {
     if (targets.some((target) => semanticTextMatchesTarget(text, target))) ids.add(id);
@@ -371,16 +371,28 @@ function conceptIds(index, conceptIndexes) {
   return ids;
 }
 
+function conceptTargets(conceptIndexes) {
+  return [...new Set(conceptIndexes.flatMap((conceptIndex) => SEARCH_CONCEPTS[conceptIndex].targets.map(norm)))];
+}
+
+function lexicalTargets(term) {
+  return [...new Set([norm(term), ...(SEARCH_ALIASES[norm(term)] || []).map(norm)])];
+}
+
 function searchClause(index, term) {
   const directConcepts = directConceptIndexes(term);
-  if (directConcepts.length) return { term, kind: "concept", productIds: conceptIds(index, directConcepts) };
+  if (directConcepts.length) {
+    return { term, kind: "concept", targets: conceptTargets(directConcepts), productIds: conceptIds(index, directConcepts) };
+  }
   const directLexical = directLexicalIds(index, term);
-  if (directLexical.size) return { term, kind: "lexical", productIds: directLexical };
+  if (directLexical.size) return { term, kind: "lexical", targets: lexicalTargets(term), productIds: directLexical };
   const fuzzyConcepts = fuzzyConceptIndexes(term);
-  if (fuzzyConcepts.length) return { term, kind: "concept", productIds: conceptIds(index, fuzzyConcepts) };
+  if (fuzzyConcepts.length) {
+    return { term, kind: "concept", targets: conceptTargets(fuzzyConcepts), productIds: conceptIds(index, fuzzyConcepts) };
+  }
   const fuzzyLexical = fuzzyLexicalIds(index, term);
-  if (fuzzyLexical.size) return { term, kind: "lexical", productIds: fuzzyLexical };
-  return { term, kind: "unresolved", productIds: new Set() };
+  if (fuzzyLexical.size) return { term, kind: "lexical", targets: [norm(term)], productIds: fuzzyLexical };
+  return { term, kind: "unresolved", targets: [norm(term)], productIds: new Set() };
 }
 
 function compileSearchPlan(products, query) {
@@ -409,14 +421,52 @@ function matches(product, searchIds, hasQuery) {
   return !hasQuery || searchIds.has(product.publicId);
 }
 
-function score(product) {
-  let value = 0;
-  const query = searchTerms(S.q).join(" ");
-  const text = blob(product);
-  if (query && text.includes(query)) value += 22;
-  if (S.brand !== "Todas" && brandName(product) === S.brand) value += 9;
-  if (S.need !== "Todas" && (product.needs || []).includes(S.need)) value += 8;
-  return value;
+function textMatchesSearchTarget(text, rawTarget) {
+  const target = norm(rawTarget);
+  if (!target) return false;
+  if (target.includes(" ")) return text.includes(target);
+  return text.split(" ").some((word) => word === target || word.startsWith(target));
+}
+
+function clauseMatchCount(text, clauses) {
+  return clauses.filter((clause) => clause.targets.some((target) => textMatchesSearchTarget(text, target))).length;
+}
+
+function phraseMatch(text, phrase) {
+  return phrase ? Number(text.includes(phrase)) : 0;
+}
+
+function searchRelevance(product, plan) {
+  const fullQuery = plan.terms.join(" ");
+  const needs = product.needs || [];
+  const fields = {
+    functional: norm([product.primaryCategory, ...needs, ...needs.map((need) => NEED_LABELS[need] || need)].join(" ")),
+    name: norm(product.name),
+    brand: norm([brandName(product), ...(product.brand?.aliases || [])].join(" ")),
+    line: norm(product.line),
+    aliases: norm((product.aliases || []).join(" ")),
+  };
+  return [
+    Number(/^\d{8,14}$/.test(fullQuery) && norm(product.barcode) === fullQuery),
+    phraseMatch(fields.functional, fullQuery),
+    clauseMatchCount(fields.functional, plan.clauses),
+    phraseMatch(fields.name, fullQuery),
+    clauseMatchCount(fields.name, plan.clauses),
+    phraseMatch(fields.brand, fullQuery),
+    clauseMatchCount(fields.brand, plan.clauses),
+    phraseMatch(fields.line, fullQuery),
+    clauseMatchCount(fields.line, plan.clauses),
+    phraseMatch(fields.aliases, fullQuery),
+    clauseMatchCount(fields.aliases, plan.clauses),
+  ];
+}
+
+function compareRelevance(left, right) {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (right[index] || 0) - (left[index] || 0);
+    if (difference) return difference;
+  }
+  return 0;
 }
 
 function availabilityMeta(product) {
@@ -603,7 +653,8 @@ function availabilityRank(product) {
 }
 
 function sorted(products) {
-  const entries = products.map((product) => ({ product, relevance: score(product) }));
+  const plan = compileSearchPlan(products, S.q);
+  const entries = products.map((product) => ({ product, relevance: searchRelevance(product, plan) }));
   if (S.sort === "disponibilidad") {
     entries.sort(
       (left, right) =>
@@ -632,7 +683,7 @@ function sorted(products) {
   } else {
     entries.sort(
       (left, right) =>
-        right.relevance - left.relevance ||
+        compareRelevance(left.relevance, right.relevance) ||
         (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
         (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
         productTie(left.product, right.product),

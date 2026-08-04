@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { resetCatalogV69CacheForTests } from "../dist/data-v69.js";
-import { filterProductsBySearchV69 } from "../dist/render-v69.js";
+import { filterProductsBySearchV69, sortProductsV69 } from "../dist/render-v69.js";
 import { app } from "../dist/server.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -816,6 +816,31 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
+
+    const relevanceQuery = "protector solar";
+    const relevanceMatches = filterProductsBySearchV69(api.products, relevanceQuery);
+    const expectedRelevanceIds = sortProductsV69(relevanceMatches, "relevancia", relevanceQuery)
+      .slice(0, 48)
+      .map((product) => product.publicId);
+    await page.locator("#searchV69").fill(relevanceQuery);
+    await page.locator("#sortV69").selectOption("relevancia");
+    await page.waitForFunction(
+      ({ query, firstId }) =>
+        new URL(location.href).searchParams.get("q") === query &&
+        new URL(location.href).searchParams.get("orden") === "relevancia" &&
+        document.querySelector("#gridV69 .v65-hit")?.getAttribute("href")?.includes(`/p/${firstId}`),
+      { query: relevanceQuery, firstId: expectedRelevanceIds[0] },
+    );
+    const browserRelevanceIds = await page.locator("#gridV69 .v65-hit").evaluateAll((links) =>
+      links.map((link) => link.getAttribute("href")?.match(/\/p\/([^/?#]+)/)?.[1]).filter(Boolean),
+    );
+    assert.deepEqual(browserRelevanceIds, expectedRelevanceIds);
+    assert.ok(
+      expectedRelevanceIds
+        .slice(0, 10)
+        .every((publicId) => api.products.find((product) => product.publicId === publicId)?.needs.includes("solares")),
+    );
+    await page.locator("#sortV69").selectOption("descuento");
 
     await page.locator("#searchV69").fill("protetor solar bebe");
     await page.waitForFunction(() => document.querySelector("#countV69")?.textContent === "2 de 2");
