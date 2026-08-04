@@ -474,6 +474,11 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       (expected) => document.querySelector("#countV69")?.textContent === `48 de ${expected}`,
       isdinCount,
     );
+    await page.waitForFunction(
+      () =>
+        document.body.dataset.v69CatalogState === "ready" &&
+        !new URL(location.href).searchParams.has("need"),
+    );
     assert.equal(await page.locator("#needSummaryV69").textContent(), "Todas");
     assert.equal(new URL(page.url()).searchParams.get("marca"), "ISDIN");
     assert.equal(new URL(page.url()).searchParams.has("need"), false);
@@ -552,6 +557,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     await page.setViewportSize({ width: 981, height: 900 });
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
     await page.locator("#gridV69 .v66-card").first().waitFor();
     assert.equal(await firstRowColumns(page), 5);
     assert.equal(await hasHorizontalOverflow(page), false);
@@ -600,6 +606,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await hasHorizontalOverflow(page), false);
 
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
     await page.locator("#gridV69 .v66-card").first().waitFor();
     await page.waitForFunction(() => {
       const cards = [...document.querySelectorAll("#gridV69 .v66-card")].slice(0, 2);
