@@ -25,6 +25,19 @@ const LOCATION_ENDPOINT_V69 = "/rest/V1/gpsfarma/geolocation/customer/location";
 
 export const GPS_SOURCES_V69 = Object.freeze([
   { id: "5930", catalogBrandId: "5930", catalogBrandName: "Eucerin", mode: "brand" },
+  {
+    id: "5704",
+    catalogBrandId: "5704",
+    catalogBrandName: "Bagóvit",
+    mode: "brand",
+    importCatalog: true,
+    facet: Object.freeze({
+      slug: "bagovit",
+      name: "Bagóvit",
+      aliases: Object.freeze(["bagovit", "bagóvit"]),
+      kind: "brand",
+    }),
+  },
   { id: "5808", catalogBrandId: "5808", catalogBrandName: "Dermaglos", mode: "brand" },
   { id: "5751", catalogBrandId: "5751", catalogBrandName: "Caviahue", mode: "brand" },
   { id: "6048", catalogBrandId: "6048", catalogBrandName: "La Roche Posay", mode: "brand" },

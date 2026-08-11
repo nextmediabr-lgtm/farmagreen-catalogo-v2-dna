@@ -1,19 +1,20 @@
 import {
   catalogV69Data,
   publicAvailabilityV69,
+  type CatalogFacetV69,
   type CatalogV69,
   type ProductV69,
   type PublicAvailabilityV69,
-} from "./data-v69.js";
+} from "./data-v7-beta.js";
 import type { ResponsiveImageSet } from "./data.js";
 
 const BASE = (process.env.PUBLIC_BASE_PATH || "").replace(/\/$/, "");
 const W = "5493417234000";
 const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/farmagreen-social-preview-v69-social-2.png";
 const SOCIAL_DESCRIPTION = "Farmacia y Dermocosmetica, Catalogo de Precios y Promociones";
-const HOME_ROUTE = "/";
-const CATALOG_ROUTE = "/catalogo";
-const PRODUCT_ROUTE = "/p/";
+const HOME_ROUTE = "/inicio-v7-beta";
+const CATALOG_ROUTE = "/catalogo-v7-beta";
+const PRODUCT_ROUTE = "/p-v7-beta/";
 const BUSINESS_NAME = "Farmagreen Rosario";
 const BUSINESS_ADDRESS = "Bv. Avellaneda Bis 524, Rosario, Santa Fe";
 const INSTAGRAM_URL = "https://www.instagram.com/farmagreenrosario";
@@ -26,7 +27,7 @@ const NEEDS = [
   { slug: "hidratacion", label: "Hidratación" },
   { slug: "limpieza", label: "Limpieza" },
   { slug: "solares", label: "Solares" },
-  { slug: "capilar", label: "Cabello" },
+  { slug: "capilar", label: "Capilar" },
   { slug: "antiedad", label: "Antiedad" },
   { slug: "reparacion", label: "Reparación" },
   { slug: "nutricion", label: "Nutrición" },
@@ -70,7 +71,7 @@ const SEARCH_CONCEPTS_V69: SearchConceptV69[] = [
   { stems: ["cabell", "pelo", "capilar"], targets: ["cabello", "pelo", "capilar"] },
   { stems: ["acne", "grano", "imperfec", "gras"], targets: ["acne", "granos", "imperfecciones", "piel grasa"] },
 ];
-const SORTS_V69 = ["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
+const SORTS_V69 = ["relevancia", "posicion", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
 export type SortV69 = (typeof SORTS_V69)[number];
 
 export type PublicProductV69 = {
@@ -88,6 +89,8 @@ export type PublicProductV69 = {
   needs: string[];
   aliases: string[];
   barcode: string;
+  catalogFacets: CatalogFacetV69[];
+  catalogPositions: Record<string, number>;
   listPrice: number;
   offerPrice: number;
   savingAmount: number;
@@ -106,6 +109,7 @@ export type PublicProductV69 = {
 
 export type PublicCatalogV69 = {
   version: number;
+  releaseChannel: "beta-local";
   syncedAt: string;
   commerceSyncedAt: string | null;
   availabilityReferenceAt: string | null;
@@ -127,6 +131,7 @@ export function publicCatalogV69(catalog: CatalogV69): PublicCatalogV69 {
   const unverified = catalog.products.filter((product) => product.availability === "unknown").length;
   return {
     version: catalog.version,
+    releaseChannel: catalog.releaseChannel,
     syncedAt: catalog.syncedAt,
     commerceSyncedAt: catalog.commerceSyncedAt,
     availabilityReferenceAt: catalog.availabilityReferenceAt,
@@ -170,6 +175,7 @@ export function searchTextV69(product: ProductV69) {
       ...safeList(product.brand.aliases),
       product.line,
       product.barcode,
+      ...catalogFacetsForProductV69(product).flatMap((facet) => [facet.name, ...facet.aliases]),
       ...safeList(product.aliases),
       product.primaryCategory,
       ...needs,
@@ -243,7 +249,7 @@ ${discoveryPanelV69(catalog, context, initial.length)}
       origin,
       commerceSyncedAt: catalog.commerceSyncedAt,
       availabilityReferenceAt: catalog.availabilityReferenceAt,
-      dataEndpoint: "/api/catalog-v6-9",
+      dataEndpoint: "/api/catalog-v7-beta",
       totalProducts: catalog.totalProducts,
       context: context.state,
     })}</script>`,
@@ -265,19 +271,18 @@ ${discoveryPanelV69(catalog, context, initial.length)}
 }
 
 function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageContext>, resultCount: number) {
-  const brands = [...new Set(catalog.products.map(brandName))];
   const offers = dealProducts(catalog.products);
-  const brandStats = brands.map((brand) => ({
-    brand,
-    count: catalog.products.filter((product) => brandName(product) === brand).length,
-    best: offers.find((product) => brandName(product) === brand)?.discountPercent || 0,
+  const brandStats = catalogFacetStatsV69(catalog.products).map((facet) => ({
+    brand: facet.name,
+    count: facet.count,
+    best: offers.find((product) => productMatchesCatalogFacetV69(product, facet.name))?.discountPercent || 0,
   }));
   const initialNeedLabel = context.need === "Todas" ? "Todas" : NEED_LABELS.get(context.need) || "Todas";
   const initialBrandLabel = `${context.brand} · ${resultCount}`;
 
   return `<section class="v65-panel v65-search-panel v65-top-search v67-discovery" id="buscar-v69">
     <div class="v67-primary-row">
-      <div class="v67-title"><p class="v65-k">Encontrá tu producto</p><h2><span>Buscá como</span> <span>hablás</span></h2></div>
+      <div class="v67-title"><p class="v65-k">V7 Beta Local · Encontrá tu producto</p><h2><span>Buscá como</span> <span>hablás</span></h2></div>
       <form class="v66-search v67-search" role="search" action="${u(CATALOG_ROUTE)}" method="get">
         <label class="v67-visually-hidden" for="searchV69">Producto, marca o necesidad</label>
         <span class="v67-search-icon">${searchIcon()}</span>
@@ -334,6 +339,7 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
         <span class="v67-menu-label">Ordenar</span>
         <select id="sortV69" name="orden">
           <option value="relevancia"${context.sort === "relevancia" ? " selected" : ""}>Relevancia</option>
+          <option value="posicion"${context.sort === "posicion" ? " selected" : ""}>Posición</option>
           <option value="disponibilidad"${context.sort === "disponibilidad" ? " selected" : ""}>Disponibilidad</option>
           <option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Descuento</option>
           <option value="precio-asc"${context.sort === "precio-asc" ? " selected" : ""}>Menor precio</option>
@@ -347,19 +353,19 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
 }
 
 export function homePageV69(catalog: CatalogV69, origin = "http://127.0.0.1:8109") {
-  const brands = [...new Set(catalog.products.map(brandName))];
+  const brands = catalogFacetStatsV69(catalog.products);
   const homeContext = pageContext(catalog, new URLSearchParams({ scope: "todo" }));
   const sections = brands
-    .map((brand, brandIndex) => {
+    .map((facet, brandIndex) => {
       const products = sortProductsV69(
-        catalog.products.filter((product) => brandName(product) === brand),
+        catalog.products.filter((product) => productMatchesCatalogFacetV69(product, facet.name)),
         "disponibilidad",
       );
-      const sectionId = `marca-${brandSlug(products[0])}`;
-      const brandHref = `${CATALOG_ROUTE}?scope=todo&marca=${encodeURIComponent(brand)}#productos-v69`;
+      const sectionId = `marca-${facet.slug}`;
+      const brandHref = `${CATALOG_ROUTE}?scope=todo&marca=${encodeURIComponent(facet.name)}&orden=posicion#productos-v69`;
       return `<section class="v69-home-brand" id="${e(sectionId)}" aria-labelledby="${e(`${sectionId}-title`)}">
         <div class="v69-home-brand-head">
-          <div><p class="v65-k">Marca</p><h2 id="${e(`${sectionId}-title`)}">${e(brand)}</h2></div>
+          <div><p class="v65-k">Marca</p><h2 id="${e(`${sectionId}-title`)}">${e(facet.name)}</h2></div>
           <div class="v69-home-brand-actions"><span>${products.length} productos</span><a href="${u(brandHref)}">Ver toda la marca</a></div>
         </div>
         <div class="v65-grid v69-home-grid">${products.slice(0, 10).map((product, productIndex) => cardV69(product, origin, brandIndex === 0 && productIndex === 0)).join("")}</div>
@@ -585,7 +591,7 @@ type PageContext = QueryState & {
 };
 
 function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
-  const availableBrands = new Set(catalog.products.map(brandName));
+  const availableBrands = new Set(catalogFacetStatsV69(catalog.products).map((facet) => facet.name));
   const requestedBrand = query.get("marca") === "Aveeno" ? "Aveno" : query.get("marca") || "";
   let brand = availableBrands.has(requestedBrand) ? requestedBrand : "Todas";
   const requestedNeed = query.get("need") || "";
@@ -600,7 +606,7 @@ function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
   }
   const scope: "ofertas" | "todo" = query.get("scope") === "todo" || q || brand !== "Todas" || need !== "Todas" ? "todo" : "ofertas";
   const requestedSort = query.get("orden");
-  const sort: SortV69 = SORTS_V69.includes(requestedSort as SortV69) ? (requestedSort as SortV69) : "descuento";
+  const sort: SortV69 = SORTS_V69.includes(requestedSort as SortV69) ? (requestedSort as SortV69) : "relevancia";
   const state = { q, brand, need, scope, sort };
   let mode = "Ofertas";
   let title = "Oportunidades de hoy";
@@ -623,7 +629,7 @@ function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
     copy = "Explorá el catálogo completo.";
   }
   const filtered = filteredProducts(catalog.products, state);
-  const metaTitle = brand !== "Todas" ? `${brand} | Catálogo Farmagreen V6.9` : need !== "Todas" ? `${title} | Catálogo Farmagreen V6.9` : q ? `${title} | Farmagreen` : "Farmagreen Rosario | Catálogo V6.9";
+  const metaTitle = brand !== "Todas" ? `${brand} | Farmagreen V7 Beta Local` : need !== "Todas" ? `${title} | Farmagreen V7 Beta Local` : q ? `${title} | Farmagreen V7 Beta Local` : "Farmagreen Rosario | V7 Beta Local";
   const metaDescription = brand !== "Todas" ? `${filtered.length} productos disponibles de ${brand} para consultar por WhatsApp.` : need !== "Todas" ? `Productos para ${title.toLowerCase()} disponibles en Farmagreen Rosario.` : "Catálogo FarmaGreen con marcas, necesidades y consulta directa por WhatsApp.";
   const contextual = Boolean(q || brand !== "Todas" || need !== "Todas");
   return { ...state, state, mode, title, copy, metaTitle, metaDescription, ogImage: contextual ? safeImage(filtered[0], "card") || SOCIAL_IMAGE : SOCIAL_IMAGE };
@@ -906,10 +912,10 @@ function filteredProducts(products: ProductV69[], state: QueryState) {
   const hasQuery = Boolean(normalize(state.q));
   const filtered = products
     .filter((product) => state.scope !== "ofertas" || product.discountPercent > 0)
-    .filter((product) => state.brand === "Todas" || brandName(product) === state.brand)
+    .filter((product) => state.brand === "Todas" || productMatchesCatalogFacetV69(product, state.brand))
     .filter((product) => state.need === "Todas" || safeList(product.needs).includes(state.need))
     .filter((product) => !hasQuery || searchIds.has(product.publicId));
-  return sortProductsV69(filtered, state.sort, state.q);
+  return sortProductsV69(filtered, state.sort, state.q, state.brand);
 }
 
 type SearchClauseV69 = SearchPlanV69["clauses"][number];
@@ -935,7 +941,11 @@ export function searchRelevanceV69(product: ProductV69, plan: SearchPlanV69) {
   const fields = {
     functional: normalize([product.primaryCategory, ...needs, ...needs.map((need) => NEED_LABELS.get(need) || need)].join(" ")),
     name: normalize(product.name),
-    brand: normalize([brandName(product), ...safeList(product.brand.aliases)].join(" ")),
+    brand: normalize([
+      brandName(product),
+      ...safeList(product.brand.aliases),
+      ...catalogFacetsForProductV69(product).flatMap((facet) => [facet.name, ...facet.aliases]),
+    ].join(" ")),
     line: normalize(product.line),
     aliases: normalize(safeList(product.aliases).join(" ")),
   };
@@ -962,11 +972,17 @@ function compareRelevanceV69(left: number[], right: number[]) {
   return 0;
 }
 
-export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "") {
+export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "", facetName = "Todas") {
   const copy = [...products];
   const tie = (left: ProductV69, right: ProductV69) =>
     String(left.name || "").localeCompare(String(right.name || ""), "es") ||
     String(left.publicId || "").localeCompare(String(right.publicId || ""), "es");
+  if (sort === "posicion") {
+    return copy.sort(
+      (left, right) =>
+        catalogPositionV69(left, facetName) - catalogPositionV69(right, facetName) || tie(left, right),
+    );
+  }
   if (sort === "disponibilidad") {
     const availabilityRank = (product: ProductV69) => product.availability === "limited" ? 0 : product.availability === "unknown" ? 1 : 2;
     return copy.sort(
@@ -1033,7 +1049,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260804-1735")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-3.js")}"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260804-1735")}"><link rel="stylesheet" href="${u("/styles-v7-beta.css?v=20260807-images-1")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v7-beta.js")}"></script></body></html>`;
 }
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority = false) {
@@ -1120,7 +1136,7 @@ function categoryLabel(value: string) {
       cuerpo: "Cuerpo",
       limpieza: "Limpieza",
       solares: "Protección solar",
-      capilar: "Cabello",
+      capilar: "Capilar",
       bebe: "Bebés",
       nutricion: "Nutrición",
       otros: "Cuidado diario",
@@ -1147,6 +1163,76 @@ function brandSlug(product: Partial<ProductV69> | undefined) {
   return String(product?.brand?.slug || normalize(brandName(product)));
 }
 
+export function catalogFacetsForProductV69(product: Partial<ProductV69> | undefined): CatalogFacetV69[] {
+  const facets = new Map<string, CatalogFacetV69>();
+  for (const facet of Array.isArray(product?.catalogFacets) ? product.catalogFacets : []) {
+    const key = normalize(facet.slug || facet.name);
+    if (!key) continue;
+    const current = facets.get(key);
+    facets.set(key, {
+      slug: facet.slug,
+      name: facet.name,
+      aliases: [...new Set([...(current?.aliases || []), ...safeList(facet.aliases)])],
+      kind: current?.kind === "brand" || facet.kind === "brand" ? "brand" : "collection",
+    });
+  }
+  return [...facets.values()];
+}
+
+export function productMatchesCatalogFacetV69(product: Partial<ProductV69> | undefined, facetName: string) {
+  const requested = normalize(facetName);
+  return catalogFacetsForProductV69(product).some(
+    (facet) =>
+      normalize(facet.name) === requested ||
+      facet.aliases.some((alias) => normalize(alias) === requested),
+  );
+}
+
+export function catalogFacetStatsV69(products: ProductV69[]) {
+  const facets = new Map<string, CatalogFacetV69 & { count: number; firstSeen: number }>();
+  products.forEach((product, productIndex) => {
+    const seen = new Set<string>();
+    for (const facet of catalogFacetsForProductV69(product)) {
+      const key = normalize(facet.name);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const current = facets.get(key);
+      if (current) current.count += 1;
+      else facets.set(key, { ...facet, count: 1, firstSeen: productIndex });
+    }
+  });
+  return [...facets.values()]
+    .sort(
+      (left, right) =>
+        Number(left.kind === "collection") - Number(right.kind === "collection") ||
+        left.firstSeen - right.firstSeen ||
+        left.name.localeCompare(right.name, "es"),
+    )
+    .map(({ firstSeen: _firstSeen, ...facet }) => facet);
+}
+
+export function catalogPositionV69(product: Partial<ProductV69> | undefined, facetName = "Todas") {
+  const positions = product?.catalogPositions && typeof product.catalogPositions === "object"
+    ? product.catalogPositions
+    : {};
+  const facets = catalogFacetsForProductV69(product);
+  if (facetName !== "Todas") {
+    const selected = facets.find((facet) => normalize(facet.name) === normalize(facetName));
+    const position = selected ? Number(positions[selected.slug]) : 0;
+    if (Number.isInteger(position) && position > 0) return position;
+  }
+  const brandFacet = facets.find(
+    (facet) => facet.kind === "brand" && normalize(facet.name) === normalize(brandName(product)),
+  );
+  const brandPosition = brandFacet ? Number(positions[brandFacet.slug]) : 0;
+  if (Number.isInteger(brandPosition) && brandPosition > 0) return brandPosition;
+  const first = Object.values(positions)
+    .map(Number)
+    .filter((position) => Number.isInteger(position) && position > 0)
+    .sort((left, right) => left - right)[0];
+  return first || Number.MAX_SAFE_INTEGER;
+}
+
 export function sourceImageV69(product: Partial<ProductV69> | undefined, kind: "card" | "detail") {
   return String(product?.images?.[kind] || product?.images?.detail || product?.images?.card || "");
 }
@@ -1169,7 +1255,7 @@ export function isPrivateSourceImageV69(value: string) {
 function safeImage(product: Partial<ProductV69> | undefined, kind: "card" | "detail") {
   const image = sourceImageV69(product, kind);
   if (!image || !isPrivateSourceImageV69(image)) return image;
-  return u(`/media-v6-9/${encodeURIComponent(String(product?.publicId || ""))}/${kind}`);
+  return u(`/media-v7-beta/${encodeURIComponent(String(product?.publicId || ""))}/${kind}`);
 }
 
 function publicProductV69(product: ProductV69): PublicProductV69 {
@@ -1188,6 +1274,8 @@ function publicProductV69(product: ProductV69): PublicProductV69 {
     needs: safeList(product.needs),
     aliases: safeList(product.aliases),
     barcode: String(product.barcode || ""),
+    catalogFacets: catalogFacetsForProductV69(product),
+    catalogPositions: { ...(product.catalogPositions || {}) },
     listPrice: product.listPrice,
     offerPrice: product.offerPrice,
     savingAmount: product.savingAmount,

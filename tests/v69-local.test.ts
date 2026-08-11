@@ -175,15 +175,15 @@ async function close(server: ReturnType<typeof app>) {
   );
 }
 
-test("V6.9 conserva las 688 fichas y sus métricas coinciden con el snapshot local", async () => {
+test("V6.9 conserva el snapshot completo y sus métricas coinciden con sus fichas", async () => {
   const raw = JSON.parse(await readFile(CATALOG_FILE, "utf8")) as {
     products: ProductV69[];
     commerceSync?: { metrics?: Record<string, number> };
   };
-  assert.equal(raw.products.length, 688);
+  assert.ok(raw.products.length >= 688);
   const availability = availabilityCounts(raw.products);
   assert.equal(availability.limited + availability.out_of_stock + availability.unknown, raw.products.length);
-  assert.equal(raw.commerceSync?.metrics?.catalogProducts, 688);
+  assert.equal(raw.commerceSync?.metrics?.catalogProducts, raw.products.length);
   assert.equal(raw.commerceSync?.metrics?.available, availability.limited);
   assert.equal(raw.commerceSync?.metrics?.unavailable, availability.out_of_stock);
   assert.equal(raw.commerceSync?.metrics?.unverified, availability.unknown);
@@ -253,7 +253,7 @@ test("la lista privada excluye antes de publicar y nunca filtra sus identificado
       V69_EXCLUSIONS_FILE: fixture.file,
       V69_REQUIRE_EXCLUSIONS: "1",
     });
-    assert.equal(visible.products.length, 686);
+    assert.equal(visible.products.length, base.products.length - fixture.excludedIds.length);
     assert.ok(fixture.excludedIds.every((id) => !visible.products.some((product) => product.publicId === id)));
 
     const availability = availabilityCounts(visible.products);
@@ -267,7 +267,7 @@ test("la lista privada excluye antes de publicar y nunca filtra sus identificado
     assert.equal(isExcludedV69({ ...sample, barcode: "00-0000-0000-69" }, rules), true);
 
     const publicCatalog = publicCatalogV69(visible);
-    assert.equal(publicCatalog.totalProducts, 686);
+    assert.equal(publicCatalog.totalProducts, visible.products.length);
     assert.deepEqual(publicCatalog.availabilitySummary, publicAvailabilitySummary(visible.products));
     const serialized = JSON.stringify(publicCatalog);
     for (const secret of [fixture.privateSku, fixture.privateBarcode, fixture.privateUrl]) {
@@ -624,7 +624,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(apiText, /gpsfarma|provider|"sku"|"source"/i);
     assert.ok(api.products.every((product) => typeof product.barcode === "string"));
     assert.equal(health.status, "ready");
-    assert.equal(health.totalProducts, 686);
+    assert.equal(health.totalProducts, api.totalProducts);
     assert.deepEqual(health.availabilitySummary, publicAvailabilitySummary(api.products));
     assert.doesNotMatch(html, /gpsfarma/i);
     assert.match(home, /class="v69-home-sections"/);

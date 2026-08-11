@@ -281,7 +281,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.locator(".v69-home-brand").first().waitFor();
     assert.equal(await page.locator("#buscar-v69").isVisible(), true);
     assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
-    assert.equal(await page.locator(".v69-home-brand").count(), 11);
+    assert.equal(await page.locator(".v69-home-brand").count(), 12);
     assert.equal(await page.locator(".v69-home-brand-index").count(), 0);
     assert.equal(await page.locator("#marcas-inicio-v69").getAttribute("class"), "v69-home-sections");
     assert.equal(await page.locator(".v69-home-brand").first().locator(".v66-card").count(), 10);
@@ -348,8 +348,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.ok(desktopCardSpacing.between >= 11);
     assert.ok(Math.abs(desktopCardSpacing.left - desktopCardSpacing.right) <= 1);
     const firstImage = page.locator("#gridV69 .v66-media img").first();
-    assert.equal(await firstImage.getAttribute("width"), "1000");
-    assert.equal(await firstImage.getAttribute("height"), "1000");
+    const expectedImage = expectedFirst(api.products, "precio-asc").images?.responsive?.card;
+    assert.equal(await firstImage.getAttribute("width"), String(expectedImage?.width));
+    assert.equal(await firstImage.getAttribute("height"), String(expectedImage?.height));
     assert.equal(await firstImage.getAttribute("loading"), "eager");
     assert.equal(await firstImage.getAttribute("fetchpriority"), "high");
     assert.equal(await page.locator("#gridV69 .v66-media img").nth(1).getAttribute("loading"), "lazy");
@@ -505,11 +506,16 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     const relatedStockGeometry = await page
       .locator(".v65-related .v66-card .v69-stock")
       .evaluateAll((stocks) => stocks.map((stock) => {
+        const card = stock.closest(".v66-card");
         const price = stock.nextElementSibling;
         const stockRect = stock.getBoundingClientRect();
         const priceRect = price?.getBoundingClientRect();
+        const needsAttention = Boolean(
+          card?.classList.contains("v69-card-unavailable") || card?.classList.contains("v69-card-unverified"),
+        );
         return {
           text: stock.textContent?.trim(),
+          expectedText: needsAttention ? "Consultar Disponibilidad" : "Disponible para Entrega",
           height: Math.round(stockRect.height),
           overflows: stock.scrollHeight > stock.clientHeight + 1 || stock.scrollWidth > stock.clientWidth + 1,
           overlapsPrice: Boolean(priceRect && stockRect.bottom > priceRect.top),
@@ -519,7 +525,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(
       relatedStockGeometry.every(
         (stock) =>
-          stock.text === "Disponible para Entrega" &&
+          stock.text === stock.expectedText &&
           stock.height === 24 &&
           stock.overflows === false &&
           stock.overlapsPrice === false,

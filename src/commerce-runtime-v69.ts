@@ -56,7 +56,7 @@ export type RefreshResultV69 = {
   reused: boolean;
 };
 
-const EXPECTED_SOURCE_COUNT = 11;
+const EXPECTED_SOURCE_COUNT = 12;
 const DEFAULT_MIN_COVERAGE = 0.95;
 const DEFAULT_MIN_PRICE_COVERAGE = 0.95;
 const DEFAULT_MIN_AVAILABILITY_COVERAGE = 1;

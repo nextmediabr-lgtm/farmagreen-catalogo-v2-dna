@@ -6,6 +6,9 @@ import sharp from "sharp";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_IMAGE_BYTES = 12_000_000;
+const MAX_IMAGE_PIXELS = 40_000_000;
+const MAX_IMAGE_DIMENSION = 12_000;
+const MAX_DERIVATIVE_BYTES = 4_000_000;
 const DEFAULT_CONCURRENCY = 8;
 const RESPONSIVE_WIDTHS = [320, 640, 1000];
 
@@ -129,9 +132,15 @@ export async function prepareGcpCatalogV69({
   bucket,
   prefix,
   concurrency = DEFAULT_CONCURRENCY,
+  maxImagePixels = MAX_IMAGE_PIXELS,
+  maxImageDimension = MAX_IMAGE_DIMENSION,
+  maxDerivativeBytes = MAX_DERIVATIVE_BYTES,
   fetchImpl = globalThis.fetch,
 }) {
   validateBucket(bucket);
+  const pixelLimit = positiveInteger(maxImagePixels, "Límite de píxeles");
+  const dimensionLimit = positiveInteger(maxImageDimension, "Límite de dimensión");
+  const derivativeLimit = positiveInteger(maxDerivativeBytes, "Límite de derivado");
   const catalog = JSON.parse(await fs.readFile(inputPath, "utf8"));
   const exclusions = JSON.parse(await fs.readFile(exclusionsPath, "utf8"));
   const filtered = filterExcludedProductsV69(catalog, exclusions);
@@ -152,7 +161,7 @@ export async function prepareGcpCatalogV69({
   let generatedDerivatives = 0;
   await fs.mkdir(storeDirectory, { recursive: true });
 
-  await mapLimit(sourceUrls, concurrency, async (sourceUrl) => {
+  await mapLimit(sourceUrls, Math.min(DEFAULT_CONCURRENCY, positiveInteger(concurrency, "Concurrencia")), async (sourceUrl) => {
     const response = await fetchImpl(sourceUrl, {
       redirect: "error",
       signal: AbortSignal.timeout(20_000),
@@ -166,27 +175,42 @@ export async function prepareGcpCatalogV69({
     if (!contentType.startsWith("image/")) throw new Error(`Contenido no visual: ${sourceUrl}`);
     const declaredSize = Number(response.headers.get("content-length") || 0);
     if (declaredSize > MAX_IMAGE_BYTES) throw new Error(`Imagen demasiado grande: ${sourceUrl}`);
-    const body = Buffer.from(await response.arrayBuffer());
+    const body = await readBodyWithinLimit(response, MAX_IMAGE_BYTES);
     if (!body.length || body.length > MAX_IMAGE_BYTES) throw new Error(`Imagen inválida: ${sourceUrl}`);
+    const inputOptions = { failOn: "error", limitInputPixels: pixelLimit };
+    let metadata;
+    try {
+      metadata = await sharp(body, inputOptions).metadata();
+    } catch (error) {
+      throw new Error(`Imagen excede el presupuesto de decodificación: ${sourceUrl}`, { cause: error });
+    }
+    const sourceWidth = Number(metadata.autoOrient?.width || metadata.width || 0);
+    const sourceHeight = Number(metadata.autoOrient?.height || metadata.height || 0);
+    if (!sourceWidth || !sourceHeight) throw new Error(`Dimensiones de imagen inválidas: ${sourceUrl}`);
+    if (
+      sourceWidth > dimensionLimit ||
+      sourceHeight > dimensionLimit ||
+      sourceWidth * sourceHeight > pixelLimit
+    ) {
+      throw new Error(`Imagen excede el presupuesto de decodificación: ${sourceUrl}`);
+    }
     if (privateImageUrlV69(sourceUrl)) {
       const objectName = imageObjectNameV69(sourceUrl, prefix, contentType);
       await writePreparedAsset(path.join(storeDirectory, path.basename(objectName)), body);
       replacements.set(sourceUrl, `https://storage.googleapis.com/${bucket}/${objectName}`);
     }
-
-    const metadata = await sharp(body, { failOn: "error" }).metadata();
-    const sourceWidth = Number(metadata.autoOrient?.width || metadata.width || 0);
-    const sourceHeight = Number(metadata.autoOrient?.height || metadata.height || 0);
-    if (!sourceWidth || !sourceHeight) throw new Error(`Dimensiones de imagen inválidas: ${sourceUrl}`);
     const variants = { width: sourceWidth, height: sourceHeight, webp: {}, avif: {} };
     for (const requestedWidth of RESPONSIVE_WIDTHS) {
       const width = Math.min(requestedWidth, sourceWidth);
       if (variants.webp[String(width)] && variants.avif[String(width)]) continue;
       for (const format of ["webp", "avif"]) {
-        const pipeline = sharp(body, { failOn: "error" }).rotate().resize({ width, withoutEnlargement: true });
+        const pipeline = sharp(body, inputOptions).rotate().resize({ width, withoutEnlargement: true });
         const { data, info } = await (format === "webp"
           ? pipeline.webp({ quality: 82, effort: 4 })
           : pipeline.avif({ quality: 62, effort: 4 })).toBuffer({ resolveWithObject: true });
+        if (!data.length || data.length > derivativeLimit) {
+          throw new Error(`Derivado de imagen demasiado grande: ${sourceUrl}`);
+        }
         const objectName = responsiveObjectNameV69(sourceUrl, prefix, requestedWidth, format);
         await writePreparedAsset(path.join(storeDirectory, path.basename(objectName)), data);
         generatedDerivatives += 1;
@@ -226,6 +250,28 @@ export async function prepareGcpCatalogV69({
     outputPath,
     storeDirectory,
   };
+}
+
+async function readBodyWithinLimit(response, limit) {
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) throw new Error("Imagen comprimida demasiado grande.");
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks, total);
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export function publicSourceImageUrlV69(value) {
@@ -286,6 +332,12 @@ function validateBucket(value) {
   if (!/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/i.test(String(value || ""))) {
     throw new Error("Bucket GCS inválido.");
   }
+}
+
+function positiveInteger(value, label) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${label} inválido.`);
+  return parsed;
 }
 
 async function mapLimit(items, limit, worker) {

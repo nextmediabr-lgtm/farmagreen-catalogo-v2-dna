@@ -93,6 +93,42 @@ test("la preparación local conserva originales y genera WebP/AVIF 320, 640 y 10
   }
 });
 
+test("la preparación rechaza imágenes que exceden el presupuesto de píxeles antes de transformar", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "farmagreen-v691-pixels-"));
+  const inputPath = path.join(directory, "catalog.json");
+  const exclusionsPath = path.join(directory, "exclusions.json");
+  const outputPath = path.join(directory, "prepared.json");
+  const storeDirectory = path.join(directory, "store");
+  const image = await sharp({
+    create: { width: 200, height: 200, channels: 3, background: { r: 255, g: 255, b: 255 } },
+  }).png().toBuffer();
+  await writeFile(inputPath, JSON.stringify(fixtureCatalog()));
+  await writeFile(exclusionsPath, JSON.stringify({ products: [], skus: [], barcodes: [], urls: [], hidden: {} }));
+
+  try {
+    await assert.rejects(
+      prepareGcpCatalogV69({
+        inputPath,
+        exclusionsPath,
+        outputPath,
+        storeDirectory,
+        bucket: "farmagreen-test-images",
+        prefix: "v69/catalog-images",
+        concurrency: 1,
+        maxImagePixels: 10_000,
+        fetchImpl: async () => new Response(image, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
+      }),
+      /excede el presupuesto de decodificación/,
+    );
+    assert.deepEqual(await readdir(storeDirectory), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 function fixtureCatalog() {
   const completedAt = "2026-08-03T10:00:00.000Z";
   return {
@@ -131,7 +167,7 @@ function fixtureCatalog() {
     commerceSync: {
       completedAt,
       status: "completed",
-      sources: Array.from({ length: 11 }, (_, index) => ({ id: String(index), status: "completed" })),
+      sources: Array.from({ length: 12 }, (_, index) => ({ id: String(index), status: "completed" })),
       metrics: {
         coverage: 1,
         priceCoverage: 1,

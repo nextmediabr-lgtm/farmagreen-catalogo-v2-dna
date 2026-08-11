@@ -1,5 +1,6 @@
 const RETRYABLE_STATUS = new Set([403, 429, 500, 502, 503, 504]);
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
+export const MAX_HTML_BYTES = 6_000_000;
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -27,6 +28,7 @@ export async function fetchTrustedHtml(
     timeoutMs = 20_000,
     maxAttempts = 3,
     maxRedirects = 5,
+    maxResponseBytes = MAX_HTML_BYTES,
     retryDelayMs = 450,
     wait = sleep,
   },
@@ -62,12 +64,45 @@ export async function fetchTrustedHtml(
       continue;
     }
 
-    if (response.ok) return response.text();
+    if (response.ok) return readHtmlWithinLimit(response, maxResponseBytes);
     if (attempt < maxAttempts && RETRYABLE_STATUS.has(response.status)) {
       await wait(retryDelayMs * attempt);
       attempt += 1;
       continue;
     }
     throw new Error(`${response.status} ${response.statusText}: ${currentUrl}`);
+  }
+}
+
+export async function readHtmlWithinLimit(response, maxBytes = MAX_HTML_BYTES) {
+  const limit = Number(maxBytes);
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Límite HTML inválido.");
+  const declaredHeader = response.headers.get("content-length");
+  const declaredBytes = declaredHeader === null ? null : Number(declaredHeader);
+  if (declaredBytes !== null && Number.isFinite(declaredBytes) && declaredBytes > limit) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(`HTML supera el límite de ${limit} bytes.`);
+  }
+  if (!response.body) return "";
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > limit) throw new Error(`HTML supera el límite de ${limit} bytes.`);
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+    return chunks.join("");
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
   }
 }

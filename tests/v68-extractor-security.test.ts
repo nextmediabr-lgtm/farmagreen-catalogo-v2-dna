@@ -63,6 +63,36 @@ test("el extractor V6.8 limita cada request y redirección al único origen HTTP
   assert.deepEqual(allowedCalls, ["https://gpsfarma.com/inicio", "https://gpsfarma.com/destino"]);
 });
 
+test("el extractor cancela HTML sin Content-Length al superar el presupuesto de bytes", async () => {
+  let pulls = 0;
+  let cancelled = false;
+  const oversized = new Response(
+    new ReadableStream({
+      pull(controller) {
+        pulls += 1;
+        if (pulls <= 2) controller.enqueue(new Uint8Array(4));
+        else controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }, { highWaterMark: 0 }),
+    { status: 200 },
+  );
+
+  await assert.rejects(
+    fetchTrustedHtml("/inicio", {
+      origin: ORIGIN,
+      fetchImpl: async () => oversized,
+      maxAttempts: 1,
+      maxResponseBytes: 5,
+      wait: async () => {},
+    }),
+    /HTML supera el límite de 5 bytes/,
+  );
+  assert.equal(cancelled, true);
+});
+
 test("el fallback de extracción conserva y valida la marca real del resultado", () => {
   const html = `
     <li class="item product product-item">

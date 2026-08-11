@@ -27,18 +27,90 @@ import {
   trustedGpsUrl,
   writeJsonAtomically,
 } from "../scripts/sync-catalog-commerce-v69.mjs";
+import {
+  inferTaxonomyV69,
+  newProductFromSourceGroupV69,
+} from "../scripts/build-local-v7-beta.mjs";
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 const PAGE_1 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-1.html"), "utf8");
 const PAGE_2 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-2.html"), "utf8");
 const EUCERIN = GPS_SOURCES_V69.find((source) => source.id === "5930");
 
-test("declara exactamente las 11 fuentes comerciales de V6.9", () => {
-  assert.equal(GPS_SOURCES_V69.length, 11);
+test("declara exactamente las 12 fuentes comerciales de V6.9 con Bagóvit en STOM", () => {
+  assert.equal(GPS_SOURCES_V69.length, 12);
   assert.deepEqual(
     GPS_SOURCES_V69.map((source) => source.id),
-    ["5930", "5808", "5751", "6048", "6301", "6023", "5756", "5697", "5911", "9100", "revitalift"],
+    ["5930", "5704", "5808", "5751", "6048", "6301", "6023", "5756", "5697", "5911", "9100", "revitalift"],
   );
+  const bagovit = GPS_SOURCES_V69.find((source) => source.id === "5704");
+  assert.equal(bagovit.catalogBrandName, "Bagóvit");
+  assert.equal(bagovit.importCatalog, true);
+  assert.deepEqual(bagovit.facet.aliases, ["bagovit", "bagóvit"]);
+});
+
+test("Bagóvit conserva marca, posición, búsqueda y usos determinísticos", () => {
+  const completedAt = "2026-08-11T12:00:00.000Z";
+  const group = {
+    members: [{
+      sourceId: "5704",
+      catalogBrandId: "5704",
+      catalogBrandName: "Bagóvit",
+      catalogFacet: { slug: "bagovit", name: "Bagóvit", aliases: ["bagovit", "bagóvit"], kind: "brand" },
+      sourceUrl: "https://gpsfarma.com/bagovit-protector-solar-fps-45.html",
+      sourceName: "Protector Solar Facial Con Color FPS 45 x 50 gr",
+      sourceBrand: "Bagóvit",
+      listedBrand: "Bagóvit",
+      imageUrl: "https://gpsfarma.com/media/catalog/product/b/a/bagovit.jpg",
+      sku: "287293",
+      availability: "available",
+      listPrice: 100,
+      offerPrice: 80,
+      savingAmount: 20,
+      discountPercent: 20,
+      position: 4,
+    }],
+    detail: { sku: "287293", barcode: "7790000005704", description: "Protección solar facial." },
+  };
+  const product = newProductFromSourceGroupV69(group, completedAt);
+  assert.deepEqual(product.brand, {
+    id: "5704",
+    slug: "bagovit",
+    name: "Bagóvit",
+    aliases: ["Bagóvit", "bagovit", "bagóvit"],
+  });
+  assert.equal(product.primaryCategory, "solares");
+  assert.deepEqual(product.needs, ["solares"]);
+  assert.equal(product.catalogPositions.bagovit, 4);
+  assert.ok(product.aliases.includes("bagovit"));
+  assert.equal(inferTaxonomyV69("Shampoo Bagovit Plasma Vegetal x 350 ml", "Bagóvit").primaryCategory, "capilar");
+  assert.equal(inferTaxonomyV69("Crema corporal Bagovit x 200 ml", "Bagóvit").primaryCategory, "cuerpo");
+  assert.equal(inferTaxonomyV69("Gel de limpieza Bagovit Pro Esencial", "Bagóvit").primaryCategory, "limpieza");
+  assert.deepEqual(inferTaxonomyV69("Serum Facial Colágeno Puro x 30 ml", "Bagóvit"), {
+    primaryCategory: "rostro",
+    needs: ["antiedad"],
+    audit: {
+      reasonerVersion: "v69.2-expansion-source-position",
+      evidenceScope: ["name", "brand"],
+      selected: [{ need: "antiedad", source: "deterministic-title-rule" }],
+      rejected: [],
+    },
+  });
+  assert.deepEqual(
+    inferTaxonomyV69("Bagovit Crema Nutritiva Reparadora Pura Vitamina A x 400 gr", "Bagóvit"),
+    {
+      primaryCategory: "cuerpo",
+      needs: ["reparacion"],
+      audit: {
+        reasonerVersion: "v69.2-expansion-source-position",
+        evidenceScope: ["name", "brand"],
+        selected: [{ need: "reparacion", source: "deterministic-title-rule" }],
+        rejected: [],
+      },
+    },
+  );
+  assert.equal(inferTaxonomyV69("Emulsión Hidratante Autobronceante x 200 g", "Bagóvit").primaryCategory, "solares");
+  assert.equal(inferTaxonomyV69("Bagóvit Facial Espuma Microexfoliante x 100 ml", "Bagóvit").primaryCategory, "limpieza");
 });
 
 test("parser de listing conserva URL confiable y calcula oferta/descuento", () => {

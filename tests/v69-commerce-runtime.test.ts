@@ -164,7 +164,7 @@ function syncedCatalog(completedAt: string) {
     commerceSync: {
       completedAt,
       status: "completed" as const,
-      sources: Array.from({ length: 11 }, (_, index) => ({
+      sources: Array.from({ length: 12 }, (_, index) => ({
         id: `source-${index + 1}`,
         status: "completed" as const,
       })),
