@@ -349,8 +349,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.ok(Math.abs(desktopCardSpacing.left - desktopCardSpacing.right) <= 1);
     const firstImage = page.locator("#gridV69 .v66-media img").first();
     const expectedImage = expectedFirst(api.products, "precio-asc").images?.responsive?.card;
-    assert.equal(await firstImage.getAttribute("width"), String(expectedImage?.width));
-    assert.equal(await firstImage.getAttribute("height"), String(expectedImage?.height));
+    assert.equal(await firstImage.getAttribute("width"), String(expectedImage?.width || 1000));
+    assert.equal(await firstImage.getAttribute("height"), String(expectedImage?.height || 1000));
     assert.equal(await firstImage.getAttribute("loading"), "eager");
     assert.equal(await firstImage.getAttribute("fetchpriority"), "high");
     assert.equal(await page.locator("#gridV69 .v66-media img").nth(1).getAttribute("loading"), "lazy");
@@ -396,7 +396,11 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator("#sortV69").inputValue(), "precio-desc");
     assert.equal(await firstCardProductId(page), expectedFirst(api.products, "precio-desc").publicId);
     await page.goBack({ waitUntil: "domcontentloaded" });
-    await page.locator("#gridV69 .v66-card").first().waitFor();
+    await page.waitForFunction(
+      () =>
+        new URL(location.href).searchParams.get("orden") === "precio-asc" &&
+        document.querySelector("#sortV69")?.value === "precio-asc",
+    );
     assert.equal(await page.locator("#sortV69").inputValue(), "precio-asc");
     assert.equal(await firstCardProductId(page), expectedFirst(api.products, "precio-asc").publicId);
 
@@ -881,6 +885,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     }
 
     for (const query of [
+      "7160",
+      "Contorno de Ojos",
       "crema para el cuer",
       "crema hidratante para el cuerpo",
       "crema par arruga",

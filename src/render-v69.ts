@@ -88,6 +88,7 @@ export type PublicProductV69 = {
   needs: string[];
   aliases: string[];
   barcode: string;
+  magentoCategories: Array<{ id: string; name: string }>;
   listPrice: number;
   offerPrice: number;
   savingAmount: number;
@@ -162,6 +163,10 @@ export async function similarV69(product: ProductV69) {
 }
 
 export function searchTextV69(product: ProductV69) {
+  return normalize(`${baseSearchTextV69(product)} ${magentoCategorySearchTextV69(product)}`);
+}
+
+function baseSearchTextV69(product: ProductV69) {
   const needs = safeList(product.needs);
   return normalize(
     [
@@ -177,6 +182,10 @@ export function searchTextV69(product: ProductV69) {
       ...derivedSearchSignalsV69(product),
     ].join(" "),
   );
+}
+
+function magentoCategorySearchTextV69(product: ProductV69) {
+  return normalize((product.magentoCategories || []).flatMap((category) => [category.id, category.name]).join(" "));
 }
 
 function semanticSearchTextV69(product: ProductV69) {
@@ -738,8 +747,11 @@ function fuzzyConceptIndexesV69(rawTerm: string) {
 type SearchIndexV69 = {
   allIds: Set<string>;
   lexicalTextById: Map<string, string>;
+  magentoCategoryTextById: Map<string, string>;
   semanticTextById: Map<string, string>;
   vocabulary: Map<string, Set<string>>;
+  magentoCategoryVocabulary: Map<string, Set<string>>;
+  exactMagentoCategoryPhrases: Map<string, Set<string>>;
 };
 
 export type SearchPlanV69 = {
@@ -761,14 +773,19 @@ function searchIndexV69(products: ProductV69[]) {
   const index: SearchIndexV69 = {
     allIds: new Set(),
     lexicalTextById: new Map(),
+    magentoCategoryTextById: new Map(),
     semanticTextById: new Map(),
     vocabulary: new Map(),
+    magentoCategoryVocabulary: new Map(),
+    exactMagentoCategoryPhrases: new Map(),
   };
   for (const product of products) {
     const id = product.publicId;
-    const lexicalText = searchTextV69(product);
+    const lexicalText = baseSearchTextV69(product);
+    const magentoCategoryText = magentoCategorySearchTextV69(product);
     index.allIds.add(id);
     index.lexicalTextById.set(id, lexicalText);
+    index.magentoCategoryTextById.set(id, magentoCategoryText);
     index.semanticTextById.set(id, semanticSearchTextV69(product));
     for (const word of new Set(lexicalText.split(" ").filter(Boolean))) {
       if (word.length < SEARCH_MIN_CHARS && !/^\d+$/.test(word)) continue;
@@ -776,9 +793,36 @@ function searchIndexV69(products: ProductV69[]) {
       ids.add(id);
       index.vocabulary.set(word, ids);
     }
+    for (const word of new Set(magentoCategoryText.split(" ").filter(Boolean))) {
+      if (word.length < SEARCH_MIN_CHARS && !/^\d+$/.test(word)) continue;
+      const ids = index.magentoCategoryVocabulary.get(word) || new Set<string>();
+      ids.add(id);
+      index.magentoCategoryVocabulary.set(word, ids);
+    }
+    for (const category of product.magentoCategories || []) {
+      const phrase = normalizeQueryTermsV69(category.name).join(" ");
+      if (!phrase.includes(" ")) continue;
+      const ids = index.exactMagentoCategoryPhrases.get(phrase) || new Set<string>();
+      ids.add(id);
+      index.exactMagentoCategoryPhrases.set(phrase, ids);
+    }
   }
   SEARCH_INDEX_CACHE_V69.set(products, index);
   return index;
+}
+
+function directMagentoCategoryIdsV69(index: SearchIndexV69, rawTerm: string) {
+  const term = normalize(rawTerm);
+  const result = new Set<string>();
+  for (const [word, ids] of index.magentoCategoryVocabulary) {
+    const matches = /^\d+$/.test(term)
+      ? word === term
+      : term.length === SEARCH_MIN_CHARS
+        ? word.startsWith(term)
+        : word === term || word.startsWith(term);
+    if (matches) unionIdsV69(result, ids);
+  }
+  return result;
 }
 
 function unionIdsV69(target: Set<string>, source?: Set<string>) {
@@ -875,6 +919,8 @@ function searchClauseV69(index: SearchIndexV69, term: string) {
   }
   const fuzzyLexical = fuzzyLexicalIdsV69(index, term);
   if (fuzzyLexical.size) return { term, kind: "lexical" as const, targets: [normalize(term)], productIds: fuzzyLexical };
+  const directCategory = directMagentoCategoryIdsV69(index, term);
+  if (directCategory.size) return { term, kind: "lexical" as const, targets: [normalize(term)], productIds: directCategory };
   return { term, kind: "unresolved" as const, targets: [normalize(term)], productIds: new Set<string>() };
 }
 
@@ -887,6 +933,13 @@ export function compileSearchPlanV69(products: ProductV69[], query: string): Sea
     productIds = new Set([...productIds].filter((id) => clause.productIds.has(id)));
     if (!productIds.size) break;
   }
+  const categoryPhraseEligible = terms.every(
+    (term) => !directConceptIndexesV69(term).length && !fuzzyConceptIndexesV69(term).length,
+  );
+  const exactCategoryIds = categoryPhraseEligible
+    ? index.exactMagentoCategoryPhrases.get(terms.join(" "))
+    : undefined;
+  if (exactCategoryIds) productIds = unionIdsV69(productIds, exactCategoryIds);
   return { terms, clauses, productIds: terms.length ? productIds : new Set<string>() };
 }
 
@@ -933,6 +986,8 @@ export function searchRelevanceV69(product: ProductV69, plan: SearchPlanV69) {
   const fullQuery = plan.terms.join(" ");
   const needs = safeList(product.needs);
   const fields = {
+    magentoCategoryIds: normalize((product.magentoCategories || []).map((category) => category.id).join(" ")),
+    magentoCategories: normalize((product.magentoCategories || []).map((category) => category.name).join(" ")),
     functional: normalize([product.primaryCategory, ...needs, ...needs.map((need) => NEED_LABELS.get(need) || need)].join(" ")),
     name: normalize(product.name),
     brand: normalize([brandName(product), ...safeList(product.brand.aliases)].join(" ")),
@@ -941,6 +996,7 @@ export function searchRelevanceV69(product: ProductV69, plan: SearchPlanV69) {
   };
   return [
     Number(/^\d{8,14}$/.test(fullQuery) && normalize(String(product.barcode || "")) === fullQuery),
+    Number(/^\d+$/.test(fullQuery) && fields.magentoCategoryIds.split(" ").includes(fullQuery)),
     phraseMatchV69(fields.functional, fullQuery),
     clauseMatchCountV69(fields.functional, plan.clauses),
     phraseMatchV69(fields.name, fullQuery),
@@ -951,6 +1007,8 @@ export function searchRelevanceV69(product: ProductV69, plan: SearchPlanV69) {
     clauseMatchCountV69(fields.line, plan.clauses),
     phraseMatchV69(fields.aliases, fullQuery),
     clauseMatchCountV69(fields.aliases, plan.clauses),
+    phraseMatchV69(fields.magentoCategories, fullQuery),
+    clauseMatchCountV69(fields.magentoCategories, plan.clauses),
   ];
 }
 
@@ -1033,7 +1091,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260804-1735")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-3.js")}"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260804-1735")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-4.js")}"></script></body></html>`;
 }
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority = false) {
@@ -1188,6 +1246,7 @@ function publicProductV69(product: ProductV69): PublicProductV69 {
     needs: safeList(product.needs),
     aliases: safeList(product.aliases),
     barcode: String(product.barcode || ""),
+    magentoCategories: (product.magentoCategories || []).map((category) => ({ ...category })),
     listPrice: product.listPrice,
     offerPrice: product.offerPrice,
     savingAmount: product.savingAmount,

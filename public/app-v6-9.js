@@ -145,6 +145,10 @@ function derivedSearchSignals(product) {
 }
 
 function blob(product) {
+  return norm(`${baseBlob(product)} ${magentoCategoryBlob(product)}`);
+}
+
+function baseBlob(product) {
   const needs = product.needs || [];
   return norm(
     [
@@ -160,6 +164,10 @@ function blob(product) {
       ...derivedSearchSignals(product),
     ].join(" "),
   );
+}
+
+function magentoCategoryBlob(product) {
+  return norm((product.magentoCategories || []).flatMap((category) => [category.id, category.name]).join(" "));
 }
 
 function semanticBlob(product) {
@@ -290,14 +298,19 @@ function searchIndex(products) {
   const index = {
     allIds: new Set(),
     lexicalTextById: new Map(),
+    magentoCategoryTextById: new Map(),
     semanticTextById: new Map(),
     vocabulary: new Map(),
+    magentoCategoryVocabulary: new Map(),
+    exactMagentoCategoryPhrases: new Map(),
   };
   for (const product of products) {
     const id = product.publicId;
-    const lexicalText = blob(product);
+    const lexicalText = baseBlob(product);
+    const magentoCategoryText = magentoCategoryBlob(product);
     index.allIds.add(id);
     index.lexicalTextById.set(id, lexicalText);
+    index.magentoCategoryTextById.set(id, magentoCategoryText);
     index.semanticTextById.set(id, semanticBlob(product));
     for (const word of new Set(lexicalText.split(" ").filter(Boolean))) {
       if (word.length < SEARCH_MIN_CHARS && !/^\d+$/.test(word)) continue;
@@ -305,9 +318,36 @@ function searchIndex(products) {
       ids.add(id);
       index.vocabulary.set(word, ids);
     }
+    for (const word of new Set(magentoCategoryText.split(" ").filter(Boolean))) {
+      if (word.length < SEARCH_MIN_CHARS && !/^\d+$/.test(word)) continue;
+      const ids = index.magentoCategoryVocabulary.get(word) || new Set();
+      ids.add(id);
+      index.magentoCategoryVocabulary.set(word, ids);
+    }
+    for (const category of product.magentoCategories || []) {
+      const phrase = searchTerms(category.name).join(" ");
+      if (!phrase.includes(" ")) continue;
+      const ids = index.exactMagentoCategoryPhrases.get(phrase) || new Set();
+      ids.add(id);
+      index.exactMagentoCategoryPhrases.set(phrase, ids);
+    }
   }
   SEARCH_INDEX_CACHE.set(products, index);
   return index;
+}
+
+function directMagentoCategoryIds(index, rawTerm) {
+  const term = norm(rawTerm);
+  const result = new Set();
+  for (const [word, ids] of index.magentoCategoryVocabulary) {
+    const found = /^\d+$/.test(term)
+      ? word === term
+      : term.length === SEARCH_MIN_CHARS
+        ? word.startsWith(term)
+        : word === term || word.startsWith(term);
+    if (found) unionIds(result, ids);
+  }
+  return result;
 }
 
 function unionIds(target, source = []) {
@@ -392,6 +432,8 @@ function searchClause(index, term) {
   }
   const fuzzyLexical = fuzzyLexicalIds(index, term);
   if (fuzzyLexical.size) return { term, kind: "lexical", targets: [norm(term)], productIds: fuzzyLexical };
+  const directCategory = directMagentoCategoryIds(index, term);
+  if (directCategory.size) return { term, kind: "lexical", targets: [norm(term)], productIds: directCategory };
   return { term, kind: "unresolved", targets: [norm(term)], productIds: new Set() };
 }
 
@@ -404,6 +446,13 @@ function compileSearchPlan(products, query) {
     productIds = new Set([...productIds].filter((id) => clause.productIds.has(id)));
     if (!productIds.size) break;
   }
+  const categoryPhraseEligible = terms.every(
+    (term) => !directConceptIndexes(term).length && !fuzzyConceptIndexes(term).length,
+  );
+  const exactCategoryIds = categoryPhraseEligible
+    ? index.exactMagentoCategoryPhrases.get(terms.join(" "))
+    : undefined;
+  if (exactCategoryIds) productIds = unionIds(productIds, exactCategoryIds);
   return { terms, clauses, productIds: terms.length ? productIds : new Set() };
 }
 
@@ -440,6 +489,8 @@ function searchRelevance(product, plan) {
   const fullQuery = plan.terms.join(" ");
   const needs = product.needs || [];
   const fields = {
+    magentoCategoryIds: norm((product.magentoCategories || []).map((category) => category.id).join(" ")),
+    magentoCategories: norm((product.magentoCategories || []).map((category) => category.name).join(" ")),
     functional: norm([product.primaryCategory, ...needs, ...needs.map((need) => NEED_LABELS[need] || need)].join(" ")),
     name: norm(product.name),
     brand: norm([brandName(product), ...(product.brand?.aliases || [])].join(" ")),
@@ -448,6 +499,7 @@ function searchRelevance(product, plan) {
   };
   return [
     Number(/^\d{8,14}$/.test(fullQuery) && norm(product.barcode) === fullQuery),
+    Number(/^\d+$/.test(fullQuery) && fields.magentoCategoryIds.split(" ").includes(fullQuery)),
     phraseMatch(fields.functional, fullQuery),
     clauseMatchCount(fields.functional, plan.clauses),
     phraseMatch(fields.name, fullQuery),
@@ -458,6 +510,8 @@ function searchRelevance(product, plan) {
     clauseMatchCount(fields.line, plan.clauses),
     phraseMatch(fields.aliases, fullQuery),
     clauseMatchCount(fields.aliases, plan.clauses),
+    phraseMatch(fields.magentoCategories, fullQuery),
+    clauseMatchCount(fields.magentoCategories, plan.clauses),
   ];
 }
 

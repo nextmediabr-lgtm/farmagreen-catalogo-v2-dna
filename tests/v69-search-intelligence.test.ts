@@ -138,6 +138,19 @@ test("23 - no transforma marca en cara", async () => {
   assert.notDeepEqual(await ids("marca"), await ids("cara"));
 });
 
+test("25 - busca categorías Magento por texto puro e ID numérico sin cambiar la clasificación V6.9", async () => {
+  const catalog = await catalogPromise;
+  const first = {
+    ...catalog.products[0],
+    magentoCategories: [{ id: "7160", name: "Contorno de Ojos" }],
+  };
+  const second = { ...catalog.products[1], magentoCategories: [{ id: "6338", name: "Hidratación" }] };
+  assert.deepEqual(filterProductsBySearchV69([first, second], "7160").map((product) => product.publicId), [first.publicId]);
+  assert.deepEqual(filterProductsBySearchV69([first, second], "contorno de ojos").map((product) => product.publicId), [first.publicId]);
+  assert.equal(first.primaryCategory, catalog.products[0].primaryCategory);
+  assert.deepEqual(first.needs, catalog.products[0].needs);
+});
+
 test("24 - el resultado global es determinista entre repeticiones", async () => {
   assert.deepEqual(await ids("crma pra arru"), await ids("crma pra arru"));
 });

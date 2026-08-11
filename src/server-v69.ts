@@ -64,6 +64,7 @@ export function catalogReadyForRuntimeV69(catalog: CatalogV69, environment: Envi
     catalog.products.length > 0 &&
     catalog.products.every(
       (product) =>
+        (environment.V69_REQUIRE_MAGENTO_TAXONOMY !== "1" || product.magentoTaxonomyAttached === true) &&
         product.availability !== "unknown" &&
         Boolean(product.availabilityCheckedAt) &&
         (["card", "detail"] as const).every((kind) => {

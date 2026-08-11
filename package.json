@@ -15,6 +15,7 @@
     "sync:identities:v69": "node scripts/sync-catalog-commerce-v69.mjs --identities",
     "sync:identities:v69:apply": "node scripts/sync-catalog-commerce-v69.mjs --identities --apply",
     "import:brand:v69": "node scripts/import-brand-v69.mjs",
+    "extract:taxonomy:v69": "node scripts/extract-magento-taxonomy-v69.mjs",
     "build:data:v7-beta": "node scripts/build-local-v7-beta.mjs",
     "prepare:gcp:v69": "npm run build && node scripts/prepare-gcp-catalog-v69.mjs",
     "build:css:v69": "node scripts/build-v69-css.mjs",

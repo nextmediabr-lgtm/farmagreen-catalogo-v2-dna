@@ -2,11 +2,17 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Catalog, Product } from "./data.js";
+import {
+  loadMagentoTaxonomyV69,
+  type MagentoCategorySearchV69,
+  type MagentoTaxonomyV69,
+} from "./magento-taxonomy-v69.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const FALLBACK_CATALOG = path.join(ROOT, "data", "catalog-v68.json");
 const SYNCED_CATALOG = path.join(ROOT, "data", "catalog-v69.json");
 const DEFAULT_EXCLUSIONS = path.join(ROOT, "data", "catalog-exclusions-v69.local.json");
+const DEFAULT_MAGENTO_TAXONOMY = path.join(ROOT, "data", "catalog-taxonomy-v69.local.json");
 
 export type SourceAvailabilityV69 = "limited" | "out_of_stock" | "unknown";
 export type PublicAvailabilityV69 = "available_reference" | "unavailable_reference" | "unverified";
@@ -22,6 +28,8 @@ export type ProductV69 = Product & {
     [key: string]: unknown;
   };
   taxonomy?: Record<string, unknown>;
+  magentoCategories?: MagentoCategorySearchV69[];
+  magentoTaxonomyAttached?: boolean;
 };
 
 export type CatalogV69 = Omit<Catalog, "products"> & {
@@ -63,10 +71,13 @@ export async function catalogV69Data(environment: NodeJS.ProcessEnv = process.en
   if (runtimeCatalog) return runtimeCatalog;
   const catalogPath = environment.V69_CATALOG_FILE?.trim() || (await exists(SYNCED_CATALOG) ? SYNCED_CATALOG : FALLBACK_CATALOG);
   const exclusionsPath = environment.V69_EXCLUSIONS_FILE?.trim() || DEFAULT_EXCLUSIONS;
+  const taxonomyPath = environment.V69_MAGENTO_TAXONOMY_FILE?.trim() || DEFAULT_MAGENTO_TAXONOMY;
   const key = [
     await fileFingerprint(catalogPath),
     await fileFingerprint(exclusionsPath),
+    await fileFingerprint(taxonomyPath),
     environment.V69_REQUIRE_EXCLUSIONS || "",
+    environment.V69_REQUIRE_MAGENTO_TAXONOMY || "",
   ].join("\n");
   if (cache && cacheKey === key) return cache;
 
@@ -77,9 +88,10 @@ export async function catalogV69Data(environment: NodeJS.ProcessEnv = process.en
   if (!Array.isArray(parsed.products)) throw new Error("Catálogo base V6.9 inválido.");
 
   const exclusions = await loadExclusionsV69(exclusionsPath, environment.V69_REQUIRE_EXCLUSIONS === "1");
+  const taxonomy = await loadMagentoTaxonomyV69(taxonomyPath, environment.V69_REQUIRE_MAGENTO_TAXONOMY === "1");
 
   cacheKey = key;
-  cache = normalizeCatalogV69(parsed, exclusions);
+  cache = normalizeCatalogV69(parsed, exclusions, taxonomy, environment.V69_REQUIRE_MAGENTO_TAXONOMY === "1");
   return cache;
 }
 
@@ -95,7 +107,14 @@ export async function setCatalogV69Data(
     exclusionsPath,
     environment.V69_REQUIRE_EXCLUSIONS === "1",
   );
-  runtimeCatalog = normalizeCatalogV69(value as CatalogV69, exclusions);
+  const taxonomyPath = environment.V69_MAGENTO_TAXONOMY_FILE?.trim() || DEFAULT_MAGENTO_TAXONOMY;
+  const taxonomy = await loadMagentoTaxonomyV69(taxonomyPath, environment.V69_REQUIRE_MAGENTO_TAXONOMY === "1");
+  runtimeCatalog = normalizeCatalogV69(
+    value as CatalogV69,
+    exclusions,
+    taxonomy,
+    environment.V69_REQUIRE_MAGENTO_TAXONOMY === "1",
+  );
   cache = runtimeCatalog;
   cacheKey = "runtime";
   return runtimeCatalog;
@@ -165,10 +184,16 @@ function normalizeCatalogV69(
     commerceSync?: { completedAt?: string };
   },
   exclusions: ExclusionsV69,
+  taxonomy: MagentoTaxonomyV69 | null = null,
+  requireTaxonomy = false,
 ): CatalogV69 {
   if (!Array.isArray(parsed.products)) throw new Error("Catálogo base V6.9 inválido.");
   const products = parsed.products.map(cleanProductV69);
-  const visible = products.filter((product) => !isExcludedV69(product, exclusions));
+  const visible = applyMagentoTaxonomyV69(
+    products.filter((product) => !isExcludedV69(product, exclusions)),
+    taxonomy,
+    requireTaxonomy,
+  );
   const commerceSyncedAt = validTimestamp(parsed.commerceSyncedAt || parsed.commerceSync?.completedAt);
   const latestAvailabilityCheck =
     visible
@@ -185,6 +210,39 @@ function normalizeCatalogV69(
     totalProducts: visible.length,
     products: visible,
   };
+}
+
+export function applyMagentoTaxonomyV69(
+  products: ProductV69[],
+  taxonomy: MagentoTaxonomyV69 | null,
+  required = false,
+) {
+  if (!taxonomy) {
+    if (required) throw new Error("La taxonomía Magento V6.9 es obligatoria.");
+    return products;
+  }
+  const categoryById = new Map(taxonomy.categories.map((category) => [category.id, category]));
+  const taxonomyByProduct = new Map(taxonomy.products.map((product) => [product.publicId, product]));
+  return products.map((product) => {
+    const membership = taxonomyByProduct.get(product.publicId);
+    if (!membership) {
+      if (required) throw new Error(`Falta taxonomía Magento para ${product.publicId}.`);
+      return product;
+    }
+    if (
+      (product.sku && normalizeSku(membership.sku) !== normalizeSku(product.sku)) ||
+      (product.barcode && normalizeBarcode(membership.barcode) !== normalizeBarcode(product.barcode)) ||
+      normalizeSourceUrl(membership.productUrl) !== normalizeSourceUrl(product.source?.url || "")
+    ) {
+      throw new Error(`La identidad Magento no coincide para ${product.publicId}.`);
+    }
+    const magentoCategories = membership.categoryIds.map((categoryId) => {
+      const category = categoryById.get(categoryId);
+      if (!category) throw new Error(`Falta la categoría Magento ${categoryId}.`);
+      return { id: String(category.id), name: category.name };
+    });
+    return { ...product, magentoCategories, magentoTaxonomyAttached: true };
+  });
 }
 
 function cleanProductV69(product: ProductV69): ProductV69 {

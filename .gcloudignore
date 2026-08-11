@@ -11,4 +11,3 @@ dist
 .gstack
 .codex-artifacts
 .gcp-v69
-data/catalog-v69.json
