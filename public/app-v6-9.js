@@ -11,8 +11,8 @@ const PAGE = 48;
 const ROUTE = "/catalogo";
 const PDP = "/p/";
 const CONTEXT = BOOT.context || {};
-const SORT_VALUES = new Set(["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"]);
-const DEFAULT_SORT = "descuento";
+const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"]);
+const DEFAULT_SORT = "relevancia";
 const S = {
   all: BOOT.products || [],
   q: CONTEXT.q || "",
@@ -635,7 +635,7 @@ function openFilterMenu(name) {
 
 function syncFilterMenuSummaries(resultCount) {
   const needLabel = S.need === "Todas" ? "Todas" : NEED_LABELS[S.need] || S.need;
-  const brandLabel = `${S.brand} · ${resultCount}`;
+  const brandLabel = S.brand;
   const needSummary = $("#needSummaryV69");
   const brandSummary = $("#brandSummaryV69");
   if (needSummary) needSummary.textContent = needLabel;
@@ -732,6 +732,12 @@ function sorted(products) {
     entries.sort(
       (left, right) => currentPrice(right.product) - currentPrice(left.product) || productTie(left.product, right.product),
     );
+  } else if (S.sort === "marca") {
+    entries.sort(
+      (left, right) =>
+        brandName(left.product).localeCompare(brandName(right.product), "es", { sensitivity: "base" }) ||
+        productTie(left.product, right.product),
+    );
   } else if (S.sort === "nombre") {
     entries.sort((left, right) => productTie(left.product, right.product));
   } else {
@@ -790,7 +796,15 @@ function refreshFloatingWhatsapp() {
 }
 
 function catalogCopy() {
-  if (S.q) return { mode: "Resultados", title: `Resultados para “${S.q.trim()}”`, context: "Coincidencias por producto, marca o necesidad.", nav: "buscar" };
+  if (S.q) {
+    const exactCategoryPath = /^\d+$/.test(S.q.trim()) ? BOOT.magentoCategoryPaths?.[S.q.trim()] : null;
+    return {
+      mode: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? "" : "Resultados",
+      title: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? exactCategoryPath.join(" › ") : `Resultados para “${S.q.trim()}”`,
+      context: "Coincidencias por producto, marca o necesidad.",
+      nav: "buscar",
+    };
+  }
   if (S.brand !== "Todas") return { mode: "Marca", title: S.brand, context: `Productos disponibles de ${S.brand}.`, nav: "marcas" };
   if (S.need !== "Todas") {
     const label = NEED_LABELS[S.need] || S.need;
@@ -830,7 +844,9 @@ function render(historyMode = "replace") {
     }
   }
   const copy = catalogCopy();
-  $("#modeV69").textContent = copy.mode;
+  const mode = $("#modeV69");
+  mode.textContent = copy.mode;
+  mode.hidden = !copy.mode;
   const catalogTitle = $("#catalogTitleV69");
   catalogTitle.textContent = copy.title;
   catalogTitle.classList.toggle("v69-title-all", copy.title === "Todos los productos");
@@ -925,7 +941,7 @@ function bootHomeDiscovery() {
     if ($("#searchV69")) $("#searchV69").value = "";
     if ($("#sortV69")) $("#sortV69").value = DEFAULT_SORT;
     $("#needSummaryV69").textContent = "Todas";
-    $("#brandSummaryV69").textContent = `Todas · ${TOTAL_PRODUCTS}`;
+    $("#brandSummaryV69").textContent = "Todas";
   });
   $("#sortV69")?.addEventListener("change", (event) => openCatalogFromHome({ sort: event.target.value }));
   $$('[data-brand]').forEach((button) =>
@@ -948,6 +964,7 @@ async function loadCatalogProducts() {
     throw new Error("El catálogo público llegó vacío.");
   }
   S.all = payload.products;
+  BOOT.magentoCategoryPaths = payload.magentoCategoryPaths || BOOT.magentoCategoryPaths || {};
   BOOT.commerceSyncedAt = payload.commerceSyncedAt || BOOT.commerceSyncedAt;
   BOOT.availabilityReferenceAt = payload.availabilityReferenceAt || BOOT.availabilityReferenceAt;
 }

@@ -139,12 +139,14 @@ export async function extractMagentoTaxonomyV69({
 async function fetchBatchV69(keys, fetchImpl) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
       const response = await fetchImpl(ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ query: QUERY, variables: { keys } }),
-        signal: AbortSignal.timeout(30_000),
+        signal: controller.signal,
       });
       if (!response.ok) throw new Error(`Magento GraphQL respondió HTTP ${response.status}.`);
       const contentType = String(response.headers.get("content-type") || "").toLowerCase();
@@ -159,6 +161,8 @@ async function fetchBatchV69(keys, fetchImpl) {
     } catch (error) {
       lastError = error;
       if (attempt === 3) break;
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw lastError;

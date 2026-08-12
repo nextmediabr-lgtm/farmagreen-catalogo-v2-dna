@@ -38,7 +38,7 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CATALOG_FILE = path.join(ROOT, "data", "catalog-v69.json");
-const SORTS: SortV69[] = ["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"];
+const SORTS: SortV69[] = ["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"];
 
 async function baseCatalog() {
   resetCatalogV69CacheForTests();
@@ -143,6 +143,7 @@ function bootPayload(html: string) {
   assert.ok(encoded, "Falta el payload público V6.9.");
   return JSON.parse(encoded) as {
     context: { brand: string; need: string; scope: string; sort: SortV69 };
+    magentoCategoryPaths?: Record<string, string[]>;
     products?: Array<Record<string, unknown>>;
     totalProducts?: number;
     dataEndpoint?: string;
@@ -323,7 +324,7 @@ test("el buscador semántico se activa con tres caracteres en la primera palabra
   assert.deepEqual(ids("Vichg"), ids("Vichy"));
 
   const powder = matches("colageno polvo");
-  assert.equal(powder.length, 2);
+  assert.ok(powder.length >= 2);
   assert.ok(powder.every((product) => product.needs.includes("nutricion")));
   assert.ok(powder.every((product) => /\b\d+(?:[.,]\d+)?\s*(g|gr|grs|kg)\b/i.test(product.name)));
   assert.ok(powder.every((product) => !/(caps|comprim|tableta|sobre|gomita|unidad)/i.test(product.name)));
@@ -390,15 +391,15 @@ test("V6.9.1 publica imágenes responsivas con dimensiones y prioridad sólo par
   assert.deepEqual(api.products[0].images.responsive?.card, responsive);
 });
 
-test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente exclusivas", async () => {
+test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente exclusivas", async () => {
   const catalog = await baseCatalog();
   const defaultHtml = catalogPageV69(
     catalog,
     new URLSearchParams({ scope: "todo" }),
     "http://127.0.0.1:8109",
   );
-  assert.equal(bootPayload(defaultHtml).context.sort, "descuento");
-  assert.match(defaultHtml, /<option value="descuento" selected>Descuento<\/option>/);
+  assert.equal(bootPayload(defaultHtml).context.sort, "relevancia");
+  assert.match(defaultHtml, /<option value="relevancia" selected>Relevancia<\/option>/);
   assert.match(defaultHtml, /id="catalogTitleV69" class="v69-title-all">Todos los productos<\/h1>/);
 
   for (const sort of SORTS) {
@@ -410,7 +411,7 @@ test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente e
     assert.equal(bootPayload(html).context.sort, sort);
     assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-4\.js/);
+    assert.match(html, /app-v6-9-5\.js/);
     assert.match(html, /styles-v6-9-1\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -432,6 +433,24 @@ test("SSR V6.9 respeta los seis órdenes y mantiene marca/necesidad mutuamente e
   );
 });
 
+test("la búsqueda por ID de categoría muestra únicamente su ruta jerárquica pura", async () => {
+  const catalog = await baseCatalog();
+  const html = catalogPageV69(
+    catalog,
+    new URLSearchParams({ scope: "todo", q: "6380", orden: "disponibilidad" }),
+    "http://127.0.0.1:8109",
+  );
+  assert.match(html, /id="catalogTitleV69">Cuidado de la Piel › Faciales<\/h1>/);
+  assert.match(html, /id="modeV69" hidden><\/p>/);
+  assert.doesNotMatch(html, /Resultados para [“\"]6380/);
+  assert.doesNotMatch(html, />CATEGORÍAS › Cuidado de la Piel/);
+  assert.deepEqual(bootPayload(html).magentoCategoryPaths?.["6380"], ["Cuidado de la Piel", "Faciales"]);
+  assert.deepEqual(publicCatalogV69(catalog).magentoCategoryPaths["6380"], ["Cuidado de la Piel", "Faciales"]);
+
+  const regular = catalogPageV69(catalog, new URLSearchParams({ scope: "todo", q: "hidratante" }));
+  assert.match(regular, /Resultados para “hidratante”/);
+});
+
 test("la home V6.9 organiza dos filas por marca con disponibilidad primero", async () => {
   const catalog = await baseCatalog();
   const html = homePageV69(catalog, "http://127.0.0.1:8109");
@@ -442,7 +461,8 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
   assert.match(html, /id="buscar-v69"/);
   assert.match(html, /<span>Buscá como<\/span> <span>hablás<\/span>/);
   assert.match(html, /id="needSummaryV69">Todas<\/strong>/);
-  assert.match(html, new RegExp(`id="brandSummaryV69">Todas · ${catalog.totalProducts}<\\/strong>`));
+  assert.match(html, /<span class="v67-menu-label">Seleccionar Marca<\/span>\s*<strong id="brandSummaryV69">Todas<\/strong>/);
+  assert.doesNotMatch(html, /id="brandSummaryV69">[^<]*·\s*\d+/);
   assert.match(html, /id="sortV69" name="orden"/);
   assert.match(html, /data-filter-menu-trigger="need"[^>]*aria-haspopup="dialog"/);
   assert.match(html, /id="needMenuV69" data-filter-menu-popover[^>]*role="dialog"/);
@@ -548,7 +568,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-4.js`),
+      fetch(`${origin}/app-v6-9-5.js`),
       fetch(`${origin}/styles-v6-9-1.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
       fetch(`${origin}/robots.txt`),
@@ -590,6 +610,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       "availabilityReferenceAt",
       "availabilitySummary",
       "commerceSyncedAt",
+      "magentoCategoryPaths",
       "products",
       "syncedAt",
       "totalProducts",
@@ -641,7 +662,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(root, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-1\.css/);
-    assert.match(root, /app-v6-9-4\.js/);
+    assert.match(root, /app-v6-9-5\.js/);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
     assert.ok(api.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));

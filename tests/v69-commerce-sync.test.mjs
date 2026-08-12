@@ -37,16 +37,34 @@ const PAGE_1 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-1.html"
 const PAGE_2 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-2.html"), "utf8");
 const EUCERIN = GPS_SOURCES_V69.find((source) => source.id === "5930");
 
-test("declara exactamente las 12 fuentes comerciales de V6.9 con Bagóvit en STOM", () => {
-  assert.equal(GPS_SOURCES_V69.length, 12);
+test("declara exactamente las 16 fuentes comerciales de V6.9 con las marcas incorporadas en STOM", () => {
+  assert.equal(GPS_SOURCES_V69.length, 16);
   assert.deepEqual(
     GPS_SOURCES_V69.map((source) => source.id),
-    ["5930", "5704", "5808", "5751", "6048", "6301", "6023", "5756", "5697", "5911", "9100", "revitalift"],
+    ["5930", "5704", "6827", "6116", "6312", "5745", "5808", "5751", "6048", "6301", "6023", "5756", "5697", "5911", "9100", "revitalift"],
   );
   const bagovit = GPS_SOURCES_V69.find((source) => source.id === "5704");
   assert.equal(bagovit.catalogBrandName, "Bagóvit");
   assert.equal(bagovit.importCatalog, true);
   assert.deepEqual(bagovit.facet.aliases, ["bagovit", "bagóvit"]);
+  const cerave = GPS_SOURCES_V69.find((source) => source.id === "6827");
+  assert.equal(cerave.catalogBrandName, "CeraVe");
+  assert.equal(cerave.importCatalog, true);
+  assert.deepEqual(cerave.facet.aliases, ["cerave", "cera ve"]);
+  assert.deepEqual(
+    GPS_SOURCES_V69.filter((source) => ["6116", "6312", "5745"].includes(source.id)).map((source) => ({
+      id: source.id,
+      name: source.catalogBrandName,
+      aliases: source.facet.aliases,
+      importCatalog: source.importCatalog,
+      importAvailableOnly: Boolean(source.importAvailableOnly),
+    })),
+    [
+      { id: "6116", name: "Neutrogena", aliases: ["neutrogena"], importCatalog: true, importAvailableOnly: false },
+      { id: "6312", name: "Vitamin Way", aliases: ["vitamin way", "vitaminway"], importCatalog: true, importAvailableOnly: true },
+      { id: "5745", name: "Capilatis", aliases: ["capilatis"], importCatalog: true, importAvailableOnly: true },
+    ],
+  );
 });
 
 test("Bagóvit conserva marca, posición, búsqueda y usos determinísticos", () => {
@@ -111,6 +129,74 @@ test("Bagóvit conserva marca, posición, búsqueda y usos determinísticos", ()
   );
   assert.equal(inferTaxonomyV69("Emulsión Hidratante Autobronceante x 200 g", "Bagóvit").primaryCategory, "solares");
   assert.equal(inferTaxonomyV69("Bagóvit Facial Espuma Microexfoliante x 100 ml", "Bagóvit").primaryCategory, "limpieza");
+});
+
+test("CeraVe conserva marca, posición, búsqueda y usos determinísticos", () => {
+  const completedAt = "2026-08-11T12:00:00.000Z";
+  const group = {
+    members: [{
+      sourceId: "6827",
+      catalogBrandId: "6827",
+      catalogBrandName: "CeraVe",
+      catalogFacet: { slug: "cerave", name: "CeraVe", aliases: ["cerave", "cera ve"], kind: "brand" },
+      sourceUrl: "https://gpsfarma.com/cerave-locion-facial-hidratante-x-52-ml.html",
+      sourceName: "Loción Facial Hidratante x 52 ml",
+      sourceBrand: "Cerave",
+      listedBrand: "Cerave",
+      imageUrl: "https://gpsfarma.com/media/catalog/product/c/e/cerave.jpg",
+      sku: "CERAVE-1",
+      availability: "available",
+      listPrice: 100,
+      offerPrice: 80,
+      savingAmount: 20,
+      discountPercent: 20,
+      position: 7,
+    }],
+    detail: { sku: "CERAVE-1", barcode: "3337875597197", description: "Hidratación facial." },
+  };
+  const product = newProductFromSourceGroupV69(group, completedAt);
+  assert.deepEqual(product.brand, {
+    id: "6827",
+    slug: "cerave",
+    name: "CeraVe",
+    aliases: ["CeraVe", "cerave", "cera ve"],
+  });
+  assert.equal(product.primaryCategory, "rostro");
+  assert.deepEqual(product.needs, ["hidratacion"]);
+  assert.equal(product.catalogPositions.cerave, 7);
+  assert.ok(product.aliases.includes("cera ve"));
+  assert.equal(inferTaxonomyV69("Gel Limpiador Facial Espumoso x 473 ml", "CeraVe").primaryCategory, "limpieza");
+  assert.deepEqual(inferTaxonomyV69("Crema Reparadora de Manos x 50 ml", "CeraVe").needs, ["reparacion"]);
+  assert.deepEqual(inferTaxonomyV69("Loción Facial Hidratante SPF25 x 52 ml", "CeraVe"), {
+    primaryCategory: "rostro",
+    needs: ["hidratacion"],
+    audit: {
+      reasonerVersion: "v69.2-expansion-source-position",
+      evidenceScope: ["name", "brand"],
+      selected: [{ need: "hidratacion", source: "deterministic-title-rule" }],
+      rejected: [],
+    },
+  });
+  assert.deepEqual(inferTaxonomyV69("Crema Facial Anti-Rugosidades x 340 gr", "CeraVe").needs, ["reparacion"]);
+});
+
+test("Neutrogena, Vitamin Way y Capilatis conservan familias y usos determinísticos", () => {
+  assert.deepEqual(inferTaxonomyV69("Crema Facial Hydro Boost FPS 25 Water Gel x 40 gr", "Neutrogena").needs, ["hidratacion"]);
+  assert.equal(inferTaxonomyV69("Toallitas Desmaquillantes Night Calming x 25 un.", "Neutrogena").primaryCategory, "limpieza");
+  assert.equal(inferTaxonomyV69("Gel de Limpeza Deep Clean Intensive x 150 gr", "Neutrogena").primaryCategory, "limpieza");
+  assert.deepEqual(inferTaxonomyV69("Citrato de Magnesio x 30 cápsulas vegetales", "Vitamin Way"), {
+    primaryCategory: "nutricion",
+    needs: ["nutricion"],
+    audit: {
+      reasonerVersion: "v69.2-expansion-source-position",
+      evidenceScope: ["name", "brand"],
+      selected: [{ need: "nutricion", source: "deterministic-title-rule" }],
+      rejected: [],
+    },
+  });
+  assert.equal(inferTaxonomyV69("Crema de Peinar Antifrizz Para Rulos x 230 ml", "Capilatis").primaryCategory, "capilar");
+  assert.equal(inferTaxonomyV69("Enjuague con Manzanilla x 500 ml", "Capilatis").primaryCategory, "capilar");
+  assert.equal(inferTaxonomyV69("Crema para manos y uñas Bodytherapy x 100 g", "Capilatis").primaryCategory, "cuerpo");
 });
 
 test("parser de listing conserva URL confiable y calcula oferta/descuento", () => {

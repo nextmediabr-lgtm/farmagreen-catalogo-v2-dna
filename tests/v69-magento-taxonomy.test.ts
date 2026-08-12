@@ -127,8 +127,8 @@ test("el artefacto vigente cubre todas las fichas públicas después de las excl
     V69_MAGENTO_TAXONOMY_FILE: path.join(root, "data", "catalog-taxonomy-v69.local.json"),
     V69_REQUIRE_MAGENTO_TAXONOMY: "1",
   });
-  assert.equal(catalog.products.length, 692);
-  assert.equal(catalog.products.filter((product) => product.magentoTaxonomyAttached).length, 692);
+  assert.equal(catalog.products.length, 875);
+  assert.equal(catalog.products.filter((product) => product.magentoTaxonomyAttached).length, 875);
   assert.ok(catalog.products.every((product) => Array.isArray(product.magentoCategories)));
   assert.ok(
     ["7790375003142", "7790375269326", "7790375001292"].every(

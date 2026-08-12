@@ -747,19 +747,24 @@ function brandForGroupV69(group) {
 
 export function inferTaxonomyV69(nameValue, brandValue) {
   const text = normalizeProductText(`${nameValue} ${brandValue}`);
-  const facial = /\b(facial|rostro|contorno de ojos|cc cream)\b/.test(text);
+  const vitaminWay = /\bvitamin\s*way\b/.test(text);
+  const capilatis = /\bcapilatis\b/.test(text);
+  const explicitBody = /\b(corporal|cuerpo|manos|pies|piernas|bodytherapy|reductora)\b/.test(text);
+  const facial = /\b(facial|rostro|face care|contorno de ojos|cc cream)\b/.test(text);
   const topical = /\b(crema|emulsion|locion|gel|serum|espuma)\b/.test(text);
   const presentation = [...text.matchAll(/\b(\d+(?:[.,]\d+)?)\s*(ml|g|gr|gramos)\b/g)]
     .map((match) => Number(String(match[1]).replace(",", ".")))
     .filter(Number.isFinite)
     .sort((left, right) => right - left)[0] || 0;
-  const nutrition =
+  const nutrition = vitaminWay ||
     /\b(proteina|suplemento|creatina|aminoacido)\w*\b/.test(text) ||
     (/\b(vitamina|minerales|colageno)\w*\b/.test(text) &&
       /\b(capsula|comprimido|tableta|polvo|sobre|gomita|bebible)\w*\b/.test(text));
-  const capillary = /\b(shampoo|acondicionador|capilar|cabello|pelo|dercos|anticaida|caspa)\b/.test(text);
-  const solar = /\b(protector solar|fotoprotector|solar|fps|spf|after sun|post solar|broncead\w*|autobronce\w*)\b/.test(text);
-  const cleansing = /\b(limpiador|limpieza|micelar|desmaquillante|jabon|syndet|exfolia\w*|microexfolia\w*)\b/.test(text);
+  const capillary =
+    (capilatis && !explicitBody) ||
+    /\b(shampoo|acondicionador|capilar|cabello|pelo|dercos|anticaida|anti caida|caspa|rulos|desenredante|fijador|enjuague|mascara|balsamo|protector de calor|aclarante)\b/.test(text);
+  const solar = /\b(protector solar|fotoprotector|solar|after sun|post solar|broncead\w*|autobronce\w*)\b/.test(text);
+  const cleansing = /\b(limpiador|limpieza|limpeza|micelar|desmaquill\w*|jabon|syndet|exfolia\w*|microexfolia\w*)\b/.test(text);
   const body =
     /\b(corporal|cuerpo|manos|pies|piernas)\b/.test(text) ||
     (topical && presentation >= 100 && !facial && !capillary && !solar && !cleansing && !nutrition);
@@ -774,15 +779,15 @@ export function inferTaxonomyV69(nameValue, brandValue) {
 
   const needs = [];
   const rules = [
-    ["limpieza", /\b(limpiador|limpieza|micelar|desmaquillante|jabon|syndet|exfolia\w*|microexfolia\w*)\b/],
-    ["solares", /\b(protector solar|fotoprotector|solar|fps|spf|after sun|post solar|broncead\w*|autobronce\w*)\b/],
-    ["capilar", /\b(shampoo|acondicionador|capilar|cabello|pelo|dercos|anticaida|caspa)\b/],
+    ["limpieza", /\b(limpiador|limpieza|limpeza|micelar|desmaquill\w*|jabon|syndet|exfolia\w*|microexfolia\w*)\b/],
+    ["solares", /\b(protector solar|fotoprotector|solar|after sun|post solar|broncead\w*|autobronce\w*)\b/],
+    ["capilar", /\b(shampoo|acondicionador|capilar|cabello|pelo|dercos|anticaida|anti caida|caspa|rulos|desenredante|fijador|enjuague|mascara|balsamo|protector de calor|aclarante)\b/],
     ["acne", /\b(acne|antiacne|comedon|seborregulador|imperfecciones|granos)\b/],
     ["manchas", /\b(manchas|antimanchas|anti pigment|antipigment|despigment|melasma|pigmentacion)\b/],
     ["piel-sensible", /\b(piel sensible|atopi|rosacea|rojeces|hipoalergen\w*|bebe|infantil|irritacion)\b/],
-    ["hidratacion", /\b(hidrat\w*|hydra\w*|moistur\w*|humect\w*|emoliente|piel seca|xerosis|hialuron\w*)\b/],
+    ["hidratacion", /\b(hidrat\w*|hydra\w*|hydro\w*|moistur\w*|humect\w*|emoliente|piel seca|xerosis|hialuron\w*)\b/],
     ["antiedad", /\b(antiedad|anti edad|antiage|anti aging|antiarrugas|arrugas|retinol|retinal|filler|firmeza|reafirmante|lifting|colageno)\b/],
-    ["reparacion", /\b(repar\w*|repair\w*|restaur\w*|regener\w*|cicatriz\w*|estria\w*|barrera|labial|labios agrietados)\b/],
+    ["reparacion", /\b(repar\w*|repair\w*|restaur\w*|regener\w*|cicatriz\w*|estria\w*|rugos\w*|barrera|labial|labios agrietados)\b/],
   ];
   for (const [need, pattern] of rules) if (pattern.test(text) && !needs.includes(need)) needs.push(need);
   if (["nutricion", "solares", "capilar", "limpieza"].includes(primaryCategory)) {

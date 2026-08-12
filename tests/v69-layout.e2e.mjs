@@ -153,6 +153,12 @@ function expectedFirst(products, sort) {
         (right.savingAmount || 0) - (left.savingAmount || 0) ||
         tie(left, right),
     );
+  } else if (sort === "marca") {
+    copy.sort(
+      (left, right) =>
+        left.brand.name.localeCompare(right.brand.name, "es", { sensitivity: "base" }) ||
+        tie(left, right),
+    );
   } else if (sort === "precio-asc") {
     copy.sort((left, right) => currentPrice(left) - currentPrice(right) || tie(left, right));
   } else if (sort === "precio-desc") {
@@ -206,7 +212,7 @@ async function selectSort(page, products, sort) {
   await page.locator("#sortV69").selectOption(sort);
   await page.waitForFunction(
     (expected) => new URL(location.href).searchParams.get("orden") === expected,
-    sort === "descuento" ? null : sort,
+    sort === "relevancia" ? null : sort,
   );
   const expected = expectedFirst(products, sort);
   await page.waitForFunction(
@@ -280,8 +286,14 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.goto(`${runtime.origin}/inicio-v6-9/`, { waitUntil: "domcontentloaded" });
     await page.locator(".v69-home-brand").first().waitFor();
     assert.equal(await page.locator("#buscar-v69").isVisible(), true);
-    assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
-    assert.equal(await page.locator(".v69-home-brand").count(), 12);
+    assert.equal(await page.locator("#sortV69").inputValue(), "relevancia");
+    assert.equal(await page.locator('[data-filter-menu="brand"] .v67-menu-label').textContent(), "Seleccionar Marca");
+    assert.equal(await page.locator("#brandSummaryV69").textContent(), "Todas");
+    assert.equal(await page.locator(".v69-home-brand").count(), 16);
+    assert.equal(await page.locator(".v69-home-brand h2", { hasText: "CeraVe" }).count(), 1);
+    assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Neutrogena" }).count(), 1);
+    assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Vitamin Way" }).count(), 1);
+    assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Capilatis" }).count(), 1);
     assert.equal(await page.locator(".v69-home-brand-index").count(), 0);
     assert.equal(await page.locator("#marcas-inicio-v69").getAttribute("class"), "v69-home-sections");
     assert.equal(await page.locator(".v69-home-brand").first().locator(".v66-card").count(), 10);
@@ -364,6 +376,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     );
     assert.deepEqual(await page.locator("#sortV69 option").evaluateAll((options) => options.map((option) => option.value)), [
       "relevancia",
+      "marca",
       "disponibilidad",
       "descuento",
       "precio-asc",
@@ -408,7 +421,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await selectSort(page, api.products, "disponibilidad");
     assert.equal(await page.locator("#gridV69 .v69-stock").first().innerText(), "Disponible para Entrega");
     await selectSort(page, api.products, "nombre");
-    await selectSort(page, api.products, "relevancia");
+    await selectSort(page, api.products, "marca");
 
     const allPages = Math.ceil(api.totalProducts / 48);
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo&pagina=${allPages}`, {
@@ -491,7 +504,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.locator('[data-filter-menu-trigger="need"]').click();
     await page.locator('[data-need="acne"]').click();
     await page.waitForFunction(() => new URL(location.href).searchParams.get("need") === "acne");
-    assert.match(await page.locator("#brandSummaryV69").textContent(), /^Todas · /);
+    assert.equal(await page.locator("#brandSummaryV69").textContent(), "Todas");
     assert.equal(new URL(page.url()).searchParams.has("marca"), false);
     assert.equal(await hasHorizontalOverflow(page), false);
 
@@ -653,7 +666,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       { width: 34, height: 34 },
     );
     assert.equal(await page.locator("#gridV69 .v69-stock").count(), 48);
-    assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
+    assert.equal(await page.locator("#sortV69").inputValue(), "relevancia");
     assert.deepEqual(
       await page.locator(".v69-sort").evaluate((sort) => {
         const rect = sort.getBoundingClientRect();
@@ -747,7 +760,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.waitForFunction(() => new URL(location.href).searchParams.get("q") === "eucerin");
     await page.locator("#searchV69").fill("");
     await page.waitForFunction(() => !new URL(location.href).searchParams.has("scope"));
-    assert.equal(await page.locator("#sortV69").inputValue(), "descuento");
+    assert.equal(await page.locator("#sortV69").inputValue(), "relevancia");
 
     const mobileReturnUrl = page.url();
     await page.goto(`${runtime.origin}/p/${available.publicId}/`, {
@@ -834,26 +847,26 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
 
-    const relevanceQuery = "protector solar";
-    const relevanceMatches = filterProductsBySearchV69(api.products, relevanceQuery);
-    const expectedRelevanceIds = sortProductsV69(relevanceMatches, "relevancia", relevanceQuery)
+    const brandQuery = "protector solar";
+    const brandMatches = filterProductsBySearchV69(api.products, brandQuery);
+    const expectedBrandIds = sortProductsV69(brandMatches, "marca", brandQuery)
       .slice(0, 48)
       .map((product) => product.publicId);
-    await page.locator("#searchV69").fill(relevanceQuery);
-    await page.locator("#sortV69").selectOption("relevancia");
+    await page.locator("#searchV69").fill(brandQuery);
+    await page.locator("#sortV69").selectOption("marca");
     await page.waitForFunction(
       ({ query, firstId }) =>
         new URL(location.href).searchParams.get("q") === query &&
-        new URL(location.href).searchParams.get("orden") === "relevancia" &&
+        new URL(location.href).searchParams.get("orden") === "marca" &&
         document.querySelector("#gridV69 .v65-hit")?.getAttribute("href")?.includes(`/p/${firstId}`),
-      { query: relevanceQuery, firstId: expectedRelevanceIds[0] },
+      { query: brandQuery, firstId: expectedBrandIds[0] },
     );
-    const browserRelevanceIds = await page.locator("#gridV69 .v65-hit").evaluateAll((links) =>
+    const browserBrandIds = await page.locator("#gridV69 .v65-hit").evaluateAll((links) =>
       links.map((link) => link.getAttribute("href")?.match(/\/p\/([^/?#]+)/)?.[1]).filter(Boolean),
     );
-    assert.deepEqual(browserRelevanceIds, expectedRelevanceIds);
+    assert.deepEqual(browserBrandIds, expectedBrandIds);
     assert.ok(
-      expectedRelevanceIds
+      expectedBrandIds
         .slice(0, 10)
         .every((publicId) => api.products.find((product) => product.publicId === publicId)?.needs.includes("solares")),
     );

@@ -36,6 +36,7 @@ export type CatalogV69 = Omit<Catalog, "products"> & {
   version: 6.9;
   availabilityReferenceAt: string | null;
   commerceSyncedAt: string | null;
+  magentoCategoryPaths?: Record<string, string[]>;
   products: ProductV69[];
 };
 
@@ -207,9 +208,20 @@ function normalizeCatalogV69(
     syncedAt: parsed.syncedAt,
     availabilityReferenceAt: commerceSyncedAt || latestAvailabilityCheck,
     commerceSyncedAt,
+    magentoCategoryPaths: magentoCategoryPathsV69(taxonomy),
     totalProducts: visible.length,
     products: visible,
   };
+}
+
+export function magentoCategoryPathsV69(taxonomy: MagentoTaxonomyV69 | null) {
+  if (!taxonomy) return {};
+  return Object.fromEntries(taxonomy.categories.map((category) => {
+    const names = [...category.breadcrumbs.map((crumb) => crumb.categoryName), category.name]
+      .map((name) => name.trim())
+      .filter((name) => name && name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() !== "categorias");
+    return [String(category.id), [...new Set(names)]];
+  }));
 }
 
 export function applyMagentoTaxonomyV69(

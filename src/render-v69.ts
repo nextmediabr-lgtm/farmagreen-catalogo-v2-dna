@@ -70,7 +70,7 @@ const SEARCH_CONCEPTS_V69: SearchConceptV69[] = [
   { stems: ["cabell", "pelo", "capilar"], targets: ["cabello", "pelo", "capilar"] },
   { stems: ["acne", "grano", "imperfec", "gras"], targets: ["acne", "granos", "imperfecciones", "piel grasa"] },
 ];
-const SORTS_V69 = ["relevancia", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
+const SORTS_V69 = ["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
 export type SortV69 = (typeof SORTS_V69)[number];
 
 export type PublicProductV69 = {
@@ -116,6 +116,7 @@ export type PublicCatalogV69 = {
     unavailable: number;
     unverified: number;
   };
+  magentoCategoryPaths: Record<string, string[]>;
   products: PublicProductV69[];
 };
 
@@ -137,6 +138,7 @@ export function publicCatalogV69(catalog: CatalogV69): PublicCatalogV69 {
       unavailable,
       unverified,
     },
+    magentoCategoryPaths: catalog.magentoCategoryPaths || {},
     products: catalog.products.map(publicProductV69),
   };
 }
@@ -232,7 +234,7 @@ ${discoveryPanelV69(catalog, context, initial.length)}
 <section class="v65-products" id="productos-v69">
   <div class="v65-head v66-catalog-head">
     <div>
-      <p class="v65-k" id="modeV69">${e(context.mode)}</p>
+      <p class="v65-k" id="modeV69"${context.mode ? "" : " hidden"}>${e(context.mode)}</p>
       <h1 id="catalogTitleV69"${context.title === "Todos los productos" ? ' class="v69-title-all"' : ""}>${e(context.title)}</h1>
       <p class="v66-context" id="contextV69" hidden>${e(context.copy)}</p>
       <p class="v69-availability-summary" id="availabilityV69" hidden>${availabilitySummaryTextV69(initialAvailability.available, initialAvailability.unavailable, initialAvailability.unverified)}</p>
@@ -253,6 +255,7 @@ ${discoveryPanelV69(catalog, context, initial.length)}
       commerceSyncedAt: catalog.commerceSyncedAt,
       availabilityReferenceAt: catalog.availabilityReferenceAt,
       dataEndpoint: "/api/catalog-v6-9",
+      magentoCategoryPaths: catalog.magentoCategoryPaths || {},
       totalProducts: catalog.totalProducts,
       context: context.state,
     })}</script>`,
@@ -282,7 +285,7 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
     best: offers.find((product) => brandName(product) === brand)?.discountPercent || 0,
   }));
   const initialNeedLabel = context.need === "Todas" ? "Todas" : NEED_LABELS.get(context.need) || "Todas";
-  const initialBrandLabel = `${context.brand} · ${resultCount}`;
+  const initialBrandLabel = context.brand;
 
   return `<section class="v65-panel v65-search-panel v65-top-search v67-discovery" id="buscar-v69">
     <div class="v67-primary-row">
@@ -317,7 +320,7 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
       </div>
       <div class="v67-filter-menu v67-brand-menu" data-filter-menu="brand" id="marcas-v69">
         <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="brand" aria-expanded="false" aria-controls="brandMenuV69" aria-haspopup="dialog">
-          <span class="v67-menu-label">Marca</span>
+          <span class="v67-menu-label">Seleccionar Marca</span>
           <strong id="brandSummaryV69">${e(initialBrandLabel)}</strong>
           ${chevronIcon()}
         </button>
@@ -343,6 +346,7 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
         <span class="v67-menu-label">Ordenar</span>
         <select id="sortV69" name="orden">
           <option value="relevancia"${context.sort === "relevancia" ? " selected" : ""}>Relevancia</option>
+          <option value="marca"${context.sort === "marca" ? " selected" : ""}>Marca</option>
           <option value="disponibilidad"${context.sort === "disponibilidad" ? " selected" : ""}>Disponibilidad</option>
           <option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Descuento</option>
           <option value="precio-asc"${context.sort === "precio-asc" ? " selected" : ""}>Menor precio</option>
@@ -609,14 +613,15 @@ function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
   }
   const scope: "ofertas" | "todo" = query.get("scope") === "todo" || q || brand !== "Todas" || need !== "Todas" ? "todo" : "ofertas";
   const requestedSort = query.get("orden");
-  const sort: SortV69 = SORTS_V69.includes(requestedSort as SortV69) ? (requestedSort as SortV69) : "descuento";
+  const sort: SortV69 = SORTS_V69.includes(requestedSort as SortV69) ? (requestedSort as SortV69) : "relevancia";
   const state = { q, brand, need, scope, sort };
   let mode = "Ofertas";
   let title = "Oportunidades de hoy";
   let copy = "Los mejores descuentos disponibles primero.";
   if (q) {
-    mode = "Resultados";
-    title = `Resultados para “${q}”`;
+    const categoryPath = exactCategoryPathV69(catalog, q);
+    mode = categoryPath ? "" : "Resultados";
+    title = categoryPath || `Resultados para “${q}”`;
     copy = "Coincidencias por producto, marca o necesidad.";
   } else if (brand !== "Todas") {
     mode = "Marca";
@@ -636,6 +641,12 @@ function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
   const metaDescription = brand !== "Todas" ? `${filtered.length} productos disponibles de ${brand} para consultar por WhatsApp.` : need !== "Todas" ? `Productos para ${title.toLowerCase()} disponibles en Farmagreen Rosario.` : "Catálogo FarmaGreen con marcas, necesidades y consulta directa por WhatsApp.";
   const contextual = Boolean(q || brand !== "Todas" || need !== "Todas");
   return { ...state, state, mode, title, copy, metaTitle, metaDescription, ogImage: contextual ? safeImage(filtered[0], "card") || SOCIAL_IMAGE : SOCIAL_IMAGE };
+}
+
+function exactCategoryPathV69(catalog: CatalogV69, query: string) {
+  if (!/^\d+$/.test(query)) return "";
+  const path = catalog.magentoCategoryPaths?.[query];
+  return Array.isArray(path) && path.length ? path.join(" › ") : "";
 }
 
 export function normalizeQueryTermsV69(value: string) {
@@ -1049,6 +1060,13 @@ export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "
   if (sort === "precio-desc") {
     return copy.sort((left, right) => currentPriceV69(right) - currentPriceV69(left) || tie(left, right));
   }
+  if (sort === "marca") {
+    return copy.sort(
+      (left, right) =>
+        brandName(left).localeCompare(brandName(right), "es", { sensitivity: "base" }) ||
+        tie(left, right),
+    );
+  }
   if (sort === "nombre") return copy.sort(tie);
   const plan = compileSearchPlanV69(copy, query);
   const entries = copy.map((product) => ({ product, relevance: searchRelevanceV69(product, plan) }));
@@ -1091,7 +1109,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260804-1735")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-4.js")}"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260804-1735")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-5.js")}"></script></body></html>`;
 }
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority = false) {

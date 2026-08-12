@@ -51,6 +51,7 @@ export async function importBrandV69({
   const completedAt = now().toISOString();
   const additions = detailed
     .filter((group) => group.baseIndex === null || group.baseIndex === undefined)
+    .filter((group) => !source.importAvailableOnly || groupAvailabilityV69(group) === "available")
     .map((group) => newProductFromSourceGroupV69(group, completedAt));
   const expanded = {
     ...baseCatalog,
@@ -79,6 +80,13 @@ export async function importBrandV69({
   };
 }
 
+function groupAvailabilityV69(group) {
+  const states = new Set((group.members || []).map((member) => member.availability));
+  if (states.has("available")) return "available";
+  if (states.has("unavailable")) return "unavailable";
+  return "unknown";
+}
+
 function assertUniqueIdentitiesV69(products) {
   for (const [label, value] of [
     ["publicId", (product) => String(product.publicId || "")],
@@ -89,7 +97,7 @@ function assertUniqueIdentitiesV69(products) {
     for (const product of products) {
       const identity = value(product);
       if (!identity) continue;
-      if (seen.has(identity)) throw new Error(`La importación Bagóvit duplicó ${label}: ${identity}.`);
+      if (seen.has(identity)) throw new Error(`La importación de marca duplicó ${label}: ${identity}.`);
       seen.add(identity);
     }
   }
