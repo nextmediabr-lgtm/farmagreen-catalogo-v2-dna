@@ -461,7 +461,7 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
   assert.match(html, /id="buscar-v69"/);
   assert.match(html, /<span>Buscá como<\/span> <span>hablás<\/span>/);
   assert.match(html, /id="needSummaryV69">Todas<\/strong>/);
-  assert.match(html, /<span class="v67-menu-label">Seleccionar Marca<\/span>\s*<strong id="brandSummaryV69">Todas<\/strong>/);
+  assert.match(html, /<span class="v67-menu-label">Elegir Marca<\/span>\s*<strong id="brandSummaryV69">Todas<\/strong>/);
   assert.doesNotMatch(html, /id="brandSummaryV69">[^<]*·\s*\d+/);
   assert.match(html, /id="sortV69" name="orden"/);
   assert.match(html, /data-filter-menu-trigger="need"[^>]*aria-haspopup="dialog"/);

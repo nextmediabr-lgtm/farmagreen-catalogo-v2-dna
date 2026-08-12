@@ -320,7 +320,7 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
       </div>
       <div class="v67-filter-menu v67-brand-menu" data-filter-menu="brand" id="marcas-v69">
         <button class="v67-menu-trigger" type="button" data-filter-menu-trigger="brand" aria-expanded="false" aria-controls="brandMenuV69" aria-haspopup="dialog">
-          <span class="v67-menu-label">Seleccionar Marca</span>
+          <span class="v67-menu-label">Elegir Marca</span>
           <strong id="brandSummaryV69">${e(initialBrandLabel)}</strong>
           ${chevronIcon()}
         </button>

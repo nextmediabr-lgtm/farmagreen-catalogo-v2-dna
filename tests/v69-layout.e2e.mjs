@@ -287,7 +287,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.locator(".v69-home-brand").first().waitFor();
     assert.equal(await page.locator("#buscar-v69").isVisible(), true);
     assert.equal(await page.locator("#sortV69").inputValue(), "relevancia");
-    assert.equal(await page.locator('[data-filter-menu="brand"] .v67-menu-label').textContent(), "Seleccionar Marca");
+    assert.equal(await page.locator('[data-filter-menu="brand"] .v67-menu-label').textContent(), "Elegir Marca");
     assert.equal(await page.locator("#brandSummaryV69").textContent(), "Todas");
     assert.equal(await page.locator(".v69-home-brand").count(), 16);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "CeraVe" }).count(), 1);
