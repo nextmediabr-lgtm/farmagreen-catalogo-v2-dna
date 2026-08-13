@@ -8,7 +8,7 @@ const BOOT = (() => {
 const BASE = (BOOT.base || "").replace(/\/$/, "");
 const PUBLIC_ORIGIN = BOOT.origin || window.location.origin;
 const PAGE = 48;
-const ROUTE = "/catalogo";
+const ROUTE = BOOT.catalogRoute || "/catalogo";
 const PDP = "/p/";
 const CONTEXT = BOOT.context || {};
 const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"]);
@@ -850,6 +850,8 @@ function render(historyMode = "replace") {
   const catalogTitle = $("#catalogTitleV69");
   catalogTitle.textContent = copy.title;
   catalogTitle.classList.toggle("v69-title-all", copy.title === "Todos los productos");
+  catalogTitle.classList.toggle("v69-title-compact", copy.title === "Oportunidades de hoy");
+  $("#countV69").hidden = copy.nav !== "productos";
   $("#contextV69").textContent = copy.context;
   $$("[data-nav]").forEach((link) => link.classList.toggle("is-active", link.dataset.nav === copy.nav));
   const more = $("#loadMoreV69");

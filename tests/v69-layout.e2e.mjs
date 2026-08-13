@@ -283,6 +283,41 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(api.products.filter((product) => product.availability === "unverified").length, api.availabilitySummary.unverified);
     assert.equal(api.availabilitySummary.unverified, 0);
 
+    await page.goto(`${runtime.origin}/?scope=todo`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
+    assert.equal(new URL(page.url()).pathname, "/");
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), 48);
+    assert.equal(await page.locator("#showAllV69").count(), 1);
+    assert.equal(await page.locator("#showAllV69").isHidden(), true);
+    assert.equal(await page.locator("#countV69").isHidden(), false);
+    await page.locator("#searchV69").fill("eucerin");
+    await page.waitForFunction(
+      () => location.pathname === "/" && new URL(location.href).searchParams.get("q") === "eucerin",
+    );
+    const rootCatalogUrl = page.url();
+    await page.locator("#gridV69 .v65-hit").first().click();
+    await page.waitForURL(/\/p\/[a-f0-9]+\/?$/);
+    assert.equal(await page.locator("[data-history-back]").count(), 1);
+    const brandCatalogLink = page.locator(".v69-crumb-context");
+    const productBrand = (await page.locator(".v67-pdp-card-top .v66-brand").textContent()).trim();
+    assert.equal((await brandCatalogLink.textContent()).trim(), productBrand);
+    assert.equal(new URL(await brandCatalogLink.getAttribute("href"), runtime.origin).searchParams.get("marca"), productBrand);
+    assert.deepEqual(await brandCatalogLink.evaluate((link) => ({
+      color: getComputedStyle(link).color,
+      decoration: getComputedStyle(link).textDecorationLine,
+    })), { color: "rgb(21, 87, 255)", decoration: "underline" });
+    assert.equal(await page.locator(".v69-pdp-crumb a").first().evaluate((link) => getComputedStyle(link).textDecorationLine), "underline");
+    await brandCatalogLink.click();
+    await page.waitForFunction(
+      (brand) => location.pathname === "/" && new URL(location.href).searchParams.get("marca") === brand,
+      productBrand,
+    );
+    await page.goBack({ waitUntil: "domcontentloaded" });
+    await page.waitForURL(/\/p\/[a-f0-9]+\/?$/);
+    await page.locator("[data-history-back]").click();
+    await page.waitForURL(rootCatalogUrl);
+    assert.equal(new URL(page.url()).pathname, "/");
+
     await page.goto(`${runtime.origin}/inicio-v6-9/`, { waitUntil: "domcontentloaded" });
     await page.locator(".v69-home-brand").first().waitFor();
     assert.equal(await page.locator("#buscar-v69").isVisible(), true);
@@ -313,7 +348,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.locator("#gridV69 .v66-card").first().waitFor();
-    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-1\.css\?v=20260804-1735$/);
+    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-1\.css\?v=20260813-1945$/);
     const localCssResponse = await page.request.get(`${runtime.origin}/styles-v6-9-1.css`);
     assert.equal(localCssResponse.status(), 200);
     if (!remoteOrigin) assert.equal(localCssResponse.headers()["cache-control"], "no-store");
@@ -705,6 +740,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
         catalogTitleHeight: Math.round(catalogTitle?.getBoundingClientRect().height || 0),
         catalogTitleLineHeight: catalogStyle ? Number.parseFloat(catalogStyle.lineHeight) : 0,
         catalogTitleFits: Boolean(catalogTitle && catalogTitle.scrollWidth <= catalogTitle.clientWidth + 1),
+        catalogTitleScrollWidth: catalogTitle?.scrollWidth || 0,
+        catalogTitleClientWidth: catalogTitle?.clientWidth || 0,
       };
     });
     assert.ok(compactMobile.headerHeight <= 64, `El header móvil mide ${compactMobile.headerHeight}px.`);
@@ -712,11 +749,15 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(compactMobile.logoHref, "/");
     assert.ok(compactMobile.priceSize >= 20.3, `El precio móvil mide ${compactMobile.priceSize}px.`);
     assert.ok(compactMobile.oldPriceSize >= 12.5, `El precio anterior móvil mide ${compactMobile.oldPriceSize}px.`);
-    assert.ok(compactMobile.searchWidth >= compactMobile.searchTitleWidth * 3);
+    assert.ok(compactMobile.searchWidth >= compactMobile.searchTitleWidth * 4);
     assert.ok(compactMobile.sortHeight <= 32, `El selector de orden mide ${compactMobile.sortHeight}px.`);
-    assert.equal(compactMobile.searchTitleLines, 2);
+    assert.equal(compactMobile.searchTitleLines, 3);
     assert.ok(compactMobile.catalogTitleHeight <= compactMobile.catalogTitleLineHeight + 2);
-    assert.equal(compactMobile.catalogTitleFits, true);
+    assert.equal(
+      compactMobile.catalogTitleFits,
+      true,
+      `Título móvil: scroll ${compactMobile.catalogTitleScrollWidth}px, client ${compactMobile.catalogTitleClientWidth}px.`,
+    );
     const mobileType = await page.evaluate(() => {
       const size = (selector) => Number.parseFloat(getComputedStyle(document.querySelector(selector)).fontSize);
       return {
@@ -737,16 +778,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     await page.setViewportSize({ width: 320, height: 844 });
     await page.goto(`${runtime.origin}/`, { waitUntil: "domcontentloaded" });
-    await page.locator(".v69-home-brand").first().waitFor();
+    await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
+    await page.locator("#gridV69 .v66-card").first().waitFor();
     assert.equal(await hasHorizontalOverflow(page), false);
-    assert.equal(
-      await page.locator(".v69-home-brand").first().locator(".v66-card").evaluateAll((cards) => {
-        const visible = cards.filter((card) => getComputedStyle(card).display !== "none");
-        const firstTop = visible[0]?.getBoundingClientRect().top;
-        return visible.filter((card) => Math.abs(card.getBoundingClientRect().top - firstTop) < 2).length;
-      }),
-      2,
-    );
+    assert.equal(await firstRowColumns(page), 2);
     assert.ok(await page.locator(".brandmark img").evaluate((logo) => logo.getBoundingClientRect().width >= 270));
     assert.equal(await page.locator(".brandmark").getAttribute("href"), "/");
     assert.ok(await page.locator(".v66-price strong").first().evaluate((price) => Number.parseFloat(getComputedStyle(price).fontSize) >= 19.1));
@@ -761,11 +796,29 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.locator("#searchV69").fill("");
     await page.waitForFunction(() => !new URL(location.href).searchParams.has("scope"));
     assert.equal(await page.locator("#sortV69").inputValue(), "relevancia");
+    assert.equal(await page.locator("#showAllV69").count(), 1);
+    assert.equal(await page.locator("#showAllV69").isHidden(), false);
+    assert.equal(await page.locator("#countV69").isHidden(), true);
 
     const mobileReturnUrl = page.url();
     await page.goto(`${runtime.origin}/p/${available.publicId}/`, {
       waitUntil: "domcontentloaded",
     });
+    const mobileBrandLink = page.locator(".v69-crumb-context");
+    assert.equal(await page.locator(".v69-pdp-crumb a").count(), 2);
+    assert.deepEqual(await mobileBrandLink.evaluate((link) => ({
+      color: getComputedStyle(link).color,
+      decoration: getComputedStyle(link).textDecorationLine,
+      fits: link.scrollWidth <= link.clientWidth + 1,
+    })), { color: "rgb(21, 87, 255)", decoration: "underline", fits: true });
+    assert.equal(await hasHorizontalOverflow(page), false);
+    await mobileBrandLink.click();
+    await page.waitForFunction(
+      (brand) => location.pathname === "/" && new URL(location.href).searchParams.get("marca") === brand,
+      available.brand.name,
+    );
+    await page.goBack({ waitUntil: "domcontentloaded" });
+    await page.waitForURL(/\/p\/[a-f0-9]+\/?$/);
     assert.equal(await page.locator(".toplinks").isVisible(), true);
     assert.equal((await page.locator(".toplinks").innerText()).trim(), "Volver");
     assert.equal(await page.locator(".float").isVisible(), false);

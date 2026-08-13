@@ -220,7 +220,19 @@ function derivedSearchSignalsV69(product: ProductV69) {
   return signals;
 }
 
-export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(), origin = "http://127.0.0.1:8109") {
+type CatalogPageOptionsV69 = {
+  route?: string;
+  canonicalPath?: string;
+};
+
+export function catalogPageV69(
+  catalog: CatalogV69,
+  query = new URLSearchParams(),
+  origin = "http://127.0.0.1:8109",
+  options: CatalogPageOptionsV69 = {},
+) {
+  const route = options.route || CATALOG_ROUTE;
+  const canonicalPath = options.canonicalPath || CATALOG_ROUTE;
   const context = pageContext(catalog, query);
   const initial = filteredProducts(catalog.products, context);
   const initialAvailability = availabilitySummaryV69(initial);
@@ -229,13 +241,13 @@ export function catalogPageV69(catalog: CatalogV69, query = new URLSearchParams(
     context.metaTitle,
     context.metaDescription,
     `
-${discoveryPanelV69(catalog, context, initial.length)}
+${discoveryPanelV69(catalog, context, initial.length, route)}
 
 <section class="v65-products" id="productos-v69">
   <div class="v65-head v66-catalog-head">
     <div>
       <p class="v65-k" id="modeV69"${context.mode ? "" : " hidden"}>${e(context.mode)}</p>
-      <h1 id="catalogTitleV69"${context.title === "Todos los productos" ? ' class="v69-title-all"' : ""}>${e(context.title)}</h1>
+      <h1 id="catalogTitleV69"${context.title === "Todos los productos" ? ' class="v69-title-all"' : context.title === "Oportunidades de hoy" ? ' class="v69-title-compact"' : ""}>${e(context.title)}</h1>
       <p class="v66-context" id="contextV69" hidden>${e(context.copy)}</p>
       <p class="v69-availability-summary" id="availabilityV69" hidden>${availabilitySummaryTextV69(initialAvailability.available, initialAvailability.unavailable, initialAvailability.unverified)}</p>
       <p class="v69-availability-note" id="availabilityNoteV69" hidden>${catalog.commerceSyncedAt ? `Estado comercial en Rosario verificado ${e(shortDateV69(catalog.commerceSyncedAt))}. Confirmamos disponibilidad por WhatsApp.` : catalog.availabilityReferenceAt ? `Verificación parcial en Rosario actualizada ${e(shortDateV69(catalog.availabilityReferenceAt))}. Confirmamos disponibilidad por WhatsApp.` : "Estado comercial en Rosario pendiente de sincronización. Confirmamos disponibilidad por WhatsApp."}</p>
@@ -252,6 +264,7 @@ ${discoveryPanelV69(catalog, context, initial.length)}
 <script type="application/json" id="fg69-data">${json({
       base: BASE,
       origin,
+      catalogRoute: route,
       commerceSyncedAt: catalog.commerceSyncedAt,
       availabilityReferenceAt: catalog.availabilityReferenceAt,
       dataEndpoint: "/api/catalog-v6-9",
@@ -262,21 +275,26 @@ ${discoveryPanelV69(catalog, context, initial.length)}
     {
       bodyClass: "v65 v66 v67 v69",
       origin,
-      canonicalPath: CATALOG_ROUTE,
+      canonicalPath,
       ogType: "website",
       ogImage: context.ogImage,
       homeHref: HOME_ROUTE,
       links: [
-        { href: `${CATALOG_ROUTE}#productos-v69`, label: "Ofertas", nav: "ofertas" },
-        { href: `${CATALOG_ROUTE}#marcas-v69`, label: "Marcas", nav: "marcas" },
-        { href: `${CATALOG_ROUTE}#buscar-v69`, label: "Buscar", nav: "buscar" },
-        { href: `${CATALOG_ROUTE}?scope=todo#productos-v69`, label: "Productos", nav: "productos" },
+        { href: `${route}#productos-v69`, label: "Ofertas", nav: "ofertas" },
+        { href: `${route}#marcas-v69`, label: "Marcas", nav: "marcas" },
+        { href: `${route}#buscar-v69`, label: "Buscar", nav: "buscar" },
+        { href: `${route}?scope=todo#productos-v69`, label: "Productos", nav: "productos" },
       ],
     },
   );
 }
 
-function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageContext>, resultCount: number) {
+function discoveryPanelV69(
+  catalog: CatalogV69,
+  context: ReturnType<typeof pageContext>,
+  resultCount: number,
+  route = CATALOG_ROUTE,
+) {
   const brands = [...new Set(catalog.products.map(brandName))];
   const offers = dealProducts(catalog.products);
   const brandStats = brands.map((brand) => ({
@@ -289,8 +307,8 @@ function discoveryPanelV69(catalog: CatalogV69, context: ReturnType<typeof pageC
 
   return `<section class="v65-panel v65-search-panel v65-top-search v67-discovery" id="buscar-v69">
     <div class="v67-primary-row">
-      <div class="v67-title"><p class="v65-k">Encontrá tu producto</p><h2><span>Buscá como</span> <span>hablás</span></h2></div>
-      <form class="v66-search v67-search" role="search" action="${u(CATALOG_ROUTE)}" method="get">
+      <div class="v67-title"><p class="v65-k">Encontrá tu producto</p><h2><span>Buscá</span> <span>como</span> <span>hablás</span></h2></div>
+      <form class="v66-search v67-search" role="search" action="${u(route)}" method="get">
         <label class="v67-visually-hidden" for="searchV69">Producto, marca o necesidad</label>
         <span class="v67-search-icon">${searchIcon()}</span>
         <input id="searchV69" name="q" type="search" placeholder="Producto, marca o necesidad" autocomplete="off" spellcheck="false">
@@ -424,7 +442,11 @@ export function productPageV69(product: ProductV69, related: ProductV69[], origi
     `${product.name} | Farmagreen Rosario`,
     product.description.slice(0, 155),
     `
-<nav class="crumb v65-crumb"><a href="${u(`${CATALOG_ROUTE}#productos-v69`)}">Volver al catálogo</a><span>/</span><span>${e(brandName(product))}</span></nav>
+<nav class="crumb v65-crumb v69-pdp-crumb">
+  <a href="${u(`${CATALOG_ROUTE}#productos-v69`)}">Volver al catálogo</a>
+  <span>/</span>
+  <a class="v69-crumb-context" href="${u(`${HOME_ROUTE}?scope=todo&marca=${encodeURIComponent(brandName(product))}#productos-v69`)}">${e(brandName(product))}</a>
+</nav>
 <article class="pdp v65-pdp v66-pdp">
   <div class="v66-card-top v67-pdp-card-top">
     <p class="v66-brand">${e(brandName(product))}</p>
@@ -1109,7 +1131,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260804-1735")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-5.js")}"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-1.css?v=20260813-1945")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script type="module" src="${u("/app-v6-9-5.js?v=20260813-1945")}"></script></body></html>`;
 }
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority = false) {

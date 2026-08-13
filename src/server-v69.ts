@@ -184,12 +184,25 @@ export async function handleV69Request(
     return true;
   }
 
+  if (servesPublicHome) {
+    sendHtmlV69(
+      response,
+      catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment), {
+        route: "/",
+        canonicalPath: "/",
+      }),
+      200,
+      request,
+    );
+    return true;
+  }
+
   if (pathname === "/catalogo-v6-9" || servesPublicCatalog) {
     sendHtmlV69(response, catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment)), 200, request);
     return true;
   }
 
-  if (servesPublicHome || pathname === "/inicio-v6-9" || (pathname === "/inicio" && publicAliasesEnabled)) {
+  if (pathname === "/inicio-v6-9" || (pathname === "/inicio" && publicAliasesEnabled)) {
     sendHtmlV69(response, homePageV69(catalog, publicOriginV69(url.origin, environment)), 200, request);
     return true;
   }

@@ -215,6 +215,21 @@ body.v69 .v66-card .v69-stock strong{
 
 body.v69 .v69-stock.is-pdp strong,
 body.v69 .v69-pdp-stock strong{font-weight:650}
+body.v69 .v69-pdp-crumb{
+  align-items:center;
+  flex-wrap:wrap;
+  gap:10px;
+  font-size:clamp(15px,1.2vw,18px);
+}
+body.v69 .v69-pdp-crumb a{
+  font-weight:900;
+  text-decoration-line:underline;
+  text-decoration-thickness:2px;
+  text-underline-offset:3px;
+}
+body.v69 .v69-pdp-crumb .v69-crumb-context{
+  color:var(--fg-blue);
+}
 
 body.v69 .v66-card .v66-ask{
   height:42px;
@@ -529,12 +544,12 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
   body.v69 #marcas-v69,
   body.v69 #productos-v69{scroll-margin-top:62px}
   body.v69 .v67-primary-row{
-    grid-template-columns:82px minmax(0,1fr);
+    grid-template-columns:62px minmax(0,1fr);
     grid-template-areas:"title search";
     gap:7px;
   }
   body.v69 #clearFiltersV69{display:none}
-  body.v69 .v67-title h2{font-size:16px;line-height:.92}
+  body.v69 .v67-title h2{font-size:13.5px;line-height:.88}
   body.v69 .v67-title h2 span{display:block;white-space:nowrap}
   body.v69 .v67-search input{font-size:15.5px}
   body.v69 .v67-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -629,6 +644,25 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
     letter-spacing:-.065em;
     white-space:nowrap;
   }
+  body.v69 #catalogTitleV69.v69-title-compact{
+    max-width:100%;
+    overflow:hidden;
+    font-size:clamp(19px,5.2vw,21px);
+    line-height:1;
+    letter-spacing:-.055em;
+    white-space:nowrap;
+  }
+  body.v69 .v66-catalog-head>div:first-child{flex:1 1 auto;min-width:0}
+  body.v69 .v66-catalog-tools{flex:0 0 104px;width:104px}
+  body.v69 .v66-catalog-tools .v65-link-button{
+    box-sizing:border-box;
+    width:100%;
+    max-width:104px;
+    max-height:44px;
+    padding:7px 8px;
+    line-height:1.05;
+    white-space:normal;
+  }
 }
 
 @media(max-width:370px){
@@ -647,8 +681,8 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
   body.v69 .top img{max-width:330px;max-height:52px}
   body.v69 .toplinks a{font-size:11.5px}
   body.v69 .topwa{width:36px;height:36px}
-  body.v69 .v67-primary-row{grid-template-columns:74px minmax(0,1fr);gap:5px}
-  body.v69 .v67-title h2{font-size:14.5px}
+  body.v69 .v67-primary-row{grid-template-columns:58px minmax(0,1fr);gap:5px}
+  body.v69 .v67-title h2{font-size:12.5px}
   body.v69 .v67-menu-label{font-size:9.5px}
   body.v69 .v69-sort .v67-menu-label{left:7px;font-size:7.5px}
   body.v69 .v69-sort select{padding-right:27px;padding-left:7px;font-size:13px}
@@ -715,6 +749,44 @@ body.v69 [tabindex]:focus-visible{
 body.v69 picture{display:block;width:100%;height:100%}
 body.v69 picture>img{display:block;width:100%;height:100%;object-fit:contain}
 
+/* Imágenes integradas: ocupan el marco ampliado sin recorte ni fondo crema. */
+body.v69 .v66-media,
+body.v69 .v65-photo{
+  background:#fff;
+}
+
+body.v69 .v66-media::after,
+body.v69 .v65-photo::after{
+  display:none;
+}
+
+body.v69 .v66-media picture,
+body.v69 .v65-photo picture{
+  position:relative;
+  display:grid;
+  place-items:center;
+  width:100%;
+  height:100%;
+  min-width:0;
+  min-height:0;
+  overflow:hidden;
+  background:#fff;
+}
+
+body.v69 .v66-media picture>img,
+body.v69 .v65-photo picture>img{
+  position:absolute;
+  inset:0;
+  display:block;
+  width:100%;
+  height:100%;
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain;
+  object-position:center;
+  background:#fff;
+}
+
 /* Fichas ~5% más anchas sin alterar el contrato de cinco/dos columnas. */
 body.v69 .v65-grid{
   width:105%;
@@ -772,7 +844,11 @@ body.v69 .v69-footer-instagram span{font-size:11px;line-height:1.1}
     gap:6px;
   }
   body.v69 .v66-card .v69-stock,
-  body.v69 .v66-card .v69-stock strong{font-size:10px}
+  body.v69 .v66-card .v69-stock strong{
+    font-size:10.5px;
+    font-weight:650;
+  }
+  body.v69 .v66-card .v69-stock::before{display:none}
   body.v69 .v69-footer{
     grid-template-columns:1fr;
     justify-items:center;

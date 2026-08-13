@@ -486,7 +486,7 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
   assert.equal((html.match(/class="v65-grid v69-home-grid"/g) || []).length, brands.length);
   assert.equal((html.match(/class="v66-card(?: |")/g) || []).length, brands.length * 10);
   assert.match(html, /id="buscar-v69"/);
-  assert.match(html, /<span>Buscá como<\/span> <span>hablás<\/span>/);
+  assert.match(html, /<span>Buscá<\/span> <span>como<\/span> <span>hablás<\/span>/);
   assert.match(html, /id="needSummaryV69">Todas<\/strong>/);
   assert.match(html, /<span class="v67-menu-label">Elegir Marca<\/span>\s*<strong id="brandSummaryV69">Todas<\/strong>/);
   assert.doesNotMatch(html, /id="brandSummaryV69">[^<]*·\s*\d+/);
@@ -677,16 +677,13 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.deepEqual(health.availabilitySummary, publicAvailabilitySummary(api.products));
     assert.doesNotMatch(html, /gpsfarma/i);
     assert.match(home, /class="v69-home-sections"/);
-    assert.match(root, /class="v69-home-sections"/);
+    assert.match(root, /id="gridV69"/);
+    assert.match(root, /id="buscar-v69"/);
+    assert.doesNotMatch(root, /class="v69-home-sections"/);
     assert.match(root, /<meta name="robots" content="index,follow">/);
-    assert.match(root, /id="marca-eucerin"/);
-    assert.ok(
-      root.indexOf('id="marca-eucerin"') < root.indexOf('id="marca-dermaglos"'),
-      "La home definitiva debe comenzar por Eucerin y conservar las marcas apiladas.",
-    );
     assert.match(root, /<link rel="canonical" href="http:\/\/127\.0\.0\.1:\d+\/">/);
-    assert.match(root, /Farmacia y Dermocosmetica, Catalogo de Precios y Promociones/);
-    assert.match(root, /farmagreen-social-preview-v69-social-2\.png/);
+    assert.match(home, /Farmacia y Dermocosmetica, Catalogo de Precios y Promociones/);
+    assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-1\.css/);
     assert.match(root, /app-v6-9-5\.js/);
@@ -696,11 +693,13 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(root, /"products":\[/);
     assert.doesNotMatch(html, /"products":\[/);
     assert.equal(bootPayload(root).totalProducts, api.totalProducts);
+    assert.equal(bootPayload(root).catalogRoute, "/");
     assert.equal(bootPayload(html).dataEndpoint, "/api/catalog-v6-9");
-    assert.ok(Buffer.byteLength(root) < 250_000, "La home no debe volver a incrustar el catálogo completo.");
+    assert.equal(bootPayload(html).catalogRoute, "/catalogo");
+    assert.ok(Buffer.byteLength(root) < 180_000, "La portada-catálogo no debe incrustar todos los productos.");
     assert.ok(Buffer.byteLength(html) < 180_000, "El catálogo no debe volver a incrustar todos los productos.");
-    assert.match(root, /<meta property="og:image:width" content="1200">/);
-    assert.match(root, /<meta property="og:image:height" content="630">/);
+    assert.match(home, /<meta property="og:image:width" content="1200">/);
+    assert.match(home, /<meta property="og:image:height" content="630">/);
     assert.match(root, /class="brandmark"/);
     assert.match(root, /class="brandmark"[^>]*>/);
     assert.match(home, /class="v69-home-sections" id="marcas-inicio-v69"/);
@@ -710,6 +709,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(catalogResponse.headers.get("content-security-policy") || "", /gpsfarma|unsafe-inline/i);
     assert.match(html, /id="availabilityV69"/);
     assert.match(html, /id="sortV69" name="orden"/);
+    assert.match(html, /class="v65-link-button"[^>]*id="showAllV69"/);
 
     const unavailable = api.products.find((product) => product.availability === "unavailable_reference");
     assert.ok(unavailable);
@@ -721,6 +721,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(pdp, /class="cta v69-ask-unavailable"[^>]*>Consultar<\/a>/);
     assert.match(pdp, /Consulta Personalizada por WhatsApp\./);
     assert.match(pdp, /Coordinamos Retiro o Envío, Consultar formas de Pago\./);
+    assert.match(pdp, /class="crumb v65-crumb v69-pdp-crumb"/);
+    assert.match(pdp, /<a href="\/catalogo#productos-v69">Volver al catálogo<\/a>/);
+    assert.match(pdp, /class="v69-crumb-context"/);
+    assert.match(pdp, new RegExp(`>${unavailable.brand.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/a>`));
     assert.doesNotMatch(pdp, /gpsfarma|provider|"sku"|"source"/i);
     assert.match(pdp, new RegExp(`${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/p/${unavailable.publicId}`));
     assert.match(pdp, /class="brandmark"/);
