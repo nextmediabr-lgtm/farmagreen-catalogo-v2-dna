@@ -264,11 +264,12 @@ export async function handleV69Request(
   return true;
 }
 
-function schedulerIdempotencyKeyV69(request: http.IncomingMessage | undefined) {
+export function schedulerIdempotencyKeyV69(request: http.IncomingMessage | undefined) {
   if (!request) return "";
-  const jobName = headerV69(request, "x-cloudscheduler-jobname");
-  const scheduleTime = headerV69(request, "x-cloudscheduler-schedule-time");
-  return [jobName, scheduleTime].filter(Boolean).join("|");
+  const jobName = headerV69(request, "x-cloudscheduler-jobname").trim();
+  const scheduleTime = headerV69(request, "x-cloudscheduler-schedule-time").trim();
+  if (!jobName || !scheduleTime) return "";
+  return `${jobName}|${scheduleTime}`;
 }
 
 function headerV69(request: http.IncomingMessage, name: string) {

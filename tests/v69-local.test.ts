@@ -33,6 +33,7 @@ import {
   catalogHealthV69,
   catalogReadyForRuntimeV69,
   responsiveImagesReadyV691,
+  schedulerIdempotencyKeyV69,
   sourceImageBridgeEnabled,
 } from "../src/server-v69.js";
 
@@ -175,6 +176,32 @@ async function close(server: ReturnType<typeof app>) {
     server.close((error) => (error ? reject(error) : resolve())),
   );
 }
+
+test("cada horario del Scheduler tiene identidad propia y la ausencia de horario no bloquea futuras corridas", () => {
+  const request = (headers: Record<string, string>) =>
+    ({ headers }) as Parameters<typeof schedulerIdempotencyKeyV69>[0];
+  const jobName = "projects/test/locations/test/jobs/fg-v69-preprod-sync-0700-art";
+
+  assert.equal(
+    schedulerIdempotencyKeyV69(request({
+      "x-cloudscheduler-jobname": jobName,
+      "x-cloudscheduler-schedule-time": "2026-08-13T10:00:00Z",
+    })),
+    `${jobName}|2026-08-13T10:00:00Z`,
+  );
+  assert.equal(
+    schedulerIdempotencyKeyV69(request({
+      "x-cloudscheduler-jobname": jobName,
+      "x-cloudscheduler-schedule-time": "2026-08-13T17:00:00Z",
+    })),
+    `${jobName}|2026-08-13T17:00:00Z`,
+  );
+  assert.equal(schedulerIdempotencyKeyV69(request({ "x-cloudscheduler-jobname": jobName })), "");
+  assert.equal(
+    schedulerIdempotencyKeyV69(request({ "x-cloudscheduler-schedule-time": "2026-08-13T17:00:00Z" })),
+    "",
+  );
+});
 
 test("V6.9 conserva el snapshot completo y sus métricas coinciden con sus fichas", async () => {
   const raw = JSON.parse(await readFile(CATALOG_FILE, "utf8")) as {
