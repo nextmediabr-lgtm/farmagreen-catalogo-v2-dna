@@ -588,7 +588,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
   const server = app({ ...process.env, NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" });
   const origin = await listen(server);
   try {
-    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, cssResponse, socialImageResponse, robotsResponse, sitemapResponse] = await Promise.all([
+    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, metaPixelResponse, cssResponse, socialImageResponse, robotsResponse, sitemapResponse] = await Promise.all([
       fetch(`${origin}/`),
       fetch(`${origin}/inicio-v6-9/`),
       fetch(`${origin}/catalogo/`),
@@ -596,6 +596,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
       fetch(`${origin}/app-v6-9-5.js`),
+      fetch(`${origin}/meta-pixel-v69-1.js`),
       fetch(`${origin}/styles-v6-9-1.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
       fetch(`${origin}/robots.txt`),
@@ -609,6 +610,8 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(healthResponse.status, 200);
     assert.equal(appResponse.status, 200);
     assert.equal(appResponse.headers.get("cache-control"), "no-store");
+    assert.equal(metaPixelResponse.status, 200);
+    assert.equal(metaPixelResponse.headers.get("cache-control"), "no-store");
     assert.equal(cssResponse.status, 200);
     assert.equal(cssResponse.headers.get("cache-control"), "no-store");
     assert.equal(socialImageResponse.status, 200);
@@ -628,6 +631,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     const apiText = await apiResponse.text();
     const health = await healthResponse.json() as ReturnType<typeof catalogHealthV69>;
     const appSource = await appResponse.text();
+    const metaPixelSource = await metaPixelResponse.text();
     const robots = await robotsResponse.text();
     const sitemap = await sitemapResponse.text();
     const api = JSON.parse(apiText) as ReturnType<typeof publicCatalogV69>;
@@ -687,6 +691,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-1\.css/);
     assert.match(root, /app-v6-9-5\.js/);
+    assert.match(root, /meta-pixel-v69-1\.js/);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
     assert.ok(api.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));
@@ -706,6 +711,12 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(home, /v69-home-brand-index/);
     assert.doesNotMatch(home, /gpsfarma|provider|"sku"|"source"/i);
     assert.doesNotMatch(appSource, /gpsfarma/i);
+    assert.match(metaPixelSource, /1198250568817946/);
+    assert.match(metaPixelSource, /fbq\("init", META_PIXEL_ID_V69\)/);
+    assert.match(metaPixelSource, /fbq\("track", "PageView"\)/);
+    assert.match(root, /facebook\.com\/tr\?id=1198250568817946&amp;ev=PageView&amp;noscript=1/i);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/connect\.facebook\.net/);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/www\.facebook\.com/);
     assert.doesNotMatch(catalogResponse.headers.get("content-security-policy") || "", /gpsfarma|unsafe-inline/i);
     assert.match(html, /id="availabilityV69"/);
     assert.match(html, /id="sortV69" name="orden"/);
