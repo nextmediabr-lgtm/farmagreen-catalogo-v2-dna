@@ -92,6 +92,79 @@ const wa = (product) =>
   `https://wa.me/5493417234000?text=${encodeURIComponent(
     `Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product?.name || "Producto Farmagreen"}. Link: ${absoluteUrl(`${PDP}${product?.publicId || ""}`)}`,
   )}`;
+const META_SEARCH_DELAY_MS = 700;
+const trackedMetaSearches = new Set();
+let metaSearchTimer;
+
+function trackMeta(eventName, parameters = {}) {
+  if (typeof window.fbq === "function") {
+    window.fbq("track", eventName, parameters);
+    return;
+  }
+  window.__FG_META_QUEUE = window.__FG_META_QUEUE || [];
+  window.__FG_META_QUEUE.push([eventName, parameters]);
+}
+
+function metaProductParameters(product, includeValue = false) {
+  const parameters = {
+    content_ids: [String(product?.publicId || "")],
+    content_name: product?.name || "Producto Farmagreen",
+    content_category: product?.primaryCategory || "catalogo",
+    content_type: "product",
+  };
+  if (includeValue) {
+    parameters.value = Number(product?.offerPrice || product?.listPrice || 0);
+    parameters.currency = "ARS";
+  }
+  return parameters;
+}
+
+function trackSearch(query) {
+  const searchString = String(query || "").trim();
+  const key = norm(searchString);
+  if (!key || trackedMetaSearches.has(key)) return;
+  trackedMetaSearches.add(key);
+  trackMeta("Search", { search_string: searchString });
+}
+
+function scheduleSearchTracking(query) {
+  window.clearTimeout(metaSearchTimer);
+  const searchString = String(query || "").trim();
+  if (!searchQueryReady(searchString)) return;
+  metaSearchTimer = window.setTimeout(() => trackSearch(searchString), META_SEARCH_DELAY_MS);
+}
+
+function productForWhatsAppLink(link) {
+  if (!link.matches(".v66-ask, .cta")) return null;
+  if (BOOT.page === "product" && BOOT.product) return BOOT.product;
+  const card = link.closest(".v66-card");
+  const productHref = card?.querySelector(".v65-hit")?.getAttribute("href") || "";
+  const publicId = decodeURIComponent(productHref.split("/p/")[1]?.split(/[/?#]/)[0] || "");
+  return (
+    S.all.find((product) => String(product?.publicId || "") === publicId) || {
+      publicId,
+      name: card?.querySelector("h3")?.textContent?.trim() || "Producto Farmagreen",
+      brand: { name: card?.querySelector(".v66-brand")?.textContent?.trim() || "Farmagreen" },
+      primaryCategory: "catalogo",
+    }
+  );
+}
+
+function wireMetaTracking() {
+  if (BOOT.page === "product" && BOOT.product) {
+    trackMeta("ViewContent", metaProductParameters(BOOT.product, true));
+  }
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest?.('a[href^="https://wa.me/"]');
+    if (!link) return;
+    const product = productForWhatsAppLink(link);
+    trackMeta("Contact", {
+      contact_method: "WhatsApp",
+      ...(product ? metaProductParameters(product) : {}),
+    });
+    if (product) trackMeta("Lead", metaProductParameters(product));
+  });
+}
 
 function brandName(product) {
   return product?.brand?.name || "Farmagreen";
@@ -992,6 +1065,7 @@ async function boot() {
   applyParams(params);
   $("#searchV69").value = S.q;
   if ($("#sortV69")) $("#sortV69").value = S.sort;
+  if (S.q) trackSearch(S.q);
 
   $(".v66-search")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1004,12 +1078,14 @@ async function boot() {
     S.scope = "todo";
     S.limit = PAGE;
     render("push");
+    trackSearch(query);
     scrollProducts();
   });
 
   $("#searchV69")?.addEventListener("input", (event) => {
     closeFilterMenus();
     const query = event.target.value;
+    scheduleSearchTracking(query);
     if (!query.trim()) {
       reset();
       return;
@@ -1118,6 +1194,7 @@ function wireHistoryBack() {
 
 wireImageFallbacks();
 wireHistoryBack();
+wireMetaTracking();
 void boot();
 refreshFloatingWhatsapp();
 window.matchMedia("(max-width: 760px)").addEventListener?.("change", refreshFloatingWhatsapp);

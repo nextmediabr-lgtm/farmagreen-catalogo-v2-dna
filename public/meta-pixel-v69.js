@@ -19,3 +19,8 @@ const META_PIXEL_ID_V69 = "1198250568817946";
 
 window.fbq("init", META_PIXEL_ID_V69);
 window.fbq("track", "PageView");
+
+for (const [eventName, parameters] of window.__FG_META_QUEUE || []) {
+  window.fbq("track", eventName, parameters);
+}
+window.__FG_META_QUEUE = [];

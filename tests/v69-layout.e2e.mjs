@@ -234,6 +234,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
   try {
     browser = await chromium.launch({ executablePath, headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.addInitScript(() => {
+      window.__metaEvents = [];
+      window.fbq = (...args) => window.__metaEvents.push(args);
+    });
     const providerRequests = [];
     const consoleErrors = [];
     const failedResponses = [];
@@ -285,6 +289,13 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     await page.goto(`${runtime.origin}/?scope=todo`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
+    await page.waitForFunction(() => window.__metaEvents.some(([command, event]) => command === "track" && event === "PageView"));
+    await page.locator(".topwa").evaluate((link) => {
+      link.addEventListener("click", (event) => event.preventDefault(), { once: true });
+      link.click();
+    });
+    assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Contact").length), 1);
+    assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Lead").length), 0);
     assert.equal(new URL(page.url()).pathname, "/");
     assert.equal(await page.locator("#gridV69 .v66-card").count(), 48);
     assert.equal(await page.locator("#showAllV69").count(), 1);
@@ -294,9 +305,23 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.waitForFunction(
       () => location.pathname === "/" && new URL(location.href).searchParams.get("q") === "eucerin",
     );
+    await page.waitForFunction(() =>
+      window.__metaEvents.some(([, event, parameters]) => event === "Search" && parameters?.search_string === "eucerin"),
+    );
     const rootCatalogUrl = page.url();
     await page.locator("#gridV69 .v65-hit").first().click();
     await page.waitForURL(/\/p\/[a-f0-9]+\/?$/);
+    await page.waitForFunction(() => window.__metaEvents.some(([, event]) => event === "ViewContent"));
+    const viewContent = await page.evaluate(() => window.__metaEvents.find(([, event]) => event === "ViewContent"));
+    assert.equal(viewContent[2].content_type, "product");
+    assert.equal(viewContent[2].currency, "ARS");
+    assert.ok(viewContent[2].content_ids[0]);
+    await page.locator(".pdp .cta").evaluate((link) => {
+      link.addEventListener("click", (event) => event.preventDefault(), { once: true });
+      link.click();
+    });
+    assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Contact").length), 1);
+    assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Lead").length), 1);
     assert.equal(await page.locator("[data-history-back]").count(), 1);
     const brandCatalogLink = page.locator(".v69-crumb-context");
     const productBrand = (await page.locator(".v67-pdp-card-top .v66-brand").textContent()).trim();

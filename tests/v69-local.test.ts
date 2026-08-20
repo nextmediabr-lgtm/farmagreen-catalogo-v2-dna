@@ -438,7 +438,7 @@ test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente 
     assert.equal(bootPayload(html).context.sort, sort);
     assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-5\.js/);
+    assert.match(html, /app-v6-9-6\.js/);
     assert.match(html, /styles-v6-9-1\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -595,7 +595,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-5.js`),
+      fetch(`${origin}/app-v6-9-6.js`),
       fetch(`${origin}/meta-pixel-v69-1.js`),
       fetch(`${origin}/styles-v6-9-1.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
@@ -690,7 +690,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-1\.css/);
-    assert.match(root, /app-v6-9-5\.js/);
+    assert.match(root, /app-v6-9-6\.js/);
     assert.match(root, /meta-pixel-v69-1\.js/);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
@@ -714,6 +714,11 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(metaPixelSource, /1198250568817946/);
     assert.match(metaPixelSource, /fbq\("init", META_PIXEL_ID_V69\)/);
     assert.match(metaPixelSource, /fbq\("track", "PageView"\)/);
+    assert.match(metaPixelSource, /__FG_META_QUEUE/);
+    assert.match(appSource, /trackMeta\("ViewContent"/);
+    assert.match(appSource, /trackMeta\("Search"/);
+    assert.match(appSource, /trackMeta\("Contact"/);
+    assert.match(appSource, /trackMeta\("Lead"/);
     assert.match(root, /facebook\.com\/tr\?id=1198250568817946&amp;ev=PageView&amp;noscript=1/i);
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/connect\.facebook\.net/);
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/www\.facebook\.com/);
@@ -740,6 +745,18 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(pdp, new RegExp(`${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/p/${unavailable.publicId}`));
     assert.match(pdp, /class="brandmark"/);
     assert.match(pdp, /class="v69-footer"/);
+    const pdpBoot = bootPayload(pdp);
+    assert.equal(pdpBoot.page, "product");
+    assert.deepEqual(Object.keys(pdpBoot.product).sort(), [
+      "brand",
+      "listPrice",
+      "name",
+      "offerPrice",
+      "primaryCategory",
+      "publicId",
+    ]);
+    assert.equal(pdpBoot.product.publicId, unavailable.publicId);
+    assert.doesNotMatch(JSON.stringify(pdpBoot.product), /gpsfarma|provider|"sku"|"source"/i);
     const pdpSchema = structuredData(pdp).find((entry) => Array.isArray(entry["@graph"]));
     assert.ok(pdpSchema);
     const graph = pdpSchema["@graph"] as Array<Record<string, unknown>>;
