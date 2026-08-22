@@ -13,6 +13,8 @@ window.gtag("js", new Date());
 window.gtag("config", GA4_MEASUREMENT_ID_V69, {
   send_page_view: true,
   anonymize_ip: true,
+  allow_google_signals: false,
+  allow_ad_personalization_signals: false,
 });
 
 const gaScriptV69 = document.createElement("script");

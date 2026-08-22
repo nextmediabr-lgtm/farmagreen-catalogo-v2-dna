@@ -36,7 +36,7 @@ const META_EVENT_NAMES_V69 = new Set([
   "CatalogFilterSelect",
 ]);
 const V69_CSP =
-  "default-src 'self'; script-src 'self' https://connect.facebook.net https://www.googletagmanager.com; style-src 'self'; img-src 'self' data: https://storage.googleapis.com https://www.facebook.com https://www.google-analytics.com; connect-src 'self' https://connect.facebook.net https://www.facebook.com https://www.google-analytics.com https://region1.google-analytics.com; base-uri 'self'; form-action 'self' https://www.facebook.com; frame-src https://www.facebook.com; frame-ancestors 'self'";
+  "default-src 'self'; script-src 'self' https://connect.facebook.net https://www.googletagmanager.com; style-src 'self'; img-src 'self' data: https://storage.googleapis.com https://www.facebook.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; connect-src 'self' https://connect.facebook.net https://www.facebook.com https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://www.googletagmanager.com; base-uri 'self'; form-action 'self' https://www.facebook.com; frame-src https://www.facebook.com; frame-ancestors 'self'";
 const PUBLIC_HTML_CACHE = "public, max-age=0, s-maxage=300, stale-while-revalidate=60";
 const PUBLIC_CATALOG_CACHE = "public, max-age=60, s-maxage=300, stale-while-revalidate=60";
 const PUBLIC_DISCOVERY_CACHE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=300";
