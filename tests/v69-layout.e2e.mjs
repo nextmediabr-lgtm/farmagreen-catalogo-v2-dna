@@ -242,6 +242,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     const consoleErrors = [];
     const failedResponses = [];
     const failedRequests = [];
+    const capiEvents = [];
     page.on("request", (request) => {
       if (/gpsfarma/i.test(request.url())) providerRequests.push(request.url());
     });
@@ -273,6 +274,13 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
         body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"></svg>',
       }),
     );
+    await page.route("https://www.googletagmanager.com/**", (route) =>
+      route.fulfill({ status: 200, contentType: "text/javascript", body: "" }),
+    );
+    await page.route("**/api/meta-events-v6-9", (route) => {
+      capiEvents.push(JSON.parse(route.request().postData() || "{}"));
+      return route.fulfill({ status: 202, contentType: "application/json", body: '{"accepted":true}' });
+    });
 
     const apiResponse = await fetch(`${runtime.origin}/api/catalog-v6-9`);
     assert.equal(apiResponse.status, 200);
@@ -290,6 +298,13 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.goto(`${runtime.origin}/?scope=todo`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
     await page.waitForFunction(() => window.__metaEvents.some(([command, event]) => command === "track" && event === "PageView"));
+    await page.waitForTimeout(50);
+    const browserPageView = await page.evaluate(() => window.__metaEvents.find(([command, event]) => command === "track" && event === "PageView"));
+    const capiPageView = capiEvents.find((event) => event.event_name === "PageView" && event.event_id === browserPageView[3]?.eventID);
+    assert.ok(browserPageView[3]?.eventID);
+    assert.ok(capiPageView, "PageView debe compartir event_id entre Pixel y CAPI.");
+    assert.equal(capiPageView.event_source_url, `${runtime.origin}/?scope=todo`);
+    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => Array.from(entry)[0] === "config" && Array.from(entry)[1] === "G-SL7GG138WV")), true);
     await page.locator(".topwa").evaluate((link) => {
       link.addEventListener("click", (event) => event.preventDefault(), { once: true });
       link.click();
@@ -308,6 +323,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.waitForFunction(() =>
       window.__metaEvents.some(([, event, parameters]) => event === "Search" && parameters?.search_string === "eucerin"),
     );
+    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => {
+      const values = Array.from(entry);
+      return values[0] === "event" && values[1] === "search" && values[2]?.search_term === "eucerin";
+    })), true);
     const rootCatalogUrl = page.url();
     await page.locator("#gridV69 .v65-hit").first().click();
     await page.waitForURL(/\/p\/[a-f0-9]+\/?$/);
@@ -316,6 +335,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(viewContent[2].content_type, "product");
     assert.equal(viewContent[2].currency, "ARS");
     assert.ok(viewContent[2].content_ids[0]);
+    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => {
+      const values = Array.from(entry);
+      return values[0] === "event" && values[1] === "view_item" && values[2]?.currency === "ARS";
+    })), true);
     await page.locator(".pdp .cta").evaluate((link) => {
       link.addEventListener("click", (event) => event.preventDefault(), { once: true });
       link.click();
@@ -366,8 +389,11 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     );
     assert.equal(await hasHorizontalOverflow(page), false);
     await page.locator('[data-filter-menu-trigger="brand"]').click();
+    await page.waitForFunction(() => window.__metaEvents.some(([command, event, parameters]) =>
+      command === "trackCustom" && event === "CatalogFilterOpen" && parameters?.filter_type === "brand"));
     await page.locator('[data-brand="ISDIN"]').click();
     await page.waitForFunction(() => location.pathname.startsWith("/catalogo") && new URL(location.href).searchParams.get("marca") === "ISDIN");
+    assert.ok(capiEvents.some((event) => event.event_name === "CatalogFilterSelect" && event.custom_data?.filter_type === "brand" && event.custom_data?.filter_value === "ISDIN"));
 
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo&orden=precio-asc`, {
       waitUntil: "domcontentloaded",
@@ -444,6 +470,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       "nombre",
     ]);
     assert.equal(await page.locator("#sortV69").inputValue(), "precio-asc");
+    await page.locator("#sortV69").dispatchEvent("pointerdown");
+    await page.waitForFunction(() => window.__metaEvents.some(([command, event, parameters]) =>
+      command === "trackCustom" && event === "CatalogFilterOpen" && parameters?.filter_type === "order"));
     assert.deepEqual(
       await page.locator(".v69-sort").evaluate((sort) => {
         const rect = sort.getBoundingClientRect();
@@ -464,6 +493,12 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator("#loadMoreV69").isVisible(), true);
 
     await selectSort(page, api.products, "precio-desc");
+    await page.waitForFunction(() => window.__metaEvents.some(([command, event, parameters]) =>
+      command === "trackCustom" && event === "CatalogFilterSelect" && parameters?.filter_type === "order" && parameters?.filter_value === "precio-desc"));
+    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => {
+      const values = Array.from(entry);
+      return values[0] === "event" && values[1] === "filter_select" && values[2]?.filter_type === "order" && values[2]?.filter_value === "precio-desc";
+    })), true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("#gridV69 .v66-card").first().waitFor();
     assert.equal(await page.locator("#sortV69").inputValue(), "precio-desc");
@@ -562,8 +597,16 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(new URL(page.url()).searchParams.has("need"), false);
 
     await page.locator('[data-filter-menu-trigger="need"]').click();
+    await page.waitForFunction(() => window.__metaEvents.some(([command, event, parameters]) =>
+      command === "trackCustom" && event === "CatalogFilterOpen" && parameters?.filter_type === "need"));
     await page.locator('[data-need="acne"]').click();
     await page.waitForFunction(() => new URL(location.href).searchParams.get("need") === "acne");
+    await page.waitForFunction(() => window.__metaEvents.some(([command, event, parameters]) =>
+      command === "trackCustom" && event === "CatalogFilterSelect" && parameters?.filter_type === "need" && parameters?.filter_value === "acne"));
+    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => {
+      const values = Array.from(entry);
+      return values[0] === "event" && values[1] === "filter_select" && values[2]?.filter_type === "need" && values[2]?.filter_value === "acne";
+    })), true);
     assert.equal(await page.locator("#brandSummaryV69").textContent(), "Todas");
     assert.equal(new URL(page.url()).searchParams.has("marca"), false);
     assert.equal(await hasHorizontalOverflow(page), false);

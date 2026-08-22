@@ -96,13 +96,21 @@ const META_SEARCH_DELAY_MS = 700;
 const trackedMetaSearches = new Set();
 let metaSearchTimer;
 
-function trackMeta(eventName, parameters = {}) {
+function trackMeta(eventName, parameters = {}, options = {}) {
+  if (typeof window.fgTrackMetaV69 === "function") {
+    window.fgTrackMetaV69(eventName, parameters, options);
+    return;
+  }
   if (typeof window.fbq === "function") {
-    window.fbq("track", eventName, parameters);
+    window.fbq(options.custom ? "trackCustom" : "track", eventName, parameters);
     return;
   }
   window.__FG_META_QUEUE = window.__FG_META_QUEUE || [];
-  window.__FG_META_QUEUE.push([eventName, parameters]);
+  window.__FG_META_QUEUE.push([eventName, parameters, options]);
+}
+
+function trackGa(eventName, parameters = {}) {
+  window.fgTrackGaV69?.(eventName, parameters);
 }
 
 function metaProductParameters(product, includeValue = false) {
@@ -125,6 +133,7 @@ function trackSearch(query) {
   if (!key || trackedMetaSearches.has(key)) return;
   trackedMetaSearches.add(key);
   trackMeta("Search", { search_string: searchString });
+  trackGa("search", { search_term: searchString });
 }
 
 function scheduleSearchTracking(query) {
@@ -150,9 +159,43 @@ function productForWhatsAppLink(link) {
   );
 }
 
-function wireMetaTracking() {
+function gaProductParameters(product) {
+  const value = Number(product?.offerPrice || product?.listPrice || 0);
+  return {
+    currency: "ARS",
+    value,
+    items: [{
+      item_id: String(product?.publicId || ""),
+      item_name: product?.name || "Producto Farmagreen",
+      item_brand: brandName(product),
+      item_category: product?.primaryCategory || "catalogo",
+      price: value,
+      quantity: 1,
+    }],
+  };
+}
+
+function trackFilterOpen(filterType) {
+  if (!["brand", "need", "order"].includes(filterType)) return;
+  const parameters = { filter_type: filterType };
+  trackMeta("CatalogFilterOpen", parameters, { custom: true });
+  trackGa("filter_open", parameters);
+}
+
+function trackFilterSelect(filterType, filterValue) {
+  if (!["brand", "need", "order"].includes(filterType)) return;
+  const parameters = {
+    filter_type: filterType,
+    filter_value: String(filterValue || "Todas").slice(0, 120),
+  };
+  trackMeta("CatalogFilterSelect", parameters, { custom: true });
+  trackGa("filter_select", parameters);
+}
+
+function wireConversionTracking() {
   if (BOOT.page === "product" && BOOT.product) {
     trackMeta("ViewContent", metaProductParameters(BOOT.product, true));
+    trackGa("view_item", gaProductParameters(BOOT.product));
   }
   document.addEventListener("click", (event) => {
     const link = event.target.closest?.('a[href^="https://wa.me/"]');
@@ -162,7 +205,14 @@ function wireMetaTracking() {
       contact_method: "WhatsApp",
       ...(product ? metaProductParameters(product) : {}),
     });
-    if (product) trackMeta("Lead", metaProductParameters(product));
+    trackGa("contact", {
+      method: "WhatsApp",
+      ...(product ? { item_id: String(product.publicId || ""), item_name: product.name || "Producto Farmagreen" } : {}),
+    });
+    if (product) {
+      trackMeta("Lead", metaProductParameters(product));
+      trackGa("generate_lead", gaProductParameters(product));
+    }
   });
 }
 
@@ -704,6 +754,7 @@ function openFilterMenu(name) {
   if (!menu) return;
   closeFilterMenus(menu);
   setFilterMenuOpen(menu, true);
+  trackFilterOpen(name);
 }
 
 function syncFilterMenuSummaries(resultCount) {
@@ -723,7 +774,14 @@ function wireFilterMenus() {
       const willOpen = !menu.classList.contains("is-open");
       closeFilterMenus(menu);
       setFilterMenuOpen(menu, willOpen);
+      if (willOpen) trackFilterOpen(menu.dataset.filterMenu || "");
     });
+  });
+
+  const sort = $("#sortV69");
+  sort?.addEventListener("pointerdown", () => trackFilterOpen("order"));
+  sort?.addEventListener("keydown", (event) => {
+    if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key)) trackFilterOpen("order");
   });
 
   document.addEventListener("click", (event) => {
@@ -1018,12 +1076,23 @@ function bootHomeDiscovery() {
     $("#needSummaryV69").textContent = "Todas";
     $("#brandSummaryV69").textContent = "Todas";
   });
-  $("#sortV69")?.addEventListener("change", (event) => openCatalogFromHome({ sort: event.target.value }));
+  $("#sortV69")?.addEventListener("change", (event) => {
+    trackFilterSelect("order", event.target.value);
+    openCatalogFromHome({ sort: event.target.value });
+  });
   $$('[data-brand]').forEach((button) =>
-    button.addEventListener("click", () => openCatalogFromHome({ brand: button.dataset.brand || "Todas" })),
+    button.addEventListener("click", () => {
+      const brand = button.dataset.brand || "Todas";
+      trackFilterSelect("brand", brand);
+      openCatalogFromHome({ brand });
+    }),
   );
   $$('[data-need]').forEach((button) =>
-    button.addEventListener("click", () => openCatalogFromHome({ need: button.dataset.need || "Todas" })),
+    button.addEventListener("click", () => {
+      const need = button.dataset.need || "Todas";
+      trackFilterSelect("need", need);
+      openCatalogFromHome({ need });
+    }),
   );
   return true;
 }
@@ -1117,6 +1186,7 @@ async function boot() {
   });
   $("#sortV69")?.addEventListener("change", (event) => {
     S.sort = SORT_VALUES.has(event.target.value) ? event.target.value : DEFAULT_SORT;
+    trackFilterSelect("order", S.sort);
     S.limit = PAGE;
     render("push");
   });
@@ -1147,6 +1217,7 @@ async function boot() {
     button.addEventListener("click", () => {
       S.q = "";
       S.brand = button.dataset.brand || "Todas";
+      trackFilterSelect("brand", S.brand);
       if (S.brand !== "Todas") S.need = "Todas";
       S.scope = "todo";
       S.limit = PAGE;
@@ -1161,6 +1232,7 @@ async function boot() {
     button.addEventListener("click", () => {
       S.q = "";
       S.need = button.dataset.need || "Todas";
+      trackFilterSelect("need", S.need);
       if (S.need !== "Todas") S.brand = "Todas";
       S.scope = "todo";
       S.limit = PAGE;
@@ -1194,7 +1266,7 @@ function wireHistoryBack() {
 
 wireImageFallbacks();
 wireHistoryBack();
-wireMetaTracking();
+wireConversionTracking();
 void boot();
 refreshFloatingWhatsapp();
 window.matchMedia("(max-width: 760px)").addEventListener?.("change", refreshFloatingWhatsapp);

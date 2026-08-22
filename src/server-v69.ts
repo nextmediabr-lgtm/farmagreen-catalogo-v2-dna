@@ -23,8 +23,20 @@ import {
 
 const MAX_SOURCE_IMAGE_BYTES = 12_000_000;
 const SOURCE_IMAGE_TIMEOUT_MS = 15_000;
+const MAX_META_EVENT_BYTES = 16_384;
+const META_CAPI_TIMEOUT_MS = 8_000;
+const META_PIXEL_ID_V69 = "1198250568817946";
+const META_EVENT_NAMES_V69 = new Set([
+  "PageView",
+  "ViewContent",
+  "Search",
+  "Contact",
+  "Lead",
+  "CatalogFilterOpen",
+  "CatalogFilterSelect",
+]);
 const V69_CSP =
-  "default-src 'self'; script-src 'self' https://connect.facebook.net; style-src 'self'; img-src 'self' data: https://storage.googleapis.com https://www.facebook.com; connect-src 'self' https://connect.facebook.net https://www.facebook.com; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
+  "default-src 'self'; script-src 'self' https://connect.facebook.net https://www.googletagmanager.com; style-src 'self'; img-src 'self' data: https://storage.googleapis.com https://www.facebook.com https://www.google-analytics.com; connect-src 'self' https://connect.facebook.net https://www.facebook.com https://www.google-analytics.com https://region1.google-analytics.com; base-uri 'self'; form-action 'self' https://www.facebook.com; frame-src https://www.facebook.com; frame-ancestors 'self'";
 const PUBLIC_HTML_CACHE = "public, max-age=0, s-maxage=300, stale-while-revalidate=60";
 const PUBLIC_CATALOG_CACHE = "public, max-age=60, s-maxage=300, stale-while-revalidate=60";
 const PUBLIC_DISCOVERY_CACHE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=300";
@@ -143,6 +155,7 @@ export async function handleV69Request(
     pathname === "/catalogo-v6-9" ||
     pathname === "/api/catalog-v6-9" ||
     pathname === "/api/catalog-v6-9/health" ||
+    pathname === "/api/meta-events-v6-9" ||
     pathname === "/robots.txt" ||
     pathname === "/sitemap.xml" ||
     pathname === "/internal/catalog-v6-9/refresh" ||
@@ -150,6 +163,11 @@ export async function handleV69Request(
     servesShortProduct ||
     pathname.startsWith("/media-v6-9/");
   if (!isV69Route) return false;
+
+  if (pathname === "/api/meta-events-v6-9") {
+    await handleMetaEventV69(response, url, environment, request);
+    return true;
+  }
 
   try {
     await commerceRuntime.initialize();
@@ -239,7 +257,15 @@ export async function handleV69Request(
   if (pathname === "/api/catalog-v6-9/health") {
     sendJsonV69(
       response,
-      { ...catalogHealthV69(catalog), runtime: commerceRuntime.health() },
+      {
+        ...catalogHealthV69(catalog),
+        runtime: commerceRuntime.health(),
+        analytics: {
+          ga4MeasurementId: "G-SL7GG138WV",
+          metaPixelId: META_PIXEL_ID_V69,
+          metaCapiConfigured: Boolean(environment.META_CAPI_ACCESS_TOKEN?.trim()),
+        },
+      },
       200,
       { "cache-control": "no-store" },
       request,
@@ -275,6 +301,212 @@ export async function handleV69Request(
   }
 
   return true;
+}
+
+type MetaEventInputV69 = {
+  event_name?: unknown;
+  event_time?: unknown;
+  event_id?: unknown;
+  event_source_url?: unknown;
+  fbp?: unknown;
+  fbc?: unknown;
+  custom_data?: unknown;
+};
+
+type MetaCustomDataV69 = Record<string, string | number | string[]>;
+
+export function normalizeMetaEventV69(
+  input: MetaEventInputV69,
+  expectedOrigin: string,
+  nowSeconds = Math.floor(Date.now() / 1_000),
+) {
+  const eventName = cleanTextV69(input.event_name, 64);
+  if (!META_EVENT_NAMES_V69.has(eventName)) throw new Error("Evento no permitido.");
+
+  const eventId = cleanTokenV69(input.event_id, 128);
+  if (!eventId) throw new Error("Identificador de evento inválido.");
+
+  let eventSourceUrl: URL;
+  try {
+    eventSourceUrl = new URL(String(input.event_source_url || ""));
+  } catch {
+    throw new Error("Origen de evento inválido.");
+  }
+  if (eventSourceUrl.origin !== expectedOrigin) throw new Error("Origen de evento inválido.");
+
+  const suppliedTime = Number(input.event_time);
+  const eventTime =
+    Number.isInteger(suppliedTime) && suppliedTime >= nowSeconds - 7 * 24 * 60 * 60 && suppliedTime <= nowSeconds + 60
+      ? suppliedTime
+      : nowSeconds;
+
+  return {
+    event_name: eventName,
+    event_time: eventTime,
+    event_id: eventId,
+    event_source_url: eventSourceUrl.href,
+    action_source: "website" as const,
+    fbp: cleanMetaCookieV69(input.fbp),
+    fbc: cleanMetaCookieV69(input.fbc),
+    custom_data: cleanMetaCustomDataV69(input.custom_data),
+  };
+}
+
+async function handleMetaEventV69(
+  response: http.ServerResponse,
+  url: URL,
+  environment: Environment,
+  request?: http.IncomingMessage,
+) {
+  if (!request || (request.method || "GET").toUpperCase() !== "POST") {
+    sendJsonV69(response, { error: "Método no permitido." }, 405, { allow: "POST", "cache-control": "no-store" });
+    return;
+  }
+
+  const expectedOrigin = publicOriginV69(url.origin, environment);
+  const requestOrigin = headerV69(request, "origin").trim();
+  if (environment.NODE_ENV === "production" && requestOrigin !== expectedOrigin) {
+    sendJsonV69(response, { error: "Origen no permitido." }, 403, { "cache-control": "no-store" });
+    return;
+  }
+  if (!String(request.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
+    sendJsonV69(response, { error: "Contenido no permitido." }, 415, { "cache-control": "no-store" });
+    return;
+  }
+
+  let input: MetaEventInputV69;
+  try {
+    input = await readJsonRequestV69(request, MAX_META_EVENT_BYTES) as MetaEventInputV69;
+  } catch (error) {
+    const tooLarge = error instanceof Error && error.message === "payload_too_large";
+    sendJsonV69(
+      response,
+      { error: tooLarge ? "Evento demasiado grande." : "Evento inválido." },
+      tooLarge ? 413 : 400,
+      { "cache-control": "no-store" },
+    );
+    return;
+  }
+
+  let event;
+  try {
+    event = normalizeMetaEventV69(input, expectedOrigin);
+  } catch (error) {
+    sendJsonV69(
+      response,
+      { error: error instanceof Error ? error.message : "Evento inválido." },
+      400,
+      { "cache-control": "no-store" },
+    );
+    return;
+  }
+
+  const accessToken = environment.META_CAPI_ACCESS_TOKEN?.trim();
+  if (!accessToken) {
+    response.writeHead(204, headersV69({ "cache-control": "no-store" }));
+    response.end();
+    return;
+  }
+
+  const userData: Record<string, string> = {
+    client_ip_address: clientIpV69(request),
+    client_user_agent: cleanTextV69(request.headers["user-agent"], 512),
+  };
+  if (event.fbp) userData.fbp = event.fbp;
+  if (event.fbc) userData.fbc = event.fbc;
+
+  const graphVersion = /^v\d+\.\d+$/.test(environment.META_GRAPH_API_VERSION || "")
+    ? environment.META_GRAPH_API_VERSION
+    : "v26.0";
+  const payload: Record<string, unknown> = {
+    data: [{
+      event_name: event.event_name,
+      event_time: event.event_time,
+      event_id: event.event_id,
+      event_source_url: event.event_source_url,
+      action_source: event.action_source,
+      user_data: userData,
+      custom_data: event.custom_data,
+    }],
+    access_token: accessToken,
+  };
+  if (environment.META_CAPI_TEST_EVENT_CODE?.trim()) {
+    payload.test_event_code = environment.META_CAPI_TEST_EVENT_CODE.trim();
+  }
+
+  try {
+    const upstream = await fetch(`https://graph.facebook.com/${graphVersion}/${META_PIXEL_ID_V69}/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(META_CAPI_TIMEOUT_MS),
+    });
+    await upstream.body?.cancel();
+    if (!upstream.ok) {
+      console.error(`Meta CAPI rechazó un evento (${upstream.status}).`);
+      sendJsonV69(response, { accepted: false }, 502, { "cache-control": "no-store" });
+      return;
+    }
+    sendJsonV69(response, { accepted: true }, 202, { "cache-control": "no-store" });
+  } catch {
+    console.error("Meta CAPI no respondió dentro del límite esperado.");
+    sendJsonV69(response, { accepted: false }, 502, { "cache-control": "no-store" });
+  }
+}
+
+async function readJsonRequestV69(request: http.IncomingMessage, maximumBytes: number) {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.length;
+    if (totalBytes > maximumBytes) throw new Error("payload_too_large");
+    chunks.push(buffer);
+  }
+  const parsed = JSON.parse(Buffer.concat(chunks, totalBytes).toString("utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid_json");
+  return parsed as Record<string, unknown>;
+}
+
+function cleanMetaCustomDataV69(value: unknown): MetaCustomDataV69 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const cleaned: MetaCustomDataV69 = {};
+  const textFields = ["content_name", "content_category", "content_type", "search_string", "contact_method", "filter_value"];
+  for (const field of textFields) {
+    const text = cleanTextV69(source[field], field === "search_string" ? 160 : 120);
+    if (text) cleaned[field] = text;
+  }
+  const filterType = cleanTextV69(source.filter_type, 20);
+  if (["brand", "need", "order"].includes(filterType)) cleaned.filter_type = filterType;
+  if (Array.isArray(source.content_ids)) {
+    const contentIds = source.content_ids.slice(0, 10).map((item) => cleanTokenV69(item, 80)).filter(Boolean);
+    if (contentIds.length) cleaned.content_ids = contentIds;
+  }
+  const numericValue = Number(source.value);
+  if (Number.isFinite(numericValue) && numericValue >= 0 && numericValue <= 100_000_000) {
+    cleaned.value = Math.round(numericValue * 100) / 100;
+  }
+  if (source.currency === "ARS") cleaned.currency = "ARS";
+  return cleaned;
+}
+
+function cleanTextV69(value: unknown, maximumLength: number) {
+  return String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, maximumLength);
+}
+
+function cleanTokenV69(value: unknown, maximumLength: number) {
+  const token = String(value || "").trim();
+  return /^[A-Za-z0-9._:-]+$/.test(token) ? token.slice(0, maximumLength) : "";
+}
+
+function cleanMetaCookieV69(value: unknown) {
+  const cookie = String(value || "").trim();
+  return /^fb\.1\.\d{10,16}\.[A-Za-z0-9_-]{1,160}$/.test(cookie) ? cookie : "";
+}
+
+function clientIpV69(request: http.IncomingMessage) {
+  return cleanTextV69(headerV69(request, "x-forwarded-for").split(",")[0] || request.socket.remoteAddress, 64);
 }
 
 export function schedulerIdempotencyKeyV69(request: http.IncomingMessage | undefined) {

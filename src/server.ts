@@ -38,8 +38,12 @@ const PUBLIC_ASSETS = new Set([
   "/app-v6-9-4.js",
   "/app-v6-9-5.js",
   "/app-v6-9-6.js",
+  "/app-v6-9-7.js",
+  "/analytics-v69.js",
+  "/analytics-v69-1.js",
   "/meta-pixel-v69.js",
   "/meta-pixel-v69-1.js",
+  "/meta-pixel-v69-2.js",
   "/logo_farmagreen.png",
   "/farmagreen-social-preview-v69.png",
   "/farmagreen-social-preview-v69-social-2.png",
@@ -52,7 +56,10 @@ const PUBLIC_ALIASES = new Map([
   ["/app-v6-9-4.js", "/app-v6-9.js"],
   ["/app-v6-9-5.js", "/app-v6-9.js"],
   ["/app-v6-9-6.js", "/app-v6-9.js"],
+  ["/app-v6-9-7.js", "/app-v6-9.js"],
+  ["/analytics-v69-1.js", "/analytics-v69.js"],
   ["/meta-pixel-v69-1.js", "/meta-pixel-v69.js"],
+  ["/meta-pixel-v69-2.js", "/meta-pixel-v69.js"],
   ["/farmagreen-social-preview-v69-social-2.png", "/farmagreen-social-preview-v69.png"],
 ]);
 
@@ -98,14 +105,14 @@ export function app(environment: Environment = process.env) {
         const file = path.join(PUBLIC, PUBLIC_ALIASES.get(pathname) || pathname);
         const localV69Asset =
           environment.V69_LOCAL_PREVIEW === "1" &&
-          (pathname.includes("v6-9") || pathname.startsWith("/meta-pixel-v69"));
+          (pathname.includes("v6-9") || pathname.startsWith("/meta-pixel-v69") || pathname.startsWith("/analytics-v69"));
         sendBinary(
           response,
           await fs.readFile(file),
           MIME[path.extname(file)] || "application/octet-stream",
           localV69Asset
             ? "no-store"
-            : pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js" || pathname === "/app-v6-9-1.js" || pathname === "/app-v6-9-2.js" || pathname === "/app-v6-9-3.js" || pathname === "/app-v6-9-4.js" || pathname === "/app-v6-9-5.js" || pathname === "/app-v6-9-6.js" || pathname === "/meta-pixel-v69-1.js" || pathname === "/styles-v6-9-1.css"
+            : pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js" || pathname === "/app-v6-9-1.js" || pathname === "/app-v6-9-2.js" || pathname === "/app-v6-9-3.js" || pathname === "/app-v6-9-4.js" || pathname === "/app-v6-9-5.js" || pathname === "/app-v6-9-6.js" || pathname === "/app-v6-9-7.js" || pathname === "/analytics-v69-1.js" || pathname === "/meta-pixel-v69-1.js" || pathname === "/meta-pixel-v69-2.js" || pathname === "/styles-v6-9-1.css"
             ? "public, max-age=31536000, immutable"
             : pathname.includes("v6-9")
               ? "public, max-age=300, s-maxage=300, stale-while-revalidate=60"

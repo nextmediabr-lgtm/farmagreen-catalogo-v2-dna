@@ -32,6 +32,7 @@ import { app } from "../src/server.js";
 import {
   catalogHealthV69,
   catalogReadyForRuntimeV69,
+  normalizeMetaEventV69,
   responsiveImagesReadyV691,
   schedulerIdempotencyKeyV69,
   sourceImageBridgeEnabled,
@@ -40,6 +41,38 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CATALOG_FILE = path.join(ROOT, "data", "catalog-v69.json");
 const SORTS: SortV69[] = ["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"];
+
+test("V6.9 normaliza eventos CAPI sin aceptar orígenes, eventos ni datos arbitrarios", () => {
+  const normalized = normalizeMetaEventV69(
+    {
+      event_name: "CatalogFilterSelect",
+      event_time: 1_787_350_000,
+      event_id: "fg-v69:test-1",
+      event_source_url: "https://farmagreenrosario.web.app/catalogo?scope=todo",
+      fbp: "fb.1.1787350000000.123456789",
+      fbc: "fb.1.1787350000000.Abc-123_xyz",
+      custom_data: {
+        filter_type: "order",
+        filter_value: "precio-asc",
+        ignored_private_field: "no debe salir",
+      },
+    },
+    "https://farmagreenrosario.web.app",
+    1_787_350_000,
+  );
+  assert.equal(normalized.event_name, "CatalogFilterSelect");
+  assert.equal(normalized.event_id, "fg-v69:test-1");
+  assert.equal(normalized.action_source, "website");
+  assert.deepEqual(normalized.custom_data, { filter_value: "precio-asc", filter_type: "order" });
+  assert.throws(
+    () => normalizeMetaEventV69({ ...normalized, event_source_url: "https://example.com/" }, "https://farmagreenrosario.web.app"),
+    /Origen de evento inválido/,
+  );
+  assert.throws(
+    () => normalizeMetaEventV69({ ...normalized, event_name: "Purchase" }, "https://farmagreenrosario.web.app"),
+    /Evento no permitido/,
+  );
+});
 
 async function baseCatalog() {
   resetCatalogV69CacheForTests();
@@ -438,7 +471,7 @@ test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente 
     assert.equal(bootPayload(html).context.sort, sort);
     assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-6\.js/);
+    assert.match(html, /app-v6-9-7\.js/);
     assert.match(html, /styles-v6-9-1\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -588,15 +621,16 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
   const server = app({ ...process.env, NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" });
   const origin = await listen(server);
   try {
-    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, metaPixelResponse, cssResponse, socialImageResponse, robotsResponse, sitemapResponse] = await Promise.all([
+    const [rootResponse, homeResponse, catalogAliasResponse, catalogResponse, apiResponse, healthResponse, appResponse, analyticsResponse, metaPixelResponse, cssResponse, socialImageResponse, robotsResponse, sitemapResponse] = await Promise.all([
       fetch(`${origin}/`),
       fetch(`${origin}/inicio-v6-9/`),
       fetch(`${origin}/catalogo/`),
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-6.js`),
-      fetch(`${origin}/meta-pixel-v69-1.js`),
+      fetch(`${origin}/app-v6-9-7.js`),
+      fetch(`${origin}/analytics-v69-1.js`),
+      fetch(`${origin}/meta-pixel-v69-2.js`),
       fetch(`${origin}/styles-v6-9-1.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
       fetch(`${origin}/robots.txt`),
@@ -610,6 +644,8 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(healthResponse.status, 200);
     assert.equal(appResponse.status, 200);
     assert.equal(appResponse.headers.get("cache-control"), "no-store");
+    assert.equal(analyticsResponse.status, 200);
+    assert.equal(analyticsResponse.headers.get("cache-control"), "no-store");
     assert.equal(metaPixelResponse.status, 200);
     assert.equal(metaPixelResponse.headers.get("cache-control"), "no-store");
     assert.equal(cssResponse.status, 200);
@@ -631,6 +667,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     const apiText = await apiResponse.text();
     const health = await healthResponse.json() as ReturnType<typeof catalogHealthV69>;
     const appSource = await appResponse.text();
+    const analyticsSource = await analyticsResponse.text();
     const metaPixelSource = await metaPixelResponse.text();
     const robots = await robotsResponse.text();
     const sitemap = await sitemapResponse.text();
@@ -690,8 +727,11 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-1\.css/);
-    assert.match(root, /app-v6-9-6\.js/);
-    assert.match(root, /meta-pixel-v69-1\.js/);
+    assert.match(root, /app-v6-9-7\.js/);
+    assert.match(root, /analytics-v69-1\.js/);
+    assert.match(root, /meta-pixel-v69-2\.js/);
+    assert.ok(root.indexOf("analytics-v69-1.js") < root.indexOf("meta-pixel-v69-2.js"));
+    assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-7.js"));
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
     assert.ok(api.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));
@@ -711,21 +751,48 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(home, /v69-home-brand-index/);
     assert.doesNotMatch(home, /gpsfarma|provider|"sku"|"source"/i);
     assert.doesNotMatch(appSource, /gpsfarma/i);
+    assert.match(analyticsSource, /G-SL7GG138WV/);
+    assert.match(analyticsSource, /fgTrackGaV69/);
     assert.match(metaPixelSource, /1198250568817946/);
     assert.match(metaPixelSource, /fbq\("init", META_PIXEL_ID_V69\)/);
-    assert.match(metaPixelSource, /fbq\("track", "PageView"\)/);
+    assert.match(metaPixelSource, /fgTrackMetaV69\("PageView"\)/);
+    assert.match(metaPixelSource, /eventID: eventId/);
+    assert.match(metaPixelSource, /\/api\/meta-events-v6-9/);
     assert.match(metaPixelSource, /__FG_META_QUEUE/);
     assert.match(appSource, /trackMeta\("ViewContent"/);
     assert.match(appSource, /trackMeta\("Search"/);
     assert.match(appSource, /trackMeta\("Contact"/);
     assert.match(appSource, /trackMeta\("Lead"/);
+    assert.match(appSource, /trackMeta\("CatalogFilterOpen"/);
+    assert.match(appSource, /trackMeta\("CatalogFilterSelect"/);
+    assert.match(appSource, /trackGa\("filter_open"/);
+    assert.match(appSource, /trackGa\("filter_select"/);
     assert.match(root, /facebook\.com\/tr\?id=1198250568817946&amp;ev=PageView&amp;noscript=1/i);
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/connect\.facebook\.net/);
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/www\.facebook\.com/);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/www\.googletagmanager\.com/);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/www\.google-analytics\.com/);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /form-action 'self' https:\/\/www\.facebook\.com/);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /frame-src https:\/\/www\.facebook\.com/);
     assert.doesNotMatch(catalogResponse.headers.get("content-security-policy") || "", /gpsfarma|unsafe-inline/i);
     assert.match(html, /id="availabilityV69"/);
     assert.match(html, /id="sortV69" name="orden"/);
     assert.match(html, /class="v65-link-button"[^>]*id="showAllV69"/);
+
+    const disabledCapiResponse = await fetch(`${origin}/api/meta-events-v6-9`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        event_name: "CatalogFilterSelect",
+        event_time: Math.floor(Date.now() / 1_000),
+        event_id: "fg-v69-local-test",
+        event_source_url: `${origin}/catalogo-v6-9/`,
+        custom_data: { filter_type: "order", filter_value: "precio-desc" },
+      }),
+    });
+    assert.equal(disabledCapiResponse.status, 204);
+    const capiMethodResponse = await fetch(`${origin}/api/meta-events-v6-9`);
+    assert.equal(capiMethodResponse.status, 405);
 
     const unavailable = api.products.find((product) => product.availability === "unavailable_reference");
     assert.ok(unavailable);

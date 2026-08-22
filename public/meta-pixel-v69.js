@@ -1,4 +1,5 @@
 const META_PIXEL_ID_V69 = "1198250568817946";
+const META_CAPI_ENDPOINT_V69 = "/api/meta-events-v6-9";
 
 (function bootstrapMetaPixel(f, b, e, v, n, t, s) {
   if (f.fbq) return;
@@ -18,9 +19,50 @@ const META_PIXEL_ID_V69 = "1198250568817946";
 })(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
 
 window.fbq("init", META_PIXEL_ID_V69);
-window.fbq("track", "PageView");
 
-for (const [eventName, parameters] of window.__FG_META_QUEUE || []) {
-  window.fbq("track", eventName, parameters);
+function metaEventIdV69() {
+  if (typeof window.crypto?.randomUUID === "function") return window.crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function metaCookieV69(name) {
+  const prefix = `${name}=`;
+  return document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length) || "";
+}
+
+function sendMetaServerEventV69(eventName, parameters, eventId) {
+  const body = {
+    event_name: eventName,
+    event_time: Math.floor(Date.now() / 1_000),
+    event_id: eventId,
+    event_source_url: location.href,
+    fbp: metaCookieV69("_fbp"),
+    fbc: metaCookieV69("_fbc"),
+    custom_data: parameters,
+  };
+  fetch(META_CAPI_ENDPOINT_V69, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
+    keepalive: true,
+    body: JSON.stringify(body),
+  }).catch(() => {});
+}
+
+window.fgTrackMetaV69 = function trackMetaV69(eventName, parameters = {}, options = {}) {
+  const eventId = metaEventIdV69();
+  window.fbq(options.custom ? "trackCustom" : "track", eventName, parameters, { eventID: eventId });
+  sendMetaServerEventV69(eventName, parameters, eventId);
+  return eventId;
+};
+
+window.fgTrackMetaV69("PageView");
+
+for (const [eventName, parameters, options] of window.__FG_META_QUEUE || []) {
+  window.fgTrackMetaV69(eventName, parameters, options);
 }
 window.__FG_META_QUEUE = [];
