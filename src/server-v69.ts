@@ -26,6 +26,7 @@ const SOURCE_IMAGE_TIMEOUT_MS = 15_000;
 const MAX_META_EVENT_BYTES = 16_384;
 const META_CAPI_TIMEOUT_MS = 8_000;
 const META_PIXEL_ID_V69 = "1198250568817946";
+const GOOGLE_ADS_TAG_ID_V69 = "AW-18405204387";
 const META_EVENT_NAMES_V69 = new Set([
   "PageView",
   "ViewContent",
@@ -36,7 +37,7 @@ const META_EVENT_NAMES_V69 = new Set([
   "CatalogFilterSelect",
 ]);
 const V69_CSP =
-  "default-src 'self'; script-src 'self' https://connect.facebook.net https://www.googletagmanager.com; style-src 'self'; img-src 'self' data: https://storage.googleapis.com https://www.facebook.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; connect-src 'self' https://connect.facebook.net https://www.facebook.com https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://www.googletagmanager.com; base-uri 'self'; form-action 'self' https://www.facebook.com; frame-src https://www.facebook.com; frame-ancestors 'self'";
+  "default-src 'self'; script-src 'self' https://connect.facebook.net https://www.googletagmanager.com https://www.googleadservices.com https://www.google.com https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; style-src 'self'; img-src 'self' data: https://storage.googleapis.com https://www.facebook.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://*.g.doubleclick.net https://www.google.com https://google.com https://www.google.com.ar https://google.com.ar https://pagead2.googlesyndication.com https://www.googleadservices.com; connect-src 'self' https://connect.facebook.net https://www.facebook.com https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://www.googletagmanager.com https://*.g.doubleclick.net https://pagead2.googlesyndication.com https://www.googleadservices.com https://ad.doubleclick.net https://www.google.com https://google.com https://www.google.com.ar https://google.com.ar; base-uri 'self'; form-action 'self' https://www.facebook.com; frame-src https://www.facebook.com https://www.googletagmanager.com; frame-ancestors 'self'";
 const PUBLIC_HTML_CACHE = "public, max-age=0, s-maxage=300, stale-while-revalidate=60";
 const PUBLIC_CATALOG_CACHE = "public, max-age=60, s-maxage=300, stale-while-revalidate=60";
 const PUBLIC_DISCOVERY_CACHE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=300";
@@ -262,6 +263,7 @@ export async function handleV69Request(
         runtime: commerceRuntime.health(),
         analytics: {
           ga4MeasurementId: "G-SL7GG138WV",
+          googleAdsTagId: GOOGLE_ADS_TAG_ID_V69,
           metaPixelId: META_PIXEL_ID_V69,
           metaCapiConfigured: Boolean(environment.META_CAPI_ACCESS_TOKEN?.trim()),
         },

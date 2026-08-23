@@ -305,6 +305,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.ok(capiPageView, "PageView debe compartir event_id entre Pixel y CAPI.");
     assert.equal(capiPageView.event_source_url, `${runtime.origin}/?scope=todo`);
     assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => Array.from(entry)[0] === "config" && Array.from(entry)[1] === "G-SL7GG138WV")), true);
+    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => Array.from(entry)[0] === "config" && Array.from(entry)[1] === "AW-18405204387")), true);
     await page.locator(".topwa").evaluate((link) => {
       link.addEventListener("click", (event) => event.preventDefault(), { once: true });
       link.click();

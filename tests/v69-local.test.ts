@@ -629,7 +629,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
       fetch(`${origin}/app-v6-9-7.js`),
-      fetch(`${origin}/analytics-v69-2.js`),
+      fetch(`${origin}/analytics-v69-3.js`),
       fetch(`${origin}/meta-pixel-v69-2.js`),
       fetch(`${origin}/styles-v6-9-1.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
@@ -728,9 +728,9 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-1\.css/);
     assert.match(root, /app-v6-9-7\.js/);
-    assert.match(root, /analytics-v69-2\.js/);
+    assert.match(root, /analytics-v69-3\.js/);
     assert.match(root, /meta-pixel-v69-2\.js/);
-    assert.ok(root.indexOf("analytics-v69-2.js") < root.indexOf("meta-pixel-v69-2.js"));
+    assert.ok(root.indexOf("analytics-v69-3.js") < root.indexOf("meta-pixel-v69-2.js"));
     assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-7.js"));
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
@@ -752,6 +752,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(home, /gpsfarma|provider|"sku"|"source"/i);
     assert.doesNotMatch(appSource, /gpsfarma/i);
     assert.match(analyticsSource, /G-SL7GG138WV/);
+    assert.match(analyticsSource, /AW-18405204387/);
     assert.match(analyticsSource, /fgTrackGaV69/);
     assert.match(analyticsSource, /allow_google_signals: false/);
     assert.match(analyticsSource, /allow_ad_personalization_signals: false/);
@@ -776,6 +777,9 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/\*\.google-analytics\.com/);
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/analytics\.google\.com/);
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/\*\.analytics\.google\.com/);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/www\.googleadservices\.com/);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/\*\.g\.doubleclick\.net/);
+    assert.match(catalogResponse.headers.get("content-security-policy") || "", /https:\/\/pagead2\.googlesyndication\.com/);
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /form-action 'self' https:\/\/www\.facebook\.com/);
     assert.match(catalogResponse.headers.get("content-security-policy") || "", /frame-src https:\/\/www\.facebook\.com/);
     assert.doesNotMatch(catalogResponse.headers.get("content-security-policy") || "", /gpsfarma|unsafe-inline/i);
