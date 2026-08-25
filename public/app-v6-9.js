@@ -209,9 +209,13 @@ function wireConversionTracking() {
       method: "WhatsApp",
       ...(product ? { item_id: String(product.publicId || ""), item_name: product.name || "Producto Farmagreen" } : {}),
     });
+    trackGa("generate_lead", {
+      method: "WhatsApp",
+      lead_type: product ? "product" : "general",
+      ...(product ? gaProductParameters(product) : {}),
+    });
     if (product) {
       trackMeta("Lead", metaProductParameters(product));
-      trackGa("generate_lead", gaProductParameters(product));
     }
   });
 }

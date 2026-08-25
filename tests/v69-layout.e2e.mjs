@@ -312,6 +312,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     });
     assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Contact").length), 1);
     assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Lead").length), 0);
+    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => {
+      const values = Array.from(entry);
+      return values[0] === "event" && values[1] === "generate_lead" && values[2]?.lead_type === "general" && values[2]?.method === "WhatsApp";
+    })), true);
     assert.equal(new URL(page.url()).pathname, "/");
     assert.equal(await page.locator("#gridV69 .v66-card").count(), 48);
     assert.equal(await page.locator("#showAllV69").count(), 1);
@@ -346,6 +350,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     });
     assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Contact").length), 1);
     assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Lead").length), 1);
+    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => {
+      const values = Array.from(entry);
+      return values[0] === "event" && values[1] === "generate_lead" && values[2]?.lead_type === "product" && values[2]?.method === "WhatsApp";
+    })), true);
     assert.equal(await page.locator("[data-history-back]").count(), 1);
     const brandCatalogLink = page.locator(".v69-crumb-context");
     const productBrand = (await page.locator(".v67-pdp-card-top .v66-brand").textContent()).trim();

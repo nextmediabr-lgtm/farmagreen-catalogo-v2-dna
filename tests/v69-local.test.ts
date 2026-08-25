@@ -471,7 +471,7 @@ test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente 
     assert.equal(bootPayload(html).context.sort, sort);
     assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-7\.js/);
+    assert.match(html, /app-v6-9-8\.js/);
     assert.match(html, /styles-v6-9-1\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -628,7 +628,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-7.js`),
+      fetch(`${origin}/app-v6-9-8.js`),
       fetch(`${origin}/analytics-v69-3.js`),
       fetch(`${origin}/meta-pixel-v69-2.js`),
       fetch(`${origin}/styles-v6-9-1.css`),
@@ -727,11 +727,11 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-1\.css/);
-    assert.match(root, /app-v6-9-7\.js/);
+    assert.match(root, /app-v6-9-8\.js/);
     assert.match(root, /analytics-v69-3\.js/);
     assert.match(root, /meta-pixel-v69-2\.js/);
     assert.ok(root.indexOf("analytics-v69-3.js") < root.indexOf("meta-pixel-v69-2.js"));
-    assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-7.js"));
+    assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-8.js"));
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
     assert.ok(api.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));
