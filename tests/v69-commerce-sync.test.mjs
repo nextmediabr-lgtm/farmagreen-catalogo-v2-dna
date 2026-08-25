@@ -28,9 +28,19 @@ import {
   writeJsonAtomically,
 } from "../scripts/sync-catalog-commerce-v69.mjs";
 import {
+  consolidateDetailedGroupsV69,
   inferTaxonomyV69,
   newProductFromSourceGroupV69,
 } from "../scripts/build-local-v7-beta.mjs";
+import {
+  assertRuntimeAssetsV69,
+  assertUniqueCanonicalProductsV69,
+  attachMagentoTaxonomyV69,
+  discoverySourcesV69,
+  finalizeCatalogDiscoveryV69,
+  reconcileCatalogChangesV69,
+  reindexCatalogV69,
+} from "../scripts/scan-catalog-v69.mjs";
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 const PAGE_1 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-1.html"), "utf8");
@@ -197,6 +207,200 @@ test("Neutrogena, Vitamin Way y Capilatis conservan familias y usos determiníst
   assert.equal(inferTaxonomyV69("Crema de Peinar Antifrizz Para Rulos x 230 ml", "Capilatis").primaryCategory, "capilar");
   assert.equal(inferTaxonomyV69("Enjuague con Manzanilla x 500 ml", "Capilatis").primaryCategory, "capilar");
   assert.equal(inferTaxonomyV69("Crema para manos y uñas Bodytherapy x 100 g", "Capilatis").primaryCategory, "cuerpo");
+});
+
+test("Productos Saludables es una vista transversal y la ficha canónica sigue siendo única por SKU", async () => {
+  const sources = discoverySourcesV69();
+  const healthy = sources.find((source) => source.id === "9100");
+  assert.equal(healthy.membershipOnly, true);
+  assert.equal(healthy.facet.kind, "collection");
+
+  const completedAt = "2026-08-25T12:00:00.000Z";
+  const base = discoveryBaseCatalog([
+    product("p-vw", "Magnesio Vitamin Way x 30 cápsulas", {
+      sku: "VW-1",
+      barcode: "7790000000001",
+      brand: { id: "6312", slug: "vitamin-way", name: "Vitamin Way", aliases: ["vitamin way"] },
+      source: { url: "https://gpsfarma.com/magnesio-vitamin-way.html" },
+    }),
+  ], completedAt);
+  const result = await reconcileCatalogChangesV69({
+    baseCatalog: base,
+    completedAt,
+    sources,
+    detailedGroups: [
+      {
+        baseIndex: 0,
+        detail: {},
+        members: [
+          listingMember("6312", "VW-1", "Magnesio Vitamin Way x 30 cápsulas", 2),
+          listingMember("9100", "VW-1", "Magnesio Vitamin Way x 30 cápsulas", 18, {
+            listedBrand: "Vitamin Way",
+          }),
+        ],
+      },
+      {
+        baseIndex: null,
+        detail: {
+          sku: "LRP-RETINOL",
+          barcode: "3337875694469",
+          description: "Serum con retinol y vitamina B3.",
+          image: "https://gpsfarma.com/media/catalog/product/l/r/lrp-retinol.jpg",
+        },
+        members: [
+          listingMember("6048", "LRP-RETINOL", "Retinol B3 La Roche Posay x 30 ml", 8, {
+            catalogBrandId: "6048",
+            catalogBrandName: "La Roche Posay",
+            sourceBrand: "La Roche Posay",
+            listedBrand: "La Roche Posay",
+            imageUrl: "https://gpsfarma.com/media/catalog/product/l/r/lrp-retinol.jpg",
+          }),
+        ],
+      },
+    ],
+  });
+
+  assert.equal(result.catalog.products.length, 2);
+  assertUniqueCanonicalProductsV69(result.catalog.products);
+  const existing = result.catalog.products.find((entry) => entry.sku === "VW-1");
+  assert.deepEqual(existing.sourceMemberships.map((entry) => entry.sourceId).sort(), ["6312", "9100"]);
+  assert.equal(existing.catalogFacets.find((entry) => entry.slug === "productos-saludables").kind, "collection");
+  assert.equal(existing.brand.name, "Vitamin Way");
+
+  const added = result.catalog.products.find((entry) => entry.sku === "LRP-RETINOL");
+  assert.equal(added.barcode, "3337875694469");
+  assert.equal(added.brand.name, "La Roche Posay");
+  assert.deepEqual(added.needs, ["antiedad"]);
+  assert.ok(added.aliases.some((alias) => /retinol/i.test(alias)));
+  assert.equal(result.discoverySync.metrics.positive, 1);
+  assert.equal(result.discoverySync.metrics.negative, 0);
+  assert.equal(result.discoverySync.activationReady, false);
+});
+
+test("un título idéntico nunca fusiona dos fichas base cuando un listing no expone SKU", () => {
+  const title = "Crema Facial Pro Lifting De Día x 55 g";
+  const groups = consolidateDetailedGroupsV69([
+    {
+      baseIndex: 2,
+      detail: {},
+      members: [listingMember("5704", "BAGOVIT-A", title, 1)],
+    },
+    {
+      baseIndex: 7,
+      detail: {},
+      members: [listingMember("5704", "", title, 2, {
+        sourceUrl: "https://gpsfarma.com/bagovit-pro-lifting-alternativa.html",
+        availability: "unavailable",
+      })],
+    },
+  ]);
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups.map((group) => group.baseIndex).sort((a, b) => a - b), [2, 7]);
+});
+
+test("el scan semanal elimina sólo una baja 404/410 y aborta ante una ausencia ambigua", async () => {
+  const completedAt = "2026-08-25T12:00:00.000Z";
+  const retained = product("p-retained", "Producto vigente x 30 ml", {
+    sku: "KEEP-1",
+    barcode: "7790000000100",
+    source: { url: "https://gpsfarma.com/vigente.html" },
+  });
+  const removed = product("p-removed", "Producto discontinuado x 30 ml", {
+    sku: "DROP-1",
+    barcode: "7790000000101",
+    source: { url: "https://gpsfarma.com/discontinuado.html" },
+  });
+  const base = discoveryBaseCatalog([retained, removed], completedAt);
+  const matched = {
+    baseIndex: 0,
+    detail: {},
+    members: [listingMember("5930", "KEEP-1", retained.name, 1)],
+  };
+  const removedResult = await reconcileCatalogChangesV69({
+    baseCatalog: base,
+    detailedGroups: [matched],
+    completedAt,
+    fetchHtml: async () => {
+      throw new Error("404 Not Found: https://gpsfarma.com/discontinuado.html");
+    },
+  });
+  assert.deepEqual(removedResult.catalog.products.map((entry) => entry.publicId), ["p-retained"]);
+  assert.equal(removedResult.discoverySync.metrics.negative, 1);
+
+  await assert.rejects(
+    reconcileCatalogChangesV69({
+      baseCatalog: base,
+      detailedGroups: [matched],
+      completedAt,
+      fetchHtml: async () => {
+        throw new Error("503 Service Unavailable");
+      },
+    }),
+    /No se pudo confirmar una baja V6.9/,
+  );
+});
+
+test("el reindexado semanal reconstruye necesidades desde evidencia viva", () => {
+  const indexedAt = "2026-08-25T12:00:00.000Z";
+  const catalog = reindexCatalogV69({
+    version: 6.9,
+    products: [
+      product("p-index", "Retinol B3 Serum x 30 ml", {
+        sku: "INDEX-1",
+        needs: ["cuidado-diario"],
+        aliases: ["serum"],
+        magentoCategories: [{ id: "1", name: "Tratamiento Anti-Edad" }],
+      }),
+    ],
+  }, indexedAt);
+  assert.deepEqual(catalog.products[0].needs, ["antiedad"]);
+  assert.equal(catalog.products[0].primaryCategory, "rostro");
+  assert.ok(catalog.products[0].aliases.includes("Tratamiento Anti-Edad"));
+  assert.equal(catalog.products[0].taxonomy.indexedAt, indexedAt);
+  assert.equal(catalog.searchIndexedAt, indexedAt);
+  assert.equal(catalog.needsIndexedAt, indexedAt);
+});
+
+test("el candidato semanal sólo queda activable después de imágenes GCS y taxonomía embebida", async () => {
+  const completedAt = "2026-08-25T12:00:00.000Z";
+  const base = discoveryBaseCatalog([
+    product("p-weekly", "Retinol B3 Serum x 30 ml", {
+      sku: "WEEKLY-1",
+      barcode: "3337875694469",
+      images: {
+        card: "https://gpsfarma.com/media/catalog/product/weekly.jpg",
+        detail: "https://gpsfarma.com/media/catalog/product/weekly.jpg",
+        original: "https://gpsfarma.com/media/catalog/product/weekly.jpg",
+      },
+    }),
+  ], completedAt);
+  base.discoverySync = {
+    completedAt,
+    status: "completed",
+    metrics: { positive: 1 },
+    addedPublicIds: ["p-weekly"],
+    removedPublicIds: [],
+    negativePendingPublicIds: [],
+    activationReady: false,
+  };
+  const result = await finalizeCatalogDiscoveryV69({
+    catalog: base,
+    prepareImages: async ({ catalog }) => ({
+      ...catalog,
+      products: catalog.products.map((entry) => ({
+        ...entry,
+        images: responsiveGcsImages("weekly"),
+      })),
+    }),
+    rebuildTaxonomy: async ({ catalog }) => attachMagentoTaxonomyV69(catalog, {
+      categories: [{ id: 8504, name: "Tratamiento Anti-Edad", breadcrumbs: [] }],
+      products: [{ publicId: "p-weekly", categoryIds: [8504] }],
+    }),
+  });
+  assert.equal(result.discoverySync.activationReady, true);
+  assert.equal(result.catalog.products[0].magentoTaxonomyAttached, true);
+  assert.deepEqual(result.catalog.products[0].needs, ["antiedad"]);
+  assertRuntimeAssetsV69(result.catalog.products);
 });
 
 test("parser de listing conserva URL confiable y calcula oferta/descuento", () => {
@@ -420,6 +624,59 @@ test("un candidato reservado por URL no puede reutilizarse por título", () => {
   assert.equal(result.products[0].availability, "unknown");
   assert.equal(result.products[1].availability, "limited");
   assert.equal(result.commerceSync.metrics.matched, 1);
+});
+
+test("el refresh comercial sigue la membresía transversal sin convertir la vista en marca", () => {
+  const sourceUrl = "https://gpsfarma.com/magnesio-vitamin-way.html";
+  const result = synchronizeCatalog(
+    {
+      version: 6.9,
+      products: [
+        product("p-cross-view", "Magnesio Vitamin Way x 30 cápsulas", {
+          sku: "VW-CROSS-1",
+          brand: { id: "6312", slug: "vitamin-way", name: "Vitamin Way", aliases: ["vitamin way"] },
+          source: { url: sourceUrl },
+          sourceMemberships: [{
+            sourceId: "9100",
+            viewSlug: "productos-saludables",
+            viewName: "Productos Saludables",
+            viewKind: "collection",
+            membershipOnly: true,
+            position: 5,
+          }],
+        }),
+      ],
+    },
+    [
+      {
+        id: "9100",
+        catalogBrandId: "9100",
+        catalogBrandName: "Productos Saludables",
+        status: "completed",
+        pages: [{ page: 1 }],
+        products: [{
+          sourceUrl,
+          sourceName: "Magnesio Vitamin Way x 30 cápsulas",
+          sourceBrand: "Vitamin Way",
+          sku: "VW-CROSS-1",
+          availability: "available",
+          listPrice: 1000,
+          offerPrice: 900,
+          savingAmount: 100,
+          discountPercent: 10,
+        }],
+      },
+    ],
+    {
+      completedAt: "2026-08-25T12:00:00.000Z",
+      minCoverage: 1,
+      minPriceCoverage: 1,
+      expectedSourceIds: ["9100"],
+    },
+  );
+  assert.equal(result.products[0].availability, "limited");
+  assert.equal(result.products[0].brand.name, "Vitamin Way");
+  assert.equal(result.commerceSync.metrics.matchedByUrl, 1);
 });
 
 test("crawl sigue todo el paginado y termina sin duplicar productos", async () => {
@@ -820,5 +1077,82 @@ function product(publicId, name, overrides = {}) {
     availability: "unknown",
     images: { card: "/card.jpg", detail: "/detail.jpg", original: "/original.jpg" },
     ...overrides,
+  };
+}
+
+function listingMember(sourceId, sku, sourceName, position, overrides = {}) {
+  const source = discoverySourcesV69().find((entry) => String(entry.id) === String(sourceId));
+  const slug = String(sku).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return {
+    sourceId: String(source.id),
+    catalogBrandId: source.catalogBrandId,
+    catalogBrandName: source.catalogBrandName,
+    catalogFacet: source.facet,
+    sourceMembershipOnly: Boolean(source.membershipOnly),
+    sourceUrl: "https://gpsfarma.com/" + slug + ".html",
+    sourceName,
+    sourceBrand: source.catalogBrandName,
+    listedBrand: source.catalogBrandName,
+    imageUrl: "https://gpsfarma.com/media/catalog/product/" + slug + ".jpg",
+    sku,
+    availability: "available",
+    listPrice: 1000,
+    offerPrice: 900,
+    savingAmount: 100,
+    discountPercent: 10,
+    position,
+    ...overrides,
+  };
+}
+
+function discoveryBaseCatalog(products, completedAt) {
+  const readyProducts = products.map((entry) => ({
+    ...entry,
+    availability: "limited",
+    availabilityCheckedAt: completedAt,
+  }));
+  return {
+    version: 6.9,
+    syncedAt: completedAt,
+    commerceSyncedAt: completedAt,
+    availabilityReferenceAt: completedAt,
+    totalProducts: readyProducts.length,
+    products: readyProducts,
+    commerceSync: {
+      completedAt,
+      status: "completed",
+      sources: discoverySourcesV69().map((source) => ({
+        id: String(source.id),
+        status: "completed",
+      })),
+      metrics: {
+        catalogProducts: readyProducts.length,
+        matched: readyProducts.length,
+        available: readyProducts.length,
+        unavailable: 0,
+        unverified: 0,
+        verified: readyProducts.length,
+        availabilityCoverage: 1,
+        pricesUpdated: readyProducts.length,
+        coverage: 1,
+        priceCoverage: 1,
+      },
+    },
+  };
+}
+
+function responsiveGcsImages(slug) {
+  const original = "https://storage.googleapis.com/test-images/v69/" + slug + ".jpg";
+  const variants = {
+    width: 1000,
+    height: 1000,
+    webp: { "320": "https://storage.googleapis.com/test-images/v69/" + slug + "-320.webp" },
+    avif: { "320": "https://storage.googleapis.com/test-images/v69/" + slug + "-320.avif" },
+  };
+  return {
+    card: original,
+    detail: original,
+    original,
+    responsive: { card: variants, detail: variants },
   };
 }

@@ -12,6 +12,8 @@
     "build:data:v68": "node scripts/build-v68-data.mjs",
     "sync:data:v69": "node scripts/sync-catalog-commerce-v69.mjs",
     "sync:data:v69:apply": "node scripts/sync-catalog-commerce-v69.mjs --apply",
+    "scan:data:v69": "node scripts/scan-catalog-v69.mjs --dry-run",
+    "scan:data:v69:apply": "node scripts/scan-catalog-v69.mjs --apply",
     "sync:identities:v69": "node scripts/sync-catalog-commerce-v69.mjs --identities",
     "sync:identities:v69:apply": "node scripts/sync-catalog-commerce-v69.mjs --identities --apply",
     "import:brand:v69": "node scripts/import-brand-v69.mjs",

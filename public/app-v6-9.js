@@ -18,6 +18,7 @@ const S = {
   q: CONTEXT.q || "",
   brand: CONTEXT.brand || "Todas",
   need: CONTEXT.need || "Todas",
+  view: CONTEXT.view || "Todas",
   scope: CONTEXT.scope || "ofertas",
   sort: SORT_VALUES.has(CONTEXT.sort) ? CONTEXT.sort : DEFAULT_SORT,
   limit: PAGE,
@@ -594,6 +595,7 @@ function matches(product, searchIds, hasQuery) {
   if (S.scope === "ofertas" && !(product.discountPercent > 0)) return false;
   if (S.brand !== "Todas" && brandName(product) !== S.brand) return false;
   if (S.need !== "Todas" && !(product.needs || []).includes(S.need)) return false;
+  if (S.view !== "Todas" && !(product.catalogViews || []).some((view) => view.kind === "collection" && view.slug === S.view)) return false;
   return !hasQuery || searchIds.has(product.publicId);
 }
 
@@ -893,6 +895,7 @@ function writeUrl(mode = "replace") {
   if (S.q) params.set("q", S.q);
   if (S.brand !== "Todas") params.set("marca", S.brand);
   if (S.need !== "Todas") params.set("need", S.need);
+  if (S.view !== "Todas") params.set("view", S.view);
   if (S.sort !== DEFAULT_SORT) params.set("orden", S.sort);
   if (S.limit > PAGE) params.set("pagina", String(Math.ceil(S.limit / PAGE)));
   const next = `${url(ROUTE)}${params.toString() ? `?${params}` : ""}`;
@@ -944,6 +947,11 @@ function catalogCopy() {
   if (S.need !== "Todas") {
     const label = NEED_LABELS[S.need] || S.need;
     return { mode: "Necesidad", title: label, context: `Selección para ${String(label).toLowerCase()}.`, nav: "buscar" };
+  }
+  if (S.view !== "Todas") {
+    const view = S.all.flatMap((product) => product.catalogViews || []).find((entry) => entry.slug === S.view);
+    const label = view?.name || S.view;
+    return { mode: "Vista", title: label, context: `Selección transversal de ${label}.`, nav: "view" };
   }
   if (S.scope === "todo") return { mode: "Catálogo", title: "Todos los productos", context: "Explorá el catálogo completo.", nav: "productos" };
   return { mode: "Ofertas", title: "Oportunidades de hoy", context: "Los mejores descuentos disponibles primero.", nav: "ofertas" };
@@ -997,6 +1005,7 @@ function render(historyMode = "replace") {
   $("#showAllV69").hidden = copy.nav === "productos";
   sync("[data-brand]", "brand", S.brand);
   sync("[data-need]", "need", S.need);
+  $$('[data-view]').forEach((link) => link.classList.toggle("is-active", link.dataset.view === S.view));
   syncFilterMenuSummaries(items.length);
   writeUrl(historyMode);
   refreshFloatingWhatsapp();
@@ -1007,6 +1016,7 @@ function showAll() {
   S.q = "";
   S.brand = "Todas";
   S.need = "Todas";
+  S.view = "Todas";
   S.scope = "todo";
   S.limit = PAGE;
   $("#searchV69").value = "";
@@ -1019,6 +1029,7 @@ function reset() {
   S.q = "";
   S.brand = "Todas";
   S.need = "Todas";
+  S.view = "Todas";
   S.scope = "ofertas";
   S.sort = DEFAULT_SORT;
   S.limit = PAGE;
@@ -1032,19 +1043,25 @@ function applyParams(params) {
   S.q = searchQueryReady(requestedQuery) ? requestedQuery : "";
   S.brand = params.get("marca") === "Aveeno" ? "Aveno" : params.get("marca") || "Todas";
   S.need = params.get("need") || "Todas";
+  S.view = params.get("view") || "Todas";
   S.sort = SORT_VALUES.has(params.get("orden")) ? params.get("orden") : DEFAULT_SORT;
   const validBrands = new Set(["Todas", ...S.all.map((product) => product.brand?.name).filter(Boolean)]);
   const validNeeds = new Set(["Todas", ...Object.keys(NEED_LABELS)]);
+  const validViews = new Set(["Todas", ...S.all.flatMap((product) => (product.catalogViews || []).filter((view) => view.kind === "collection").map((view) => view.slug))]);
   if (!validBrands.has(S.brand)) S.brand = "Todas";
   if (!validNeeds.has(S.need)) S.need = "Todas";
+  if (!validViews.has(S.view)) S.view = "Todas";
   if (S.q) {
+    S.brand = "Todas";
+    S.need = "Todas";
+  } else if (S.view !== "Todas") {
     S.brand = "Todas";
     S.need = "Todas";
   } else if (S.brand !== "Todas" && S.need !== "Todas") {
     S.need = "Todas";
   }
   S.scope =
-    S.q || S.brand !== "Todas" || S.need !== "Todas"
+    S.q || S.brand !== "Todas" || S.need !== "Todas" || S.view !== "Todas"
       ? "todo"
       : params.get("scope") === "todo"
         ? "todo"
@@ -1222,7 +1239,10 @@ async function boot() {
       S.q = "";
       S.brand = button.dataset.brand || "Todas";
       trackFilterSelect("brand", S.brand);
-      if (S.brand !== "Todas") S.need = "Todas";
+      if (S.brand !== "Todas") {
+        S.need = "Todas";
+        S.view = "Todas";
+      }
       S.scope = "todo";
       S.limit = PAGE;
       $("#searchV69").value = "";
@@ -1237,11 +1257,29 @@ async function boot() {
       S.q = "";
       S.need = button.dataset.need || "Todas";
       trackFilterSelect("need", S.need);
-      if (S.need !== "Todas") S.brand = "Todas";
+      if (S.need !== "Todas") {
+        S.brand = "Todas";
+        S.view = "Todas";
+      }
       S.scope = "todo";
       S.limit = PAGE;
       $("#searchV69").value = "";
       closeFilterMenus();
+      render("push");
+      scrollProducts();
+    }),
+  );
+
+  $$('[data-view]').forEach((link) =>
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      S.q = "";
+      S.brand = "Todas";
+      S.need = "Todas";
+      S.view = link.dataset.view || "Todas";
+      S.scope = "todo";
+      S.limit = PAGE;
+      $("#searchV69").value = "";
       render("push");
       scrollProducts();
     }),

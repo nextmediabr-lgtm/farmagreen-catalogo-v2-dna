@@ -20,8 +20,19 @@ type CommerceSyncV69 = {
   };
 };
 
+type DiscoverySyncV69 = {
+  completedAt: string;
+  status: "completed";
+  activationReady: true;
+  searchIndexedAt: string;
+  needsIndexedAt: string;
+  taxonomyIndexedAt: string;
+  imagesPreparedAt: string;
+};
+
 export type SyncedCatalogV69 = CatalogV69 & {
   commerceSync: CommerceSyncV69;
+  discoverySync?: DiscoverySyncV69;
 };
 
 export type SnapshotStoreV69 = {
@@ -33,6 +44,7 @@ export type RuntimeDependenciesV69 = {
   loadBaseCatalog: () => Promise<unknown>;
   activateCatalog: (catalog: unknown) => void | Promise<void>;
   runSync: (baseCatalog: unknown) => Promise<unknown>;
+  runDiscovery?: (baseCatalog: unknown) => Promise<unknown>;
   snapshotStore: SnapshotStoreV69 | null;
   verifyOidcToken: (token: string, audience: string, expectedEmail: string) => Promise<void>;
   now?: () => Date;
@@ -47,6 +59,8 @@ export type RuntimeHealthV69 = {
   lastSuccessAt: string | null;
   lastFailureAt: string | null;
   syncConfigured: boolean;
+  discoveryConfigured: boolean;
+  lastDiscoveryAt: string | null;
 };
 
 export type RefreshResultV69 = {
@@ -54,6 +68,7 @@ export type RefreshResultV69 = {
   products: number;
   commerceSyncedAt: string;
   reused: boolean;
+  mode: "commerce" | "discovery";
 };
 
 const EXPECTED_SOURCE_COUNT = 16;
@@ -75,6 +90,7 @@ export class CommerceRuntimeV69 {
   #state: "ready" | "degraded" = "degraded";
   #lastSuccessAt: string | null = null;
   #lastFailureAt: string | null = null;
+  #lastDiscoveryAt: string | null = null;
   #lastIdempotencyKey: string | null = null;
 
   constructor(
@@ -106,6 +122,15 @@ export class CommerceRuntimeV69 {
     );
   }
 
+  get discoveryConfigured() {
+    return (
+      this.syncConfigured &&
+      Boolean(this.#environment.V69_DISCOVERY_SCHEDULER_JOB?.trim()) &&
+      Boolean(this.#environment.V69_IMAGE_GCS_BUCKET?.trim()) &&
+      typeof this.#dependencies.runDiscovery === "function"
+    );
+  }
+
   async initialize() {
     if (!this.#initializePromise) this.#initializePromise = this.#initializeOnce();
     await this.#initializePromise;
@@ -133,16 +158,20 @@ export class CommerceRuntimeV69 {
       throw new RuntimeHttpErrorV69(503, "Sincronización no configurada.");
     }
     const normalizedKey = idempotencyKey.trim().slice(0, 256);
+    const mode = this.#refreshMode(normalizedKey);
+    if (mode === "discovery" && !this.discoveryConfigured) {
+      throw new RuntimeHttpErrorV69(503, "Scan semanal no configurado.");
+    }
     if (normalizedKey && normalizedKey === this.#lastIdempotencyKey) {
       const snapshot = this.#validate(this.#activeCatalog);
-      return refreshSummary(snapshot, "already_processed", false);
+      return refreshSummary(snapshot, "already_processed", false, mode);
     }
     if (this.#refreshPromise) {
       const result = await this.#refreshPromise;
       return { ...result, reused: true };
     }
 
-    const operation = this.#performRefresh(normalizedKey);
+    const operation = this.#performRefresh(normalizedKey, mode);
     this.#refreshPromise = operation;
     try {
       return await operation;
@@ -161,6 +190,8 @@ export class CommerceRuntimeV69 {
       lastSuccessAt: this.#lastSuccessAt,
       lastFailureAt: this.#lastFailureAt,
       syncConfigured: this.syncConfigured,
+      discoveryConfigured: this.discoveryConfigured,
+      lastDiscoveryAt: this.#lastDiscoveryAt,
     };
   }
 
@@ -187,6 +218,9 @@ export class CommerceRuntimeV69 {
       await this.#dependencies.activateCatalog(snapshot);
       this.#activeCatalog = snapshot;
       this.#lastSuccessAt = snapshot.commerceSync.completedAt;
+      this.#lastDiscoveryAt = validTimestamp(snapshot.discoverySync?.completedAt)
+        ? new Date(snapshot.discoverySync.completedAt).toISOString()
+        : null;
       this.#state = this.syncConfigured ? "ready" : "degraded";
       this.#dependencies.log?.("info", "V6.9 inicializada desde el último snapshot sano.");
     } catch {
@@ -198,20 +232,34 @@ export class CommerceRuntimeV69 {
     }
   }
 
-  async #performRefresh(idempotencyKey: string): Promise<RefreshResultV69> {
-    const previousCatalog = this.#activeCatalog;
+  async #performRefresh(
+    idempotencyKey: string,
+    mode: "commerce" | "discovery",
+  ): Promise<RefreshResultV69> {
+    let previousCatalog = this.#activeCatalog;
     try {
-      const candidate = await this.#dependencies.runSync(previousCatalog);
+      await this.#adoptStoredSnapshotIfNewer();
+      previousCatalog = this.#activeCatalog;
+      const candidate =
+        mode === "discovery"
+          ? await this.#dependencies.runDiscovery!(previousCatalog)
+          : await this.#dependencies.runSync(previousCatalog);
       const snapshot = this.#validate(candidate);
       await this.#dependencies.snapshotStore!.save(snapshot);
       await this.#dependencies.activateCatalog(snapshot);
       this.#activeCatalog = snapshot;
       this.#lastSuccessAt = snapshot.commerceSync.completedAt;
       this.#lastFailureAt = null;
+      if (mode === "discovery") this.#lastDiscoveryAt = snapshot.discoverySync!.completedAt;
       this.#lastIdempotencyKey = idempotencyKey || null;
       this.#state = "ready";
-      this.#dependencies.log?.("info", "Snapshot comercial V6.9 publicado y activado.");
-      return refreshSummary(snapshot, "updated", false);
+      this.#dependencies.log?.(
+        "info",
+        mode === "discovery"
+          ? "Snapshot semanal V6.9 publicado y activado."
+          : "Snapshot comercial V6.9 publicado y activado.",
+      );
+      return refreshSummary(snapshot, "updated", false, mode);
     } catch (error) {
       this.#activeCatalog = previousCatalog;
       this.#lastFailureAt = (this.#dependencies.now?.() || new Date()).toISOString();
@@ -222,6 +270,31 @@ export class CommerceRuntimeV69 {
       );
       throw new RuntimeHttpErrorV69(502, "La actualización no superó la verificación.");
     }
+  }
+
+  async #adoptStoredSnapshotIfNewer() {
+    if (!this.#dependencies.snapshotStore) return;
+    const stored = await this.#dependencies.snapshotStore.load();
+    if (!stored) return;
+    const snapshot = this.#validate(stored);
+    const activeTimestamp = catalogSummary(this.#activeCatalog).commerceSyncedAt;
+    if (
+      activeTimestamp &&
+      new Date(snapshot.commerceSync.completedAt).getTime() <= new Date(activeTimestamp).getTime()
+    ) {
+      return;
+    }
+    await this.#dependencies.activateCatalog(snapshot);
+    this.#activeCatalog = snapshot;
+    this.#lastSuccessAt = snapshot.commerceSync.completedAt;
+    if (snapshot.discoverySync) this.#lastDiscoveryAt = snapshot.discoverySync.completedAt;
+    this.#dependencies.log?.("info", "V6.9 adoptó un snapshot GCS más reciente antes del refresh.");
+  }
+
+  #refreshMode(idempotencyKey: string): "commerce" | "discovery" {
+    const discoveryJob = this.#environment.V69_DISCOVERY_SCHEDULER_JOB?.trim();
+    const schedulerJob = idempotencyKey.split("|", 1)[0];
+    return discoveryJob && schedulerJob === discoveryJob ? "discovery" : "commerce";
   }
 }
 
@@ -251,6 +324,9 @@ export function createCommerceRuntimeV69(
         await setCatalogV69Data(catalog, environment as NodeJS.ProcessEnv);
       }),
     runSync: overrides.runSync || defaultRunSyncV69,
+    runDiscovery:
+      overrides.runDiscovery ||
+      ((baseCatalog) => defaultRunDiscoveryV69(baseCatalog, environment)),
     snapshotStore,
     verifyOidcToken: overrides.verifyOidcToken || verifyOidcTokenV69,
     now: overrides.now || (() => new Date()),
@@ -274,6 +350,7 @@ export function validateSyncedCatalogV69(
   }
   const candidate = value as Partial<SyncedCatalogV69>;
   const sync = candidate.commerceSync;
+  const discovery = candidate.discoverySync;
   if (
     Number(candidate.version) !== 6.9 ||
     !Array.isArray(candidate.products) ||
@@ -307,6 +384,18 @@ export function validateSyncedCatalogV69(
     )
   ) {
     throw new Error("Snapshot V6.9 por debajo de los umbrales.");
+  }
+  if (
+    discovery &&
+    (discovery.status !== "completed" ||
+      discovery.activationReady !== true ||
+      !validTimestamp(discovery.completedAt) ||
+      !validTimestamp(discovery.searchIndexedAt) ||
+      !validTimestamp(discovery.needsIndexedAt) ||
+      !validTimestamp(discovery.taxonomyIndexedAt) ||
+      !validTimestamp(discovery.imagesPreparedAt))
+  ) {
+    throw new Error("Snapshot semanal V6.9 incompleto.");
   }
   return candidate as SyncedCatalogV69;
 }
@@ -386,6 +475,22 @@ async function defaultRunSyncV69(baseCatalog: unknown) {
   return result.catalog;
 }
 
+async function defaultRunDiscoveryV69(
+  baseCatalog: unknown,
+  environment: RuntimeEnvironmentV69,
+) {
+  // @ts-expect-error El módulo MJS se copia junto al runtime y tiene tests propios.
+  const module = await import("../scripts/scan-catalog-v69.mjs");
+  const scanned = await module.runCatalogDiscoveryV69({
+    providedBaseCatalog: baseCatalog,
+  });
+  const finalized = await module.finalizeCatalogDiscoveryV69({
+    catalog: scanned.catalog,
+    environment,
+  });
+  return finalized.catalog;
+}
+
 async function verifyOidcTokenV69(
   token: string,
   audience: string,
@@ -421,12 +526,14 @@ function refreshSummary(
   catalog: SyncedCatalogV69,
   status: RefreshResultV69["status"],
   reused: boolean,
+  mode: RefreshResultV69["mode"],
 ): RefreshResultV69 {
   return {
     status,
     products: catalog.products.length,
     commerceSyncedAt: new Date(catalog.commerceSync.completedAt).toISOString(),
     reused,
+    mode,
   };
 }
 

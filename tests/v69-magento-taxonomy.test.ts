@@ -95,6 +95,29 @@ test("rechaza una asociación Magento cuya identidad privada no coincide", () =>
   assert.throws(() => applyMagentoTaxonomyV69([product], taxonomy, true), /identidad Magento no coincide/);
 });
 
+test("acepta taxonomía Magento embebida por el scan semanal para una ficha nueva", () => {
+  const product = fixtureProduct(
+    "weekly-new",
+    "SKU-WEEKLY",
+    "3337875694469",
+    "https://gpsfarma.com/lrp-retinol-b3-serum-30ml-loc.html",
+  ) as ProductV69;
+  product.magentoCategories = [
+    { id: "6332", name: "Dermocosmética" },
+    { id: "8504", name: "Tratamiento Anti-Edad" },
+  ];
+  product.magentoTaxonomyAttached = true;
+  const enriched = applyMagentoTaxonomyV69([product], {
+    schemaVersion: 1,
+    source: { platform: "Magento 2", endpoint: "https://gpsfarma.com/graphql", extractedAt: "2026-08-25T00:00:00.000Z", maxNormalizedLevel: 7 },
+    catalog: { version: 6.9, syncedAt: "", commerceSyncedAt: "", sourceProducts: 1, visibleProducts: 1 },
+    categories: [],
+    products: [],
+  }, true);
+  assert.deepEqual(enriched[0].magentoCategories, product.magentoCategories);
+  assert.equal(enriched[0].magentoTaxonomyAttached, true);
+});
+
 test("el catálogo base de contingencia puede completar SKU/barcode ausentes sin relajar URL ni publicId", () => {
   const product = fixtureProduct("visible", "", "", "https://gpsfarma.com/producto.html") as ProductV69;
   const taxonomy = validateMagentoTaxonomyV69({
@@ -127,11 +150,26 @@ test("el artefacto vigente cubre todas las fichas públicas después de las excl
     V69_MAGENTO_TAXONOMY_FILE: path.join(root, "data", "catalog-taxonomy-v69.local.json"),
     V69_REQUIRE_MAGENTO_TAXONOMY: "1",
   });
-  assert.equal(catalog.products.length, 875);
-  assert.equal(catalog.products.filter((product) => product.magentoTaxonomyAttached).length, 875);
+  assert.equal(catalog.products.length, 864);
+  assert.equal(catalog.products.filter((product) => product.magentoTaxonomyAttached).length, 864);
   assert.ok(catalog.products.every((product) => Array.isArray(product.magentoCategories)));
   assert.ok(
-    ["7790375003142", "7790375269326", "7790375001292"].every(
+    [
+      "7790375003142",
+      "7790375269326",
+      "7790375001292",
+      "7891010009250",
+      "7891010255138",
+      "7891010249861",
+      "7891010249878",
+      "7891010250966",
+      "3433422408616",
+      "7899706149211",
+      "3337875546430",
+      "3337875550628",
+      "3337875545891",
+      "3337875696579",
+    ].every(
       (barcode) => !catalog.products.some((product) => product.barcode === barcode),
     ),
   );

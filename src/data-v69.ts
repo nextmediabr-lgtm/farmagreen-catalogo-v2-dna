@@ -30,6 +30,20 @@ export type ProductV69 = Product & {
   taxonomy?: Record<string, unknown>;
   magentoCategories?: MagentoCategorySearchV69[];
   magentoTaxonomyAttached?: boolean;
+  catalogFacets?: Array<{
+    slug: string;
+    name: string;
+    aliases?: string[];
+    kind: "brand" | "collection";
+  }>;
+  sourceMemberships?: Array<{
+    sourceId: string;
+    viewSlug: string;
+    viewName: string;
+    viewKind: "brand" | "collection";
+    membershipOnly: boolean;
+    position?: number;
+  }>;
 };
 
 export type CatalogV69 = Omit<Catalog, "products"> & {
@@ -208,7 +222,12 @@ function normalizeCatalogV69(
     syncedAt: parsed.syncedAt,
     availabilityReferenceAt: commerceSyncedAt || latestAvailabilityCheck,
     commerceSyncedAt,
-    magentoCategoryPaths: magentoCategoryPathsV69(taxonomy),
+    magentoCategoryPaths: {
+      ...magentoCategoryPathsV69(taxonomy),
+      ...(parsed.magentoCategoryPaths && typeof parsed.magentoCategoryPaths === "object"
+        ? parsed.magentoCategoryPaths
+        : {}),
+    },
     totalProducts: visible.length,
     products: visible,
   };
@@ -238,6 +257,14 @@ export function applyMagentoTaxonomyV69(
   return products.map((product) => {
     const membership = taxonomyByProduct.get(product.publicId);
     if (!membership) {
+      const embedded = embeddedMagentoCategoriesV69(product);
+      if (embedded) {
+        return {
+          ...product,
+          magentoCategories: embedded,
+          magentoTaxonomyAttached: true,
+        };
+      }
       if (required) throw new Error(`Falta taxonomía Magento para ${product.publicId}.`);
       return product;
     }
@@ -255,6 +282,25 @@ export function applyMagentoTaxonomyV69(
     });
     return { ...product, magentoCategories, magentoTaxonomyAttached: true };
   });
+}
+
+export function embeddedMagentoCategoriesV69(product: ProductV69) {
+  if (product.magentoTaxonomyAttached !== true || !Array.isArray(product.magentoCategories)) {
+    return null;
+  }
+  const categories: MagentoCategorySearchV69[] = [];
+  const seen = new Set<string>();
+  for (const raw of product.magentoCategories.slice(0, 256)) {
+    const id = String(raw?.id || "").trim();
+    const name = String(raw?.name || "").trim();
+    if (!/^\d+$/.test(id) || !name || name.length > 160) {
+      throw new Error(`La taxonomía Magento embebida es inválida para ${product.publicId}.`);
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    categories.push({ id, name });
+  }
+  return categories;
 }
 
 function cleanProductV69(product: ProductV69): ProductV69 {

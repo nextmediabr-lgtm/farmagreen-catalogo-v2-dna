@@ -87,6 +87,7 @@ export type PublicProductV69 = {
   primaryCategory: string;
   needs: string[];
   aliases: string[];
+  catalogViews: Array<{ slug: string; name: string; kind: "brand" | "collection" }>;
   barcode: string;
   magentoCategories: Array<{ id: string; name: string }>;
   listPrice: number;
@@ -304,6 +305,15 @@ function discoveryPanelV69(
   }));
   const initialNeedLabel = context.need === "Todas" ? "Todas" : NEED_LABELS.get(context.need) || "Todas";
   const initialBrandLabel = context.brand;
+  const collections = new Map<string, { name: string; count: number }>();
+  for (const product of catalog.products) {
+    for (const view of product.catalogFacets || []) {
+      if (view.kind !== "collection") continue;
+      const current = collections.get(view.slug) || { name: view.name, count: 0 };
+      current.count += 1;
+      collections.set(view.slug, current);
+    }
+  }
 
   return `<section class="v65-panel v65-search-panel v65-top-search v67-discovery" id="buscar-v69">
     <div class="v67-primary-row">
@@ -374,6 +384,7 @@ function discoveryPanelV69(
         ${chevronIcon()}
       </label>
     </div>
+    ${collections.size ? `<div class="v69-live-views" aria-label="Vistas del catálogo"><span>Vistas vivas</span>${[...collections.entries()].map(([slug, view]) => `<a href="${u(`${route}?scope=todo&view=${encodeURIComponent(slug)}#productos-v69`)}" data-view="${e(slug)}" class="${context.view === slug ? "is-active" : ""}">${e(view.name)} <small>${view.count}</small></a>`).join("")}</div>` : ""}
   </section>`;
 }
 
@@ -621,7 +632,7 @@ function footerV69() {
   return `<footer class="v69-footer" aria-label="Información de Farmagreen Rosario"><div class="v69-footer-business"><strong>${BUSINESS_NAME}</strong><span>${BUSINESS_ADDRESS}</span></div><a class="v69-footer-instagram" href="${INSTAGRAM_URL}" target="_blank" rel="noopener noreferrer" aria-label="Instagram de Farmagreen Rosario">${instagramIcon()}<span>@farmagreenrosario</span></a><div class="v69-footer-contact"><span>Horarios: consultá por WhatsApp</span><a href="${wa("Hola Farmagreen Rosario, quiero consultar horarios y disponibilidad.")}">WhatsApp +54 9 341 723-4000</a></div></footer>`;
 }
 
-type QueryState = { q: string; brand: string; need: string; scope: "ofertas" | "todo"; sort: SortV69 };
+type QueryState = { q: string; brand: string; need: string; view: string; scope: "ofertas" | "todo"; sort: SortV69 };
 type PageContext = QueryState & {
   state: QueryState;
   mode: string;
@@ -634,22 +645,33 @@ type PageContext = QueryState & {
 
 function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
   const availableBrands = new Set(catalog.products.map(brandName));
+  const availableViews = new Map<string, string>();
+  for (const product of catalog.products) {
+    for (const view of product.catalogFacets || []) {
+      if (view.kind === "collection" && view.slug && view.name) availableViews.set(view.slug, view.name);
+    }
+  }
   const requestedBrand = query.get("marca") === "Aveeno" ? "Aveno" : query.get("marca") || "";
   let brand = availableBrands.has(requestedBrand) ? requestedBrand : "Todas";
   const requestedNeed = query.get("need") || "";
   let need = NEED_LABELS.has(requestedNeed) ? requestedNeed : "Todas";
+  const requestedView = query.get("view") || "";
+  let view = availableViews.has(requestedView) ? requestedView : "Todas";
   const requestedQuery = String(query.get("q") || "").trim();
   const q = isSearchQueryReadyV69(requestedQuery) ? requestedQuery : "";
   if (q) {
     brand = "Todas";
     need = "Todas";
+  } else if (view !== "Todas") {
+    brand = "Todas";
+    need = "Todas";
   } else if (brand !== "Todas" && need !== "Todas") {
     need = "Todas";
   }
-  const scope: "ofertas" | "todo" = query.get("scope") === "todo" || q || brand !== "Todas" || need !== "Todas" ? "todo" : "ofertas";
+  const scope: "ofertas" | "todo" = query.get("scope") === "todo" || q || brand !== "Todas" || need !== "Todas" || view !== "Todas" ? "todo" : "ofertas";
   const requestedSort = query.get("orden");
   const sort: SortV69 = SORTS_V69.includes(requestedSort as SortV69) ? (requestedSort as SortV69) : "relevancia";
-  const state = { q, brand, need, scope, sort };
+  const state = { q, brand, need, view, scope, sort };
   let mode = "Ofertas";
   let title = "Oportunidades de hoy";
   let copy = "Los mejores descuentos disponibles primero.";
@@ -666,15 +688,19 @@ function pageContext(catalog: CatalogV69, query: URLSearchParams): PageContext {
     mode = "Necesidad";
     title = NEED_LABELS.get(need) || need;
     copy = `Selección para ${title.toLowerCase()}.`;
+  } else if (view !== "Todas") {
+    mode = "Vista";
+    title = availableViews.get(view) || view;
+    copy = `Selección transversal de ${title}.`;
   } else if (scope === "todo") {
     mode = "Catálogo";
     title = "Todos los productos";
     copy = "Explorá el catálogo completo.";
   }
   const filtered = filteredProducts(catalog.products, state);
-  const metaTitle = brand !== "Todas" ? `${brand} | Catálogo Farmagreen V6.9` : need !== "Todas" ? `${title} | Catálogo Farmagreen V6.9` : q ? `${title} | Farmagreen` : "Farmagreen Rosario | Catálogo V6.9";
-  const metaDescription = brand !== "Todas" ? `${filtered.length} productos disponibles de ${brand} para consultar por WhatsApp.` : need !== "Todas" ? `Productos para ${title.toLowerCase()} disponibles en Farmagreen Rosario.` : "Catálogo FarmaGreen con marcas, necesidades y consulta directa por WhatsApp.";
-  const contextual = Boolean(q || brand !== "Todas" || need !== "Todas");
+  const metaTitle = brand !== "Todas" ? `${brand} | Catálogo Farmagreen V6.9` : need !== "Todas" || view !== "Todas" ? `${title} | Catálogo Farmagreen V6.9` : q ? `${title} | Farmagreen` : "Farmagreen Rosario | Catálogo V6.9";
+  const metaDescription = brand !== "Todas" ? `${filtered.length} productos disponibles de ${brand} para consultar por WhatsApp.` : need !== "Todas" || view !== "Todas" ? `Productos para ${title.toLowerCase()} disponibles en Farmagreen Rosario.` : "Catálogo FarmaGreen con marcas, necesidades y consulta directa por WhatsApp.";
+  const contextual = Boolean(q || brand !== "Todas" || need !== "Todas" || view !== "Todas");
   return { ...state, state, mode, title, copy, metaTitle, metaDescription, ogImage: contextual ? safeImage(filtered[0], "card") || SOCIAL_IMAGE : SOCIAL_IMAGE };
 }
 
@@ -1007,6 +1033,7 @@ function filteredProducts(products: ProductV69[], state: QueryState) {
     .filter((product) => state.scope !== "ofertas" || product.discountPercent > 0)
     .filter((product) => state.brand === "Todas" || brandName(product) === state.brand)
     .filter((product) => state.need === "Todas" || safeList(product.needs).includes(state.need))
+    .filter((product) => state.view === "Todas" || (product.catalogFacets || []).some((view) => view.kind === "collection" && view.slug === state.view))
     .filter((product) => !hasQuery || searchIds.has(product.publicId));
   return sortProductsV69(filtered, state.sort, state.q);
 }
@@ -1298,6 +1325,11 @@ function publicProductV69(product: ProductV69): PublicProductV69 {
     primaryCategory: product.primaryCategory,
     needs: safeList(product.needs),
     aliases: safeList(product.aliases),
+    catalogViews: (product.catalogFacets || []).map((entry) => ({
+      slug: String(entry.slug || ""),
+      name: String(entry.name || ""),
+      kind: (entry.kind === "collection" ? "collection" : "brand") as "brand" | "collection",
+    })).filter((entry) => entry.slug && entry.name),
     barcode: String(product.barcode || ""),
     magentoCategories: (product.magentoCategories || []).map((category) => ({ ...category })),
     listPrice: product.listPrice,

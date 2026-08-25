@@ -1093,6 +1093,29 @@ body.v69 .v67-filter-grid{
 
 body.v69 .v67-filter-grid>*{min-width:0}
 
+body.v69 .v69-live-views{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:10px;
+  overflow-x:auto;
+  color:#52605c;
+  font-size:12px;
+  font-weight:800;
+}
+body.v69 .v69-live-views>span{flex:none;text-transform:uppercase;letter-spacing:.08em}
+body.v69 .v69-live-views a{
+  flex:none;
+  padding:7px 11px;
+  border:1px solid rgba(21,87,255,.28);
+  border-radius:999px;
+  background:#fff;
+  color:var(--fg-blue);
+  text-decoration:none;
+}
+body.v69 .v69-live-views a.is-active{background:var(--fg-blue);color:#fff}
+body.v69 .v69-live-views small{font:inherit;opacity:.72}
+
 body.v69 .v69-sort{
   position:relative;
   display:block;
@@ -1589,6 +1612,7 @@ body.v69.product-detail .v69-detail-composicion{overflow-wrap:anywhere}
   body.v69 .v69-sort .v67-menu-label{top:3px;left:9px;font-size:8px;line-height:1}
   body.v69 .v69-sort select{padding:11px 30px 1px 9px;font-size:15px;line-height:1}
   body.v69 .v69-sort .v67-menu-chevron{right:8px}
+  body.v69 .v69-live-views{margin-top:7px;font-size:10px}
   body.v69-home main{padding-top:10px}
   body.v69-home .v69-home-sections{gap:42px}
   body.v69-home .v69-home-brand{scroll-margin-top:112px}

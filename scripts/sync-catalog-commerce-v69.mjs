@@ -464,7 +464,16 @@ export async function crawlAllSources(
   });
 }
 
-function sourceForProduct(product, resultsByBrandId) {
+function sourceForProduct(product, resultsByBrandId, resultsBySourceId = new Map()) {
+  const memberships = Array.isArray(product?.sourceMemberships)
+    ? [...product.sourceMemberships].sort(
+        (left, right) => Number(Boolean(left?.membershipOnly)) - Number(Boolean(right?.membershipOnly)),
+      )
+    : [];
+  for (const membership of memberships) {
+    const source = resultsBySourceId.get(String(membership?.sourceId || ""));
+    if (source) return source;
+  }
   const brandId = String(product?.brand?.id || "");
   if (brandId && resultsByBrandId.has(brandId)) return resultsByBrandId.get(brandId);
   const normalizedBrand = normalizeProductText(product?.brand?.name);
@@ -565,9 +574,12 @@ export function synchronizeCatalog(
   const resultsByBrandId = new Map(
     sourceResults.map((source) => [String(source.catalogBrandId || source.id), source]),
   );
+  const resultsBySourceId = new Map(
+    sourceResults.map((source) => [String(source.id), source]),
+  );
   const productCountBySource = new Map();
   for (const product of baseCatalog.products) {
-    const source = sourceForProduct(product, resultsByBrandId);
+    const source = sourceForProduct(product, resultsByBrandId, resultsBySourceId);
     if (source) productCountBySource.set(source.id, (productCountBySource.get(source.id) || 0) + 1);
   }
 
@@ -632,7 +644,7 @@ export function synchronizeCatalog(
   };
 
   const products = baseCatalog.products.map((product) => {
-    const source = sourceForProduct(product, resultsByBrandId);
+    const source = sourceForProduct(product, resultsByBrandId, resultsBySourceId);
     if (!source) {
       return trackAvailability(unverifiedProduct(product), null);
     }

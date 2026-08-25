@@ -390,11 +390,12 @@ export function consolidateDetailedGroupsV69(groups) {
     for (const indexes of buckets.values()) {
       const skus = identitiesAcrossGroupsV7Beta(groups, indexes, "sku");
       const barcodes = identitiesAcrossGroupsV7Beta(groups, indexes, "barcode");
+      const baseIndexes = identitiesAcrossGroupsV7Beta(groups, indexes, "baseIndex");
       if (key === "baseIndex" && (skus.size > 1 || barcodes.size > 1)) {
         throw new Error("Dos grupos de una ficha base contienen identidades incompatibles.");
       }
       if (key === "barcode" && skus.size > 1) continue;
-      if (key === "title" && (skus.size > 1 || barcodes.size > 1)) continue;
+      if (key === "title" && (skus.size > 1 || barcodes.size > 1 || baseIndexes.size > 1)) continue;
       for (let index = 1; index < indexes.length; index += 1) union(indexes[0], indexes[index]);
     }
   }
@@ -406,7 +407,20 @@ export function consolidateDetailedGroupsV69(groups) {
     current.detail = mergeDetailV69(current.detail, group.detail || {});
     if (group.baseIndex !== undefined && group.baseIndex !== null) {
       if (current.baseIndex !== null && current.baseIndex !== group.baseIndex) {
-        throw new Error("Una identidad expandida coincide con dos fichas base distintas.");
+        const names = [
+          ...current.members.map((member) => member.sourceName),
+          ...(group.members || []).map((member) => member.sourceName),
+        ].filter(Boolean);
+        const combined = { members: [...current.members, ...(group.members || [])], detail: mergeDetailV69(current.detail, group.detail || {}) };
+        const skuHashes = [...identityValuesV69(combined, "sku")].map((value) =>
+          crypto.createHash("sha256").update(value).digest("hex").slice(0, 8),
+        );
+        const barcodes = [...identityValuesV69(combined, "barcode")];
+        throw new Error(
+          `Una identidad expandida coincide con dos fichas base distintas: ${current.baseIndex} y ${group.baseIndex}; ` +
+            `apariciones=${[...new Set(names)].slice(0, 6).join(" | ")}; ` +
+            `skuHashes=${skuHashes.join(",")}; barcodes=${barcodes.join(",")}.`,
+        );
       }
       current.baseIndex = group.baseIndex;
     }

@@ -493,6 +493,38 @@ test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente 
   );
 });
 
+test("Productos Saludables se publica como vista transversal sin reemplazar la marca real", async () => {
+  const base = await baseCatalog();
+  const selected = {
+    ...base.products[0],
+    brand: { id: "6312", slug: "vitamin-way", name: "Vitamin Way", aliases: ["vitamin way"] },
+    catalogFacets: [{
+      slug: "productos-saludables",
+      name: "Productos Saludables",
+      aliases: ["saludables"],
+      kind: "collection" as const,
+    }],
+  };
+  const other = { ...base.products[1], publicId: "outside-view", catalogFacets: [] };
+  const catalog = { ...base, totalProducts: 2, products: [selected, other] };
+  const html = catalogPageV69(
+    catalog,
+    new URLSearchParams({ scope: "todo", view: "productos-saludables" }),
+    "http://127.0.0.1:8109",
+  );
+  assert.equal(bootPayload(html).context.view, "productos-saludables");
+  assert.equal(firstGridProductId(html), selected.publicId);
+  assert.match(html, /data-view="productos-saludables" class="is-active"/);
+  assert.match(html, />Productos Saludables <small>1<\/small><\/a>/);
+  const api = publicCatalogV69(catalog);
+  assert.deepEqual(api.products[0].catalogViews, [{
+    slug: "productos-saludables",
+    name: "Productos Saludables",
+    kind: "collection",
+  }]);
+  assert.equal(api.products[0].brand.name, "Vitamin Way");
+});
+
 test("la búsqueda por ID de categoría muestra únicamente su ruta jerárquica pura", async () => {
   const catalog = await baseCatalog();
   const html = catalogPageV69(
@@ -690,6 +722,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       "availabilityCheckedAt",
       "barcode",
       "brand",
+      "catalogViews",
       "discountPercent",
       "images",
       "line",
