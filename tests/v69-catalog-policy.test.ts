@@ -5,6 +5,7 @@ import {
   defaultCatalogPolicyV69,
   displayBrandV69,
   navigationBrandsV69,
+  technicalBrandSlugV69,
   validEanV69,
   validateCatalogPolicyV69,
 } from "../src/catalog-policy-v69.js";
@@ -13,6 +14,7 @@ import type { CatalogV69, ProductV69 } from "../src/data-v69.js";
 test("la navegación separa marcas legacy del paraguas Productos Saludables", () => {
   const policy = defaultCatalogPolicyV69();
   assert.equal(policy.navigation.showOutOfStockSort, true);
+  assert.deepEqual(policy.navigation.excludedBrandSlugs, []);
   const catalog = fixtureCatalog([
     product("eucerin", "Eucerin", []),
     product("ena-healthy", "ENA", [healthyFacet()]),
@@ -37,6 +39,12 @@ test("la navegación separa marcas legacy del paraguas Productos Saludables", ()
   assert.equal(navigation.at(-1)?.name, "Productos Saludables");
   assert.equal(navigation.at(-1)?.count, 3);
   assert.equal(navigation.some((entry) => entry.name === "Goodskin"), false);
+
+  policy.navigation.excludedBrandSlugs = [technicalBrandSlugV69("Goodskin")];
+  const excluded = applyCatalogPolicyV69(catalog, validateCatalogPolicyV69(policy));
+  assert.equal(excluded.products.some((entry) => entry.aliases.includes("Goodskin")), false);
+  assert.equal(navigationBrandsV69(excluded, policy).at(-1)?.count, 2);
+  assert.equal(technicalBrandSlugV69("Bagó +"), "bago-plus");
 
   policy.navigation.showOutOfStockSort = false;
   assert.equal(validateCatalogPolicyV69(policy).navigation.showOutOfStockSort, false);

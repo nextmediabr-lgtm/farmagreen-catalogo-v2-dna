@@ -105,9 +105,12 @@ function navigationView() {
   const featuredIdentities = new Set(navigation.featuredBrands.flatMap((entry) =>
     [entry.slug, entry.name, ...(entry.aliases || [])].map(brandKey),
   ));
-  const detected = S.state.catalog.technicalBrands.filter((entry) =>
+  const excludedSlugs = new Set(navigation.excludedBrandSlugs || []);
+  const candidates = S.state.catalog.technicalBrands.filter((entry) =>
     ![entry.slug, entry.name].map(brandKey).some((identity) => featuredIdentities.has(identity)),
   );
+  const detected = candidates.filter((entry) => !excludedSlugs.has(entry.slug));
+  const disabled = candidates.filter((entry) => excludedSlugs.has(entry.slug));
   return `<div class="admin-heading"><div><p>Navegación pública</p><h1>Marcas y paraguas</h1></div><button class="primary" data-action="publish-navigation">Guardar y publicar</button></div>
     <p class="admin-intro">El scan puede detectar marcas, pero sólo las que habilites aquí aparecen en el menú y la home.</p>
     <section class="admin-panel"><div class="admin-panel-head"><div><h2>Marcas legacy</h2><p>${navigation.featuredBrands.filter((entry) => entry.enabled).length} habilitadas</p></div></div>
@@ -115,7 +118,8 @@ function navigationView() {
     </section>
     <section class="admin-panel"><h2>Productos Saludables</h2><label class="admin-toggle"><input type="checkbox" data-field="umbrella-enabled"${navigation.umbrella.enabled ? " checked" : ""}><span>Mostrar como marca paraguas</span></label><p class="admin-muted">Las marcas PS-only se presentan bajo el paraguas. Las legacy marcadas “conservar” mantienen su nombre.</p></section>
     <section class="admin-panel"><label>Orden inicial<select data-field="default-sort">${["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"].map((value) => `<option value="${value}"${navigation.defaultSort === value ? " selected" : ""}>${value}</option>`).join("")}</select></label><label class="admin-toggle"><input type="checkbox" data-field="show-out-of-stock-sort"${navigation.showOutOfStockSort ? " checked" : ""}><span>Mostrar “Sin stock” en Ordenar</span></label><p class="admin-muted">Activado temporalmente para revisar posibles discontinuados. No excluye productos automáticamente.</p></section>
-    <section class="admin-panel"><div class="admin-panel-head"><div><h2>Detectadas, no publicadas</h2><p>${detected.length} marcas técnicas</p></div></div><div class="admin-detected">${detected.slice(0, 120).map((entry) => `<div><span><strong>${esc(entry.name)}</strong><small>${entry.count} SKU</small></span><button data-action="add-brand" data-slug="${esc(entry.slug)}" data-name="${esc(entry.name)}">Agregar</button></div>`).join("")}</div></section>`;
+    <section class="admin-panel"><div class="admin-panel-head"><div><h2>Detectadas, no publicadas</h2><p>${detected.length} marcas técnicas</p></div></div><p class="admin-muted">Deshabilitar excluye todos los productos de esa marca del catálogo público. El cambio se aplica al usar Guardar y publicar.</p><div class="admin-detected">${detected.slice(0, 120).map((entry) => `<div><span><strong>${esc(entry.name)}</strong><small>${entry.count} SKU</small></span><button data-action="add-brand" data-slug="${esc(entry.slug)}" data-name="${esc(entry.name)}">Agregar</button><button data-action="disable-brand" data-slug="${esc(entry.slug)}" data-name="${esc(entry.name)}">Deshabilitar</button></div>`).join("") || '<p class="admin-muted">No hay marcas técnicas pendientes.</p>'}</div></section>
+    ${disabled.length ? `<section class="admin-panel"><div class="admin-panel-head"><div><h2>Marcas deshabilitadas</h2><p>${disabled.length} exclusiones</p></div></div><p class="admin-muted">Sus productos están fuera de catálogo, búsqueda, necesidades, PDP y sitemap.</p><div class="admin-detected">${disabled.map((entry) => `<div><span><strong>${esc(entry.name)}</strong><small>${entry.count} SKU excluidos</small></span><button data-action="enable-brand" data-slug="${esc(entry.slug)}">Rehabilitar</button></div>`).join("")}</div></section>` : ""}`;
 }
 
 function brandRow(entry, index) {
@@ -221,6 +225,17 @@ document.addEventListener("click", async (event) => {
   }
   if (action === "add-brand") {
     S.policy.navigation.featuredBrands.push({ slug: button.dataset.slug, name: button.dataset.name, aliases: [], enabled: true });
+    S.policy.navigation.excludedBrandSlugs = (S.policy.navigation.excludedBrandSlugs || []).filter((slug) => slug !== button.dataset.slug);
+    render();
+  }
+  if (action === "disable-brand") {
+    const values = new Set(S.policy.navigation.excludedBrandSlugs || []);
+    values.add(button.dataset.slug);
+    S.policy.navigation.excludedBrandSlugs = [...values];
+    render();
+  }
+  if (action === "enable-brand") {
+    S.policy.navigation.excludedBrandSlugs = (S.policy.navigation.excludedBrandSlugs || []).filter((slug) => slug !== button.dataset.slug);
     render();
   }
   if (action === "add-ean") {

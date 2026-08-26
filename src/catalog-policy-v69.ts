@@ -71,6 +71,7 @@ export type CatalogPolicyV69 = {
     needs: string[];
     defaultSort: string;
     showOutOfStockSort: boolean;
+    excludedBrandSlugs: string[];
   };
   eanRules: {
     include: EanRuleV69[];
@@ -103,6 +104,7 @@ export function defaultCatalogPolicyV69(): CatalogPolicyV69 {
       needs: [...DEFAULT_NEEDS_V69],
       defaultSort: "relevancia",
       showOutOfStockSort: true,
+      excludedBrandSlugs: [],
     },
     eanRules: {
       include: [],
@@ -155,6 +157,15 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
   if (!needs.length) throw new Error("La navegación V6.9 necesita al menos una necesidad.");
   const defaultSort = shortText(navigation.defaultSort, "navigation.defaultSort", 40);
   if (!SORT_VALUES_V69.has(defaultSort)) throw new Error("El orden inicial V6.9 es inválido.");
+  const excludedBrandSlugs = navigation.excludedBrandSlugs === undefined
+    ? []
+    : uniqueStrings(
+        navigation.excludedBrandSlugs,
+        "navigation.excludedBrandSlugs",
+        500,
+        80,
+      ).map((entry) => slug(entry, "navigation.excludedBrandSlugs"));
+  assertUnique(excludedBrandSlugs, "marca excluida");
 
   const eanRules = record(raw.eanRules, "eanRules");
   const include = validateEanRulesV69(eanRules.include, "eanRules.include");
@@ -178,6 +189,7 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
       needs,
       defaultSort,
       showOutOfStockSort: navigation.showOutOfStockSort !== false,
+      excludedBrandSlugs,
     },
     eanRules: { include, exclude },
   };
@@ -259,7 +271,14 @@ export function applyCatalogPolicyV69(catalog: CatalogV69, policy: CatalogPolicy
 
 export function isProductExcludedByPolicyV69(product: ProductV69, policy: CatalogPolicyV69) {
   const ean = normalizeEanV69(product.barcode);
-  return Boolean(ean && policy.eanRules.exclude.some((entry) => entry.ean === ean));
+  const excludedBrand = policy.navigation.excludedBrandSlugs.includes(
+    technicalBrandSlugV69(product.brand?.name || product.brand?.slug),
+  );
+  return excludedBrand || Boolean(ean && policy.eanRules.exclude.some((entry) => entry.ean === ean));
+}
+
+export function technicalBrandSlugV69(value: unknown) {
+  return slugify(String(value || "marca").replace(/\+/g, " plus "));
 }
 
 export function applyProductPolicyV69(product: ProductV69, policy: CatalogPolicyV69): ProductV69 {

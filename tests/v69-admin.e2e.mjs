@@ -50,13 +50,38 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     assert.equal(await page.locator(".admin-brand-row").count(), 15);
     assert.match(await page.locator("#adminContent").innerText(), /Productos Saludables/);
     assert.equal(await page.locator('[data-action="add-brand"][data-name="L\'Oréal Revitalift"]').count(), 0);
+    const publicBeforeBrandExclusion = await page.request.get(`${origin}/api/catalog-v6-9`).then((response) => response.json());
+    const disableBrand = page.locator('[data-action="disable-brand"]').first();
+    const disabledBrandSlug = await disableBrand.getAttribute("data-slug");
+    const disabledBrandName = await disableBrand.getAttribute("data-name");
+    assert.ok(disabledBrandSlug && disabledBrandName);
+    const disabledBrandProduct = publicBeforeBrandExclusion.products.find((product) =>
+      product.brand?.name === disabledBrandName || product.aliases?.includes(disabledBrandName));
+    assert.ok(disabledBrandProduct);
+    await disableBrand.click();
+    assert.equal(await page.locator(`[data-action="enable-brand"][data-slug="${disabledBrandSlug}"]`).count(), 1);
     const outOfStockSort = page.locator('[data-field="show-out-of-stock-sort"]');
     assert.equal(await outOfStockSort.isChecked(), true);
     await outOfStockSort.uncheck();
     await page.locator('.admin-brand-row input[data-action="toggle-brand"]').first().uncheck();
     await page.locator('[data-action="publish-navigation"]').click();
+    await page.waitForFunction(() => !document.body.classList.contains("is-busy"));
     await page.waitForFunction(() => document.querySelector("#adminContent")?.textContent?.includes("14 habilitadas"));
     assert.doesNotMatch(await page.request.get(`${origin}/catalogo-v6-9?scope=todo`).then((response) => response.text()), /option value="sin-stock"/);
+    const publicAfterBrandExclusion = await page.request.get(`${origin}/api/catalog-v6-9`).then((response) => response.json());
+    assert.equal(publicAfterBrandExclusion.products.some((product) => product.publicId === disabledBrandProduct.publicId), false);
+    assert.equal((await page.request.get(`${origin}/p/${disabledBrandProduct.publicId}`)).status(), 404);
+    assert.doesNotMatch(await page.request.get(`${origin}/sitemap.xml`).then((response) => response.text()), new RegExp(`/p/${disabledBrandProduct.publicId}<`));
+    const savedPolicy = await page.request.get(`${origin}/api/admin-v69/state`, {
+      headers: { authorization: "Bearer admin-e2e-token" },
+    }).then((response) => response.json());
+    assert.ok(savedPolicy.policy.navigation.excludedBrandSlugs.includes(disabledBrandSlug));
+    await page.locator(`[data-action="enable-brand"][data-slug="${disabledBrandSlug}"]`).click();
+    await page.locator('[data-action="publish-navigation"]').click();
+    await page.waitForFunction(() => !document.body.classList.contains("is-busy"));
+    await page.waitForFunction((slug) => document.querySelector(`[data-action="disable-brand"][data-slug="${slug}"]`), disabledBrandSlug);
+    const publicAfterReenable = await page.request.get(`${origin}/api/catalog-v6-9`).then((response) => response.json());
+    assert.ok(publicAfterReenable.products.some((product) => product.publicId === disabledBrandProduct.publicId));
 
     await page.locator('[data-tab="ean"]').click();
     await page.locator('[data-ean-input="exclude"]').fill("3337875694469");
@@ -64,6 +89,7 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     await page.locator('[data-action="add-ean"][data-kind="exclude"]').click();
     assert.match(await page.locator("#adminContent").innerText(), /3337875694469/);
     await page.locator('[data-action="publish-ean"]').click();
+    await page.waitForFunction(() => !document.body.classList.contains("is-busy"));
     await page.waitForFunction(() => document.querySelector("#adminContent")?.textContent?.includes("Retinol B3") || document.querySelector("#adminContent")?.textContent?.includes("Pendiente"));
 
     await page.locator('[data-tab="operations"]').click();

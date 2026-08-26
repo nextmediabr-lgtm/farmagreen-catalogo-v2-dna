@@ -47,6 +47,7 @@ const PUBLIC_ASSETS = new Set([
   "/styles-v6-9-2.css",
   "/admin-v69-1.js",
   "/admin-v69-2.js",
+  "/admin-v69-3.js",
   "/admin-v69-1.css",
   "/analytics-v69.js",
   "/analytics-v69-1.js",
@@ -75,6 +76,7 @@ const PUBLIC_ALIASES = new Map([
   ["/styles-v6-9-2.css", "/styles-v6-9-1.css"],
   ["/admin-v69-1.js", "/admin-v69.js"],
   ["/admin-v69-2.js", "/admin-v69.js"],
+  ["/admin-v69-3.js", "/admin-v69.js"],
   ["/admin-v69-1.css", "/admin-v69.css"],
   ["/analytics-v69-1.js", "/analytics-v69.js"],
   ["/analytics-v69-2.js", "/analytics-v69.js"],
@@ -134,7 +136,7 @@ export function app(environment: Environment = process.env) {
           MIME[path.extname(file)] || "application/octet-stream",
           localV69Asset
             ? "no-store"
-            : pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js" || pathname === "/app-v6-9-1.js" || pathname === "/app-v6-9-2.js" || pathname === "/app-v6-9-3.js" || pathname === "/app-v6-9-4.js" || pathname === "/app-v6-9-5.js" || pathname === "/app-v6-9-6.js" || pathname === "/app-v6-9-7.js" || pathname === "/app-v6-9-8.js" || pathname === "/app-v6-9-9.js" || pathname === "/app-v6-9-10.js" || pathname === "/app-v6-9-11.js" || pathname === "/admin-v69-1.js" || pathname === "/admin-v69-2.js" || pathname === "/admin-v69-1.css" || pathname === "/analytics-v69-1.js" || pathname === "/analytics-v69-2.js" || pathname === "/analytics-v69-3.js" || pathname === "/meta-pixel-v69-1.js" || pathname === "/meta-pixel-v69-2.js" || pathname === "/styles-v6-9-1.css" || pathname === "/styles-v6-9-2.css"
+            : pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js" || pathname === "/app-v6-9-1.js" || pathname === "/app-v6-9-2.js" || pathname === "/app-v6-9-3.js" || pathname === "/app-v6-9-4.js" || pathname === "/app-v6-9-5.js" || pathname === "/app-v6-9-6.js" || pathname === "/app-v6-9-7.js" || pathname === "/app-v6-9-8.js" || pathname === "/app-v6-9-9.js" || pathname === "/app-v6-9-10.js" || pathname === "/app-v6-9-11.js" || pathname === "/admin-v69-1.js" || pathname === "/admin-v69-2.js" || pathname === "/admin-v69-3.js" || pathname === "/admin-v69-1.css" || pathname === "/analytics-v69-1.js" || pathname === "/analytics-v69-2.js" || pathname === "/analytics-v69-3.js" || pathname === "/meta-pixel-v69-1.js" || pathname === "/meta-pixel-v69-2.js" || pathname === "/styles-v6-9-1.css" || pathname === "/styles-v6-9-2.css"
             ? "public, max-age=31536000, immutable"
             : pathname.includes("v6-9")
               ? "public, max-age=300, s-maxage=300, stale-while-revalidate=60"

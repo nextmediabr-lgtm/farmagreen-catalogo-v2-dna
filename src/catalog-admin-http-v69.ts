@@ -13,6 +13,7 @@ import {
   applyCatalogPolicyV69,
   navigationBrandsV69,
   normalizeEanV69,
+  technicalBrandSlugV69,
 } from "./catalog-policy-v69.js";
 
 const MAX_BODY = 128_000;
@@ -182,7 +183,7 @@ export function adminStateV69({
   const presented = applyCatalogPolicyV69(catalog, policy);
   const counts = new Map<string, { slug: string; name: string; count: number }>();
   for (const product of catalog.products) {
-    const slug = adminBrandSlug(product.brand?.name || product.brand?.slug || "marca");
+    const slug = technicalBrandSlugV69(product.brand?.name || product.brand?.slug || "marca");
     const current = counts.get(slug) || { slug, name: product.brand?.name || "Sin marca", count: 0 };
     current.count += 1;
     counts.set(slug, current);
@@ -227,16 +228,6 @@ export function adminStateV69({
   };
 }
 
-function adminBrandSlug(value: string) {
-  return String(value || "marca")
-    .replace(/\+/g, " plus ")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "") || "marca";
-}
-
 export async function runDiscoveryJobV69(environment: CatalogAdminEnvironmentV69) {
   const project = environment.GOOGLE_CLOUD_PROJECT?.trim();
   const region = environment.V69_DISCOVERY_JOB_REGION?.trim() || "southamerica-east1";
@@ -262,7 +253,7 @@ export async function runDiscoveryJobV69(environment: CatalogAdminEnvironmentV69
 
 function adminPageV69({ clientId, localMode }: { clientId: string; localMode: boolean }) {
   const bootstrap = JSON.stringify({ clientId, localMode }).replace(/</g, "\\u003c");
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Administración V6.9 | FarmaGreen</title><link rel="icon" href="/logo_farmagreen.png"><link rel="stylesheet" href="/admin-v69-1.css?v=20260826-1"></head><body><header class="admin-top"><img src="/logo_farmagreen.png" alt="FarmaGreen"><div><strong>Administración V6.9</strong><span>Catálogo, navegación y memoria operativa</span></div><button id="logoutAdmin" type="button">Salir</button></header><main><section id="adminLogin" class="admin-login"><h1>Acceso privado</h1><p>Ingresá con la cuenta Google autorizada.</p><div id="googleLogin"></div>${localMode ? '<label>Token local<input id="localAdminToken" type="password" autocomplete="off"><button id="localLogin" type="button">Entrar localmente</button></label>' : ""}<p id="loginError" role="alert"></p></section><section id="adminApp" hidden><nav class="admin-tabs" aria-label="Secciones"><button data-tab="status" class="on">Estado</button><button data-tab="navigation">Navegación</button><button data-tab="ean">Reglas EAN</button><button data-tab="operations">Operaciones</button></nav><section id="adminContent" aria-live="polite"></section></section></main><script type="application/json" id="admin-v69-data">${bootstrap}</script>${clientId ? '<script src="https://accounts.google.com/gsi/client" async defer></script>' : ""}<script type="module" src="/admin-v69-2.js?v=20260826-2"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Administración V6.9 | FarmaGreen</title><link rel="icon" href="/logo_farmagreen.png"><link rel="stylesheet" href="/admin-v69-1.css?v=20260826-1"></head><body><header class="admin-top"><img src="/logo_farmagreen.png" alt="FarmaGreen"><div><strong>Administración V6.9</strong><span>Catálogo, navegación y memoria operativa</span></div><button id="logoutAdmin" type="button">Salir</button></header><main><section id="adminLogin" class="admin-login"><h1>Acceso privado</h1><p>Ingresá con la cuenta Google autorizada.</p><div id="googleLogin"></div>${localMode ? '<label>Token local<input id="localAdminToken" type="password" autocomplete="off"><button id="localLogin" type="button">Entrar localmente</button></label>' : ""}<p id="loginError" role="alert"></p></section><section id="adminApp" hidden><nav class="admin-tabs" aria-label="Secciones"><button data-tab="status" class="on">Estado</button><button data-tab="navigation">Navegación</button><button data-tab="ean">Reglas EAN</button><button data-tab="operations">Operaciones</button></nav><section id="adminContent" aria-live="polite"></section></section></main><script type="application/json" id="admin-v69-data">${bootstrap}</script>${clientId ? '<script src="https://accounts.google.com/gsi/client" async defer></script>' : ""}<script type="module" src="/admin-v69-3.js?v=20260826-3"></script></body></html>`;
 }
 
 function sendAdminHtml(response: http.ServerResponse, body: string) {
