@@ -1047,9 +1047,17 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     );
     await page.locator("#sortV69").selectOption("descuento");
 
-    await page.locator("#searchV69").fill("protetor solar bebe");
-    await page.waitForFunction(() => document.querySelector("#countV69")?.textContent === "2 de 2");
-    assert.equal(await page.locator("#gridV69 .v66-card").count(), 2);
+    const typoQuery = "protetor solar bebe";
+    const typoExpected = filterProductsBySearchV69(api.products, typoQuery).length;
+    await page.locator("#searchV69").fill(typoQuery);
+    await page.waitForFunction(
+      ({ query, expected }) =>
+        new URL(location.href).searchParams.get("q") === query &&
+        document.querySelector("#countV69")?.textContent === `${Math.min(48, expected)} de ${expected}`,
+      { query: typoQuery, expected: typoExpected },
+    );
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), Math.min(48, typoExpected));
+    assert.ok(typoExpected >= 2);
     assert.match(await page.locator("#catalogTitleV69").textContent(), /protetor solar bebe/i);
 
     const browserSearchIds = async (query) => {
