@@ -15,14 +15,14 @@ explícita en el turno correspondiente.
 | --- | --- |
 | Worktree dueño | `/Users/danielbernardes/Documents/New project/.worktrees/eucerin-catalogo-v69-local` |
 | Rama | `codex/v69-stock-ordering` |
-| Último commit técnico/test | `f2826b7` — `fix(v69): simplify healthy collection menu label` |
+| Último commit técnico/test | `8c14622` — `feat(v69): add reversible brand exclusions` |
 | Remoto | `origin/codex/v69-stock-ordering` |
 | Producción | <https://farmagreenrosario.web.app/> |
 | Proyecto GCP | `project-e2a7bc6d-e741-4d4e-85d` |
 | Servicio Cloud Run | `farmagreen-v69-preprod` |
 | Región | `southamerica-east1` |
-| Revisión activa | `farmagreen-v69-preprod-admin4-20260826`, 100% |
-| Imagen activa | build `062344d5-4cdf-4044-a292-f6e2b631e9bf` |
+| Revisión activa | `farmagreen-v69-preprod-brandx-20260826`, 100% |
+| Imagen activa | build `8a5005a9-d72b-4543-9a1c-938e3dce6544` |
 | Refresh comercial | `fg-v69-preprod-sync-0700-art` |
 | Discovery semanal | Job `farmagreen-v69-weekly-discovery`; Scheduler `fg-v69-weekly-discovery` |
 
@@ -309,7 +309,7 @@ No copiar sus SKU/URLs a issues, commits, handoffs o logs públicos.
 - el snapshot no se guarda hasta terminar imágenes y taxonomía.
 
 Los assets inmutables vigentes son `app-v6-9-11.js?v=20260826-2`,
-`styles-v6-9-2.css?v=20260826-1` y `admin-v69-2.js?v=20260826-2`. Cada cambio de
+`styles-v6-9-2.css?v=20260826-1` y `admin-v69-3.js?v=20260826-3`. Cada cambio de
 JavaScript usa una URL nueva para impedir que Firebase/Chrome retengan una
 versión anterior.
 
@@ -339,14 +339,17 @@ versión anterior.
 - ruta productiva `/admin-v6-9`, dentro del mismo servicio Cloud Run;
 - acceso Google limitado por allowlist; la API anónima responde 401;
 - cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones;
-- permite curar marcas, paraguas, orden inicial, opción temporal `Sin stock` y
-  listas de inclusión/exclusión EAN;
+- permite curar marcas, paraguas, orden inicial, opción temporal `Sin stock`,
+  listas de inclusión/exclusión EAN y exclusiones reversibles por marca;
+- `Deshabilitar` una marca técnica elimina sus productos de catálogo, búsqueda,
+  necesidades, PDP, sitemap y conteos; `Rehabilitar` los restaura. Ninguna marca
+  queda excluida automáticamente ni por tener pocos SKU;
 - guarda configuración, memoria, snapshots y rollback en GCS;
 - puede lanzar refresh comercial o el Job semanal con IAM mínimo;
 - no edita precios, stock, colores, código, analítica o usuarios y no despliega;
-- Codex Agent Manager registró el recibo post-deploy `f2826b7`, build
-  `062344d5-4cdf-4044-a292-f6e2b631e9bf`, revisión
-  `farmagreen-v69-preprod-admin4-20260826`, `healthy=true`.
+- Codex Agent Manager registró el recibo post-deploy `8c14622`, build
+  `8a5005a9-d72b-4543-9a1c-938e3dce6544`, revisión
+  `farmagreen-v69-preprod-brandx-20260826`, `healthy=true`.
 
 El zócalo comercial fijo para PDP móvil sigue siendo un concepto pendiente. No
 se implementó. Conserva como referencia dos líneas azules `#1557FF` de 6 px,
@@ -407,8 +410,9 @@ vinculación externa GA4–Maps hayan quedado guardados. Tratarlos como pendient
 | `1c0d820` | Versiona el asset del panel para respetar cache inmutable. |
 | `5fb3532` | Agrega `Sin stock` temporal y endurece la evidencia viva de Nutrición. |
 | `f2826b7` | Simplifica el tile de Productos Saludables conservando el mejor descuento. |
+| `8c14622` | Agrega exclusión y rehabilitación reversible de marcas completas. |
 
-El release final se construyó desde `f2826b7`.
+El release final se construyó desde `8c14622`.
 
 ## 13. Verificación contemporánea
 
@@ -524,6 +528,6 @@ vista transversal de 664 fichas; el catálogo conserva SKU canónico único y 14
 marcas reales. El scan semanal del lunes 04:00 ART reconstruye altas, bajas,
 búsqueda, necesidades, Magento e imágenes; el refresh 07:00/14:00 mantiene el
 estado comercial Rosario/STOM. Cloud Run sirve
-`farmagreen-v69-preprod-admin4-20260826` al 100%; la imagen del servicio y el
-Job semanal corresponde al build `062344d5-4cdf-4044-a292-f6e2b631e9bf`, y los
+`farmagreen-v69-preprod-brandx-20260826` al 100%; la imagen del servicio y el
+Job semanal corresponde al build `8a5005a9-d72b-4543-9a1c-938e3dce6544`, y los
 gates local/remoto quedaron verdes (148/148).

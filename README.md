@@ -28,6 +28,8 @@ Cloud Run. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones
 
 - limita la navegación a las marcas legacy más `Productos Saludables` como
   paraguas;
+- permite deshabilitar y rehabilitar marcas técnicas completas; al publicar,
+  sus productos salen o vuelven a catálogo, búsqueda, PDP y sitemap;
 - migra y administra inclusión/exclusión por EAN;
 - conserva memoria operativa, revisiones y rollback;
 - recibe el comprobante post-deploy de Codex Agent Manager;
