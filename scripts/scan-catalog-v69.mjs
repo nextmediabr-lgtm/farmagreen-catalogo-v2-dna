@@ -15,10 +15,13 @@ import {
   writeJsonAtomically,
 } from "./sync-catalog-commerce-v69.mjs";
 import {
+  brandForGroupV69,
+  canonicalizeBrandV69,
   consolidateDetailedGroupsV69,
   enrichListingGroupsV69,
   groupSourceListingsV69,
   inferTaxonomyV69,
+  isCollectionBrandPlaceholderV69,
   newProductFromSourceGroupV69,
   parseProductPageCommerceV7Beta,
 } from "./build-local-v7-beta.mjs";
@@ -161,6 +164,10 @@ export async function finalizeCatalogDiscoveryV69({
 } = {}) {
   if (!catalog?.discoverySync || catalog.discoverySync.status !== "completed") {
     throw new Error("El candidato V6.9 no contiene un scan semanal completo.");
+  }
+  const pendingMetrics = catalog.discoverySync.metrics || {};
+  if (Number(pendingMetrics.positivePending || 0) || Number(pendingMetrics.negativePending || 0)) {
+    throw new Error("El candidato V6.9 conserva cambios positivos o negativos pendientes.");
   }
   const addedPublicIds = new Set(catalog.discoverySync.addedPublicIds || []);
   let prepared = catalog;
@@ -414,7 +421,10 @@ export async function reconcileCatalogChangesV69({
       Number.isInteger(group.baseIndex) && group.baseIndex >= 0 ? group.baseIndex : null;
     if (matchedIndex !== null && products[matchedIndex]) {
       matchedBaseIndexes.add(matchedIndex);
-      products[matchedIndex] = mergeMemberships(products[matchedIndex], memberships);
+      products[matchedIndex] = normalizeMatchedBrandV69(
+        mergeMemberships(products[matchedIndex], memberships),
+        group,
+      );
       continue;
     }
     let candidate;
@@ -515,7 +525,10 @@ export async function reconcileCatalogChangesV69({
       negativePendingPublicIds: negativePending,
       searchIndexedAt: completedAt,
       needsIndexedAt: completedAt,
-      activationReady: visibleAddedPublicIds.length === 0,
+      activationReady:
+        visibleAddedPublicIds.length === 0 &&
+        positivePending === 0 &&
+        negativePending.length === 0,
     },
   });
   return {
@@ -583,6 +596,50 @@ export function assertUniqueCanonicalProductsV69(products) {
       seen.add(value);
     }
   }
+  const collectionBrands = products.filter((product) =>
+    isCollectionBrandPlaceholderV69(product.brand?.name),
+  );
+  if (collectionBrands.length) {
+    throw new Error(
+      "El catálogo V6.9 conserva " + collectionBrands.length +
+      " ficha(s) con Productos Saludables usado como marca.",
+    );
+  }
+}
+
+function normalizeMatchedBrandV69(product, group) {
+  const previousBrand = product.brand;
+  const brand = isCollectionBrandPlaceholderV69(previousBrand?.name)
+    ? brandForGroupV69(group)
+    : canonicalizeBrandV69(previousBrand);
+  if (isCollectionBrandPlaceholderV69(brand.name)) {
+    throw new Error("No se pudo resolver la marca real de una ficha de Productos Saludables.");
+  }
+  if (
+    brand.name === previousBrand?.name &&
+    brand.id === previousBrand?.id &&
+    brand.slug === previousBrand?.slug
+  ) {
+    return product;
+  }
+  const aliases = unique([
+    ...(product.aliases || []).filter(
+      (alias) => !isCollectionBrandPlaceholderV69(alias),
+    ),
+    brand.name,
+    ...(brand.aliases || []),
+  ]);
+  return {
+    ...product,
+    slug: slugifyProductV69(brand.name + " " + product.name) + "--" + product.publicId,
+    brand,
+    line:
+      isCollectionBrandPlaceholderV69(product.line) ||
+      normalizeText(product.line) === normalizeText(previousBrand?.name)
+        ? brand.name
+        : product.line,
+    aliases,
+  };
 }
 
 function membershipsForGroup(group, sourceById) {
@@ -673,6 +730,10 @@ function normalizeText(value) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+}
+
+function slugifyProductV69(value) {
+  return normalizeText(value).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "producto";
 }
 
 function normalizeSku(value) {

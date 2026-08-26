@@ -29,8 +29,10 @@ import {
 } from "../scripts/sync-catalog-commerce-v69.mjs";
 import {
   consolidateDetailedGroupsV69,
+  enrichListingGroupsV69,
   inferTaxonomyV69,
   newProductFromSourceGroupV69,
+  parseProductDetailV69,
 } from "../scripts/build-local-v7-beta.mjs";
 import {
   assertRuntimeAssetsV69,
@@ -277,6 +279,95 @@ test("Productos Saludables es una vista transversal y la ficha canónica sigue s
   assert.equal(result.discoverySync.activationReady, false);
 });
 
+test("la ficha técnica resuelve la marca real y repara el legado de Productos Saludables", async () => {
+  const completedAt = "2026-08-25T12:00:00.000Z";
+  const detail = parseProductDetailV69(`
+    <table><tbody><tr>
+      <th class="col label" scope="row">Marca</th>
+      <td class="col data" data-th="Marca">Supradyn</td>
+    </tr></tbody></table>
+  `);
+  assert.equal(detail.brand, "Supradyn");
+
+  const base = discoveryBaseCatalog([
+    product("p-legacy-healthy", "Suplemento Dietario Supradyn x 30 comp", {
+      sku: "HEALTHY-LEGACY-1",
+      brand: {
+        id: "9100",
+        slug: "productos-saludables",
+        name: "Productos Saludables",
+        aliases: ["productos saludables"],
+      },
+      line: "Productos Saludables",
+      aliases: ["Productos Saludables"],
+      source: { url: "https://gpsfarma.com/supradyn-30.html" },
+    }),
+  ], completedAt);
+  const member = listingMember(
+    "9100",
+    "HEALTHY-LEGACY-1",
+    "Suplemento Dietario Supradyn x 30 comp",
+    4,
+  );
+  const enriched = await enrichListingGroupsV69(
+    [{ baseIndex: 0, members: [member], detail: {} }],
+    {
+      baseCatalog: base,
+      fetchHtml: async () => `
+        <table><tbody>
+          <tr><th>SKU</th><td>HEALTHY-LEGACY-1</td></tr>
+          <tr><th>Marca</th><td data-th="Marca">Supradyn</td></tr>
+        </tbody></table>
+      `,
+    },
+  );
+  enriched[0].detail = {
+    ...enriched[0].detail,
+    sku: "HEALTHY-LEGACY-1",
+    brand: "Supradyn",
+  };
+  const result = await reconcileCatalogChangesV69({
+    baseCatalog: base,
+    detailedGroups: enriched,
+    completedAt,
+    sources: discoverySourcesV69(),
+  });
+  const repaired = result.catalog.products[0];
+  assert.equal(repaired.brand.name, "Supradyn");
+  assert.notEqual(repaired.brand.id, "9100");
+  assert.equal(repaired.line, "Supradyn");
+  assert.equal(
+    repaired.catalogFacets.find((entry) => entry.slug === "productos-saludables")?.kind,
+    "collection",
+  );
+  assert.equal(result.discoverySync.metrics.positive, 0);
+});
+
+test("VitaminWay se canoniza como Vitamin Way sin crear otra marca", () => {
+  const product = newProductFromSourceGroupV69(
+    {
+      detail: {
+        sku: "VITAMIN-WAY-COMPACT",
+        barcode: "7790000000999",
+        brand: "VitaminWay",
+        image: "https://gpsfarma.com/media/catalog/product/vitamin-way.jpg",
+      },
+      members: [
+        listingMember("9100", "VITAMIN-WAY-COMPACT", "Vitamina C x 30 cápsulas", 9, {
+          imageUrl: "https://gpsfarma.com/media/catalog/product/vitamin-way.jpg",
+        }),
+      ],
+    },
+    "2026-08-25T12:00:00.000Z",
+  );
+  assert.equal(product.brand.name, "Vitamin Way");
+  assert.equal(product.brand.id, "6312");
+  assert.equal(
+    product.catalogFacets.find((entry) => entry.slug === "productos-saludables")?.kind,
+    "collection",
+  );
+});
+
 test("un título idéntico nunca fusiona dos fichas base cuando un listing no expone SKU", () => {
   const title = "Crema Facial Pro Lifting De Día x 55 g";
   const groups = consolidateDetailedGroupsV69([
@@ -401,6 +492,29 @@ test("el candidato semanal sólo queda activable después de imágenes GCS y tax
   assert.equal(result.catalog.products[0].magentoTaxonomyAttached, true);
   assert.deepEqual(result.catalog.products[0].needs, ["antiedad"]);
   assertRuntimeAssetsV69(result.catalog.products);
+});
+
+test("el candidato semanal aborta si conserva cambios pendientes", async () => {
+  const completedAt = "2026-08-25T12:00:00.000Z";
+  const base = discoveryBaseCatalog([
+    product("p-pending", "Producto pendiente x 30 ml", {
+      sku: "PENDING-1",
+      images: responsiveGcsImages("pending"),
+    }),
+  ], completedAt);
+  base.discoverySync = {
+    completedAt,
+    status: "completed",
+    metrics: { positive: 0, positivePending: 1, negativePending: 0 },
+    addedPublicIds: [],
+    removedPublicIds: [],
+    negativePendingPublicIds: [],
+    activationReady: false,
+  };
+  await assert.rejects(
+    finalizeCatalogDiscoveryV69({ catalog: base }),
+    /cambios positivos o negativos pendientes/,
+  );
 });
 
 test("parser de listing conserva URL confiable y calcula oferta/descuento", () => {

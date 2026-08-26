@@ -381,7 +381,17 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator("#sortV69").inputValue(), "relevancia");
     assert.equal(await page.locator('[data-filter-menu="brand"] .v67-menu-label').textContent(), "Elegir Marca");
     assert.equal(await page.locator("#brandSummaryV69").textContent(), "Todas");
-    assert.equal(await page.locator(".v69-home-brand").count(), 16);
+    const publicBrands = [...new Set(api.products.map((product) => product.brand.name))];
+    assert.equal(await page.locator(".v69-home-brand").count(), publicBrands.length);
+    if (remoteOrigin) {
+      assert.equal(publicBrands.includes("Productos Saludables"), false);
+      assert.equal(
+        await page.locator(".v69-home-brand h2").evaluateAll(
+          (headings) => headings.some((heading) => heading.textContent?.trim() === "Productos Saludables"),
+        ),
+        false,
+      );
+    }
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "CeraVe" }).count(), 1);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Neutrogena" }).count(), 1);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Vitamin Way" }).count(), 1);
@@ -397,6 +407,41 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       5,
     );
     assert.equal(await hasHorizontalOverflow(page), false);
+
+    const healthyCollectionCount = api.products.filter((product) =>
+      (product.catalogViews || []).some(
+        (view) => view.kind === "collection" && view.slug === "productos-saludables",
+      ),
+    ).length;
+    if (healthyCollectionCount) {
+      await page.goto(
+        `${runtime.origin}/catalogo?scope=todo&view=productos-saludables`,
+        { waitUntil: "domcontentloaded" },
+      );
+      await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
+      await page.waitForFunction(
+        (expected) => document.querySelector("#countV69")?.textContent === `48 de ${expected}`,
+        healthyCollectionCount,
+      );
+      assert.equal(new URL(page.url()).searchParams.get("view"), "productos-saludables");
+      assert.equal((await page.locator("#catalogTitleV69").textContent()).trim(), "Productos Saludables");
+      const healthyIds = new Set(
+        api.products
+          .filter((product) =>
+            (product.catalogViews || []).some(
+              (view) => view.kind === "collection" && view.slug === "productos-saludables",
+            ),
+          )
+          .map((product) => product.publicId),
+      );
+      assert.equal(
+        await page.locator("#gridV69 .v65-hit").evaluateAll(
+          (links, ids) => links.every((link) => ids.includes(new URL(link.href).pathname.split("/").filter(Boolean).at(-1))),
+          [...healthyIds],
+        ),
+        true,
+      );
+    }
     await page.locator('[data-filter-menu-trigger="brand"]').click();
     await page.waitForFunction(() => window.__metaEvents.some(([command, event, parameters]) =>
       command === "trackCustom" && event === "CatalogFilterOpen" && parameters?.filter_type === "brand"));

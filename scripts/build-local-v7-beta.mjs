@@ -9,6 +9,7 @@ import {
   sourceByIdV7Beta,
 } from "./catalog-sources-v7-beta.mjs";
 import {
+  GPS_SOURCES_V69,
   PAGE_SIZE,
   createLocationScopedFetchV69,
   normalizeGpsImagePath,
@@ -39,19 +40,27 @@ const CONFIGURED_CATALOG_FACETS_V7_BETA = new Map(
 );
 
 export function parseProductDetailV69(html) {
-  const identity = parseProductIdentityV69(html);
+  const source = String(html || "");
+  const identity = parseProductIdentityV69(source);
   const descriptionHtml =
-    String(html || "").match(
+    source.match(
       /<div\s+class="product attribute description">[\s\S]*?<div\s+class="value"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i,
     )?.[1] || "";
   const overviewHtml =
-    String(html || "").match(
+    source.match(
       /<div\s+class="product attribute overview">[\s\S]*?<div\s+class="value"[^>]*itemprop="description"[^>]*>([\s\S]*?)<\/div>/i,
     )?.[1] || "";
   const image =
-    String(html || "").match(/<meta\s+property="og:image"\s+content="([^"]+)"/i)?.[1] || "";
+    source.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i)?.[1] || "";
+  const brandHtml =
+    source.match(
+      /<th\b[^>]*>\s*Marca\s*<\/th>\s*<td\b[^>]*>([\s\S]*?)<\/td>/i,
+    )?.[1] ||
+    source.match(/<td\b[^>]*data-th=["']Marca["'][^>]*>([\s\S]*?)<\/td>/i)?.[1] ||
+    "";
   return {
     ...identity,
+    brand: tidy(textFromHtml(brandHtml)),
     description: tidy(textFromHtml(descriptionHtml)),
     overview: tidy(textFromHtml(overviewHtml)),
     image,
@@ -347,7 +356,11 @@ export async function enrichListingGroupsV69(
   let processed = 0;
   return mapLimit(groups, concurrency, async (group) => {
     const preMatchedIndex = matchBaseIndexV69(group, baseIndex);
-    if (preMatchedIndex !== null) {
+    const matchedProduct = preMatchedIndex === null
+      ? null
+      : baseCatalog?.products?.[preMatchedIndex];
+    const requiresBrandRepair = isCollectionBrandPlaceholderV69(matchedProduct?.brand?.name);
+    if (preMatchedIndex !== null && !requiresBrandRepair) {
       processed += 1;
       onProgress?.({ processed, total: groups.length, status: "existing" });
       return { ...group, baseIndex: preMatchedIndex, detail: {} };
@@ -365,8 +378,16 @@ export async function enrichListingGroupsV69(
     }
     if (!detail.sku && !detail.barcode && lastError) throw lastError;
     processed += 1;
-    onProgress?.({ processed, total: groups.length, status: "enriched" });
-    return { ...group, detail };
+    onProgress?.({
+      processed,
+      total: groups.length,
+      status: requiresBrandRepair ? "brand-repaired" : "enriched",
+    });
+    return {
+      ...group,
+      ...(preMatchedIndex === null ? {} : { baseIndex: preMatchedIndex }),
+      detail,
+    };
   });
 }
 
@@ -681,6 +702,9 @@ function mergeExistingProductV69(product, group, completedAt) {
 export function newProductFromSourceGroupV69(group, completedAt) {
   const member = preferredMembersV69(group.members)[0];
   const brand = brandForGroupV69(group);
+  if (isCollectionBrandPlaceholderV69(brand.name)) {
+    throw new Error("Productos Saludables no puede publicarse como marca de producto.");
+  }
   const name = tidy(member.sourceName);
   const sku = normalizeRawIdentity(group.detail?.sku || member.sku);
   const barcode = normalizeBarcode(group.detail?.barcode);
@@ -737,26 +761,65 @@ export function newProductFromSourceGroupV69(group, completedAt) {
   };
 }
 
-function brandForGroupV69(group) {
+export function brandForGroupV69(group) {
   const member = preferredMembersV69(group.members)[0];
   const source = sourceByIdV7Beta(member.sourceId);
+  const membershipOnly = Boolean(member.sourceMembershipOnly || source?.membershipOnly);
+  const detailBrand = tidy(group.detail?.brand);
   const name = tidy(
     source && !source.membershipOnly && source.mode === "brand"
       ? source.catalogBrandName
-      : member.listedBrand || member.sourceBrand || member.catalogBrandName || "Farmagreen",
+      : detailBrand || member.listedBrand || member.sourceBrand || member.catalogBrandName || "Farmagreen",
   );
-  const configured = GPS_SOURCES_V7_BETA.find(
-    (candidate) =>
-      !candidate.membershipOnly && normalizeProductText(candidate.catalogBrandName) === normalizeProductText(name),
-  );
-  const facet = configured?.facet || member.catalogFacet;
+  const configured = configuredBrandV69(name);
+  const facet = configured?.facet || (member.catalogFacet?.kind === "brand" ? member.catalogFacet : undefined);
   const slug = facet?.slug || slugify(name);
   return {
-    id: String(configured?.catalogBrandId || member.catalogBrandId || `gps-${hashShort(normalizeProductText(name))}`),
+    id: String(
+      configured?.catalogBrandId ||
+      (!membershipOnly && member.catalogBrandId) ||
+      `gps-${hashShort(brandIdentityKeyV69(name))}`,
+    ),
     slug,
     name: configured?.catalogBrandName || name,
     aliases: unique([name, ...(facet?.aliases || [])]),
   };
+}
+
+export function isCollectionBrandPlaceholderV69(value) {
+  return brandIdentityKeyV69(value) === brandIdentityKeyV69("Productos Saludables");
+}
+
+export function canonicalizeBrandV69(brand) {
+  const name = tidy(brand?.name);
+  const configured = configuredBrandV69(name);
+  if (!configured) return brand;
+  const facet = configured.facet;
+  return {
+    ...brand,
+    id: String(configured.catalogBrandId),
+    slug: facet?.slug || slugify(configured.catalogBrandName),
+    name: configured.catalogBrandName,
+    aliases: unique([
+      configured.catalogBrandName,
+      name,
+      ...(brand?.aliases || []),
+      ...(facet?.aliases || []),
+    ]),
+  };
+}
+
+function configuredBrandV69(value) {
+  return [...GPS_SOURCES_V7_BETA, ...GPS_SOURCES_V69].find(
+    (candidate) =>
+      String(candidate.id) !== "9100" &&
+      !candidate.membershipOnly &&
+      brandIdentityKeyV69(candidate.catalogBrandName) === brandIdentityKeyV69(value),
+  );
+}
+
+function brandIdentityKeyV69(value) {
+  return normalizeProductText(String(value || "").replace(/\+/g, " plus ")).replace(/\s+/g, "");
 }
 
 export function inferTaxonomyV69(nameValue, brandValue) {
@@ -842,7 +905,7 @@ function existingFacetsV69(product) {
 }
 
 function currentFacetForMemberV7Beta(member) {
-  return sourceByIdV7Beta(member?.sourceId)?.facet || member?.catalogFacet;
+  return member?.catalogFacet || sourceByIdV7Beta(member?.sourceId)?.facet;
 }
 
 function configuredBrandFacetV7Beta(brand) {
@@ -1025,9 +1088,15 @@ function mergeDetailV69(left, right) {
   if (leftBarcode && rightBarcode && leftBarcode !== rightBarcode) {
     throw new Error("Una ficha GPSFarma devolvió dos códigos de barra incompatibles.");
   }
+  const leftBrand = brandIdentityKeyV69(left.brand);
+  const rightBrand = brandIdentityKeyV69(right.brand);
+  if (leftBrand && rightBrand && leftBrand !== rightBrand) {
+    throw new Error("Una ficha GPSFarma devolvió dos marcas incompatibles.");
+  }
   return {
     sku: left.sku || right.sku || "",
     barcode: left.barcode || right.barcode || "",
+    brand: left.brand || right.brand || "",
     description: left.description || right.description || "",
     overview: left.overview || right.overview || "",
     image: left.image || right.image || "",
