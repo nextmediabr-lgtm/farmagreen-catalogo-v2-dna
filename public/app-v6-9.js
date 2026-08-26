@@ -12,7 +12,8 @@ const ROUTE = BOOT.catalogRoute || "/catalogo";
 const PDP = "/p/";
 const CONTEXT = BOOT.context || {};
 const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"]);
-const DEFAULT_SORT = "relevancia";
+const NAVIGATION = BOOT.navigation || {};
+const DEFAULT_SORT = SORT_VALUES.has(NAVIGATION.defaultSort) ? NAVIGATION.defaultSort : "relevancia";
 const S = {
   all: BOOT.products || [],
   q: CONTEXT.q || "",
@@ -765,7 +766,10 @@ function openFilterMenu(name) {
 
 function syncFilterMenuSummaries(resultCount) {
   const needLabel = S.need === "Todas" ? "Todas" : NEED_LABELS[S.need] || S.need;
-  const brandLabel = S.brand;
+  const activeView = (BOOT.navigation?.brands || []).find(
+    (entry) => entry.kind === "collection" && entry.slug === S.view,
+  );
+  const brandLabel = activeView?.name || S.brand;
   const needSummary = $("#needSummaryV69");
   const brandSummary = $("#brandSummaryV69");
   if (needSummary) needSummary.textContent = needLabel;
@@ -949,9 +953,10 @@ function catalogCopy() {
     return { mode: "Necesidad", title: label, context: `Selección para ${String(label).toLowerCase()}.`, nav: "buscar" };
   }
   if (S.view !== "Todas") {
-    const view = S.all.flatMap((product) => product.catalogViews || []).find((entry) => entry.slug === S.view);
+    const view = (BOOT.navigation?.brands || []).find((entry) => entry.kind === "collection" && entry.slug === S.view) ||
+      S.all.flatMap((product) => product.catalogViews || []).find((entry) => entry.slug === S.view);
     const label = view?.name || S.view;
-    return { mode: "Vista", title: label, context: `Selección transversal de ${label}.`, nav: "view" };
+    return { mode: "Marca", title: label, context: `Selección paraguas de ${label}.`, nav: "marcas" };
   }
   if (S.scope === "todo") return { mode: "Catálogo", title: "Todos los productos", context: "Explorá el catálogo completo.", nav: "productos" };
   return { mode: "Ofertas", title: "Oportunidades de hoy", context: "Los mejores descuentos disponibles primero.", nav: "ofertas" };
@@ -1039,15 +1044,18 @@ function reset() {
 }
 
 function applyParams(params) {
-  const requestedQuery = params.get("q") || "";
+  const requestedBrand = params.get("marca") === "Aveeno" ? "Aveno" : params.get("marca") || "Todas";
+  const navigationBrands = BOOT.navigation?.brands || [];
+  const validBrands = new Set(["Todas", ...navigationBrands.filter((entry) => entry.kind === "brand").map((entry) => entry.name)]);
+  const fallbackQuery = requestedBrand !== "Todas" && !validBrands.has(requestedBrand) ? requestedBrand : "";
+  const requestedQuery = params.get("q") || fallbackQuery;
   S.q = searchQueryReady(requestedQuery) ? requestedQuery : "";
-  S.brand = params.get("marca") === "Aveeno" ? "Aveno" : params.get("marca") || "Todas";
+  S.brand = requestedBrand;
   S.need = params.get("need") || "Todas";
   S.view = params.get("view") || "Todas";
   S.sort = SORT_VALUES.has(params.get("orden")) ? params.get("orden") : DEFAULT_SORT;
-  const validBrands = new Set(["Todas", ...S.all.map((product) => product.brand?.name).filter(Boolean)]);
-  const validNeeds = new Set(["Todas", ...Object.keys(NEED_LABELS)]);
-  const validViews = new Set(["Todas", ...S.all.flatMap((product) => (product.catalogViews || []).filter((view) => view.kind === "collection").map((view) => view.slug))]);
+  const validNeeds = new Set(["Todas", ...(BOOT.navigation?.needs || Object.keys(NEED_LABELS))]);
+  const validViews = new Set(["Todas", ...navigationBrands.filter((entry) => entry.kind === "collection").map((entry) => entry.slug)]);
   if (!validBrands.has(S.brand)) S.brand = "Todas";
   if (!validNeeds.has(S.need)) S.need = "Todas";
   if (!validViews.has(S.view)) S.view = "Todas";
@@ -1071,11 +1079,12 @@ function applyParams(params) {
   S.limit = page * PAGE;
 }
 
-function openCatalogFromHome({ q = "", brand = "Todas", need = "Todas", sort = DEFAULT_SORT } = {}) {
+function openCatalogFromHome({ q = "", brand = "Todas", need = "Todas", view = "Todas", sort = DEFAULT_SORT } = {}) {
   const params = new URLSearchParams({ scope: "todo" });
   if (q.trim()) params.set("q", q.trim());
   if (brand !== "Todas") params.set("marca", brand);
   if (need !== "Todas") params.set("need", need);
+  if (view !== "Todas") params.set("view", view);
   if (SORT_VALUES.has(sort) && sort !== DEFAULT_SORT) params.set("orden", sort);
   location.assign(`${url(ROUTE)}?${params.toString()}#productos-v69`);
 }
@@ -1115,6 +1124,13 @@ function bootHomeDiscovery() {
       openCatalogFromHome({ need });
     }),
   );
+  $$('[data-view]').forEach((button) =>
+    button.addEventListener("click", () => {
+      const view = button.dataset.view || "Todas";
+      trackFilterSelect("brand", button.dataset.viewName || view);
+      openCatalogFromHome({ view });
+    }),
+  );
   return true;
 }
 
@@ -1132,6 +1148,7 @@ async function loadCatalogProducts() {
   BOOT.magentoCategoryPaths = payload.magentoCategoryPaths || BOOT.magentoCategoryPaths || {};
   BOOT.commerceSyncedAt = payload.commerceSyncedAt || BOOT.commerceSyncedAt;
   BOOT.availabilityReferenceAt = payload.availabilityReferenceAt || BOOT.availabilityReferenceAt;
+  BOOT.navigation = payload.navigation || BOOT.navigation || {};
 }
 
 async function boot() {
@@ -1277,6 +1294,7 @@ async function boot() {
       S.brand = "Todas";
       S.need = "Todas";
       S.view = link.dataset.view || "Todas";
+      trackFilterSelect("brand", link.dataset.viewName || S.view);
       S.scope = "todo";
       S.limit = PAGE;
       $("#searchV69").value = "";

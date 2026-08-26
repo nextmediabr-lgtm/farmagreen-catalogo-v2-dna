@@ -21,6 +21,36 @@ npm run dev:v69
 
 Vista local: <http://127.0.0.1:8099/>.
 
+## Administración V6.9
+
+La rama incorpora una consola integral en `/admin-v6-9`, todavía pendiente de
+publicación. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones.
+
+- limita la navegación a las marcas legacy más `Productos Saludables` como
+  paraguas;
+- migra y administra inclusión/exclusión por EAN;
+- conserva memoria operativa, revisiones y rollback;
+- recibe el comprobante post-deploy de Codex Agent Manager;
+- no puede editar precio, stock, código, analítica, IAM ni desplegar.
+
+Configuración: [`.env.example`](./.env.example). Los valores reales permanecen
+fuera de Git. En desarrollo puede usarse un token local efímero:
+
+```bash
+V69_ADMIN_LOCAL_TOKEN=admin-local \
+V69_ADMIN_CONFIG_FILE=/tmp/farmagreen-v69-admin.json \
+npm run dev:v69
+```
+
+Después de un deploy verificado, Codex Agent Manager registra el resultado con:
+
+```bash
+V69_AGENT_MANAGER_TOKEN=... npm run record:deploy:v69 -- \
+  --origin=https://farmagreenrosario.web.app \
+  --commit=<sha> --build=<build-id> --revision=<cloud-run-revision> \
+  --products=<total> --healthy=true --verified-at=<iso-8601>
+```
+
 ## Estado y continuidad
 
 Producción publica 1.459 productos: 1.227 disponibles, 232 para consultar y

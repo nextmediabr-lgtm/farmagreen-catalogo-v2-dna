@@ -6,6 +6,7 @@ import {
   type SnapshotStoreV69,
   type SyncedCatalogV69,
 } from "./commerce-runtime-v69.js";
+import { createCatalogAdminRuntimeV69 } from "./catalog-admin-v69.js";
 
 type DiscoveryJobDependenciesV69 = {
   snapshotStore: SnapshotStoreV69;
@@ -36,15 +37,17 @@ async function defaultDependencies(
 ): Promise<DiscoveryJobDependenciesV69> {
   const snapshotStore = createGcsSnapshotStoreV69(environment);
   if (!snapshotStore) throw new Error("El Job semanal V6.9 no tiene snapshot GCS configurado.");
+  const adminRuntime = createCatalogAdminRuntimeV69(environment);
   // @ts-expect-error El módulo MJS forma parte de la imagen y tiene pruebas propias.
   const scanner = await import("../scripts/scan-catalog-v69.mjs");
   return {
     snapshotStore,
     loadFallbackCatalog: () => catalogV69Data(environment as NodeJS.ProcessEnv),
     scanCatalog: (baseCatalog) =>
-      scanner.runCatalogDiscoveryV69({
+      adminRuntime.policy().then((policy) => scanner.runCatalogDiscoveryV69({
         providedBaseCatalog: baseCatalog,
-      }),
+        providedPolicy: policy,
+      })),
     finalizeCatalog: (catalog) =>
       scanner.finalizeCatalogDiscoveryV69({
         catalog,

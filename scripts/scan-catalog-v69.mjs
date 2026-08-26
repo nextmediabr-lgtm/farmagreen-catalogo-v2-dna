@@ -103,6 +103,7 @@ export async function runCatalogDiscoveryV69({
   providedBaseCatalog,
   providedExclusions,
   providedSourceResults,
+  providedPolicy,
   fetchHtml,
   inventoryScope = inventoryScopeV69(),
   now = () => new Date(),
@@ -120,6 +121,8 @@ export async function runCatalogDiscoveryV69({
         "utf8",
       ),
     );
+  const policy = providedPolicy || (await loadLocalAdminPolicyV69(rootDir));
+  const effectiveExclusions = applyPolicyEanRulesV69(exclusions, policy);
   const sources = discoverySourcesV69();
   const scopedFetch =
     fetchHtml ||
@@ -145,14 +148,79 @@ export async function runCatalogDiscoveryV69({
     onProgress,
   });
   const detailedGroups = consolidateDetailedGroupsV69(enriched);
-  return reconcileCatalogChangesV69({
+  const result = await reconcileCatalogChangesV69({
     baseCatalog: commercial,
     detailedGroups,
-    exclusions,
+    exclusions: effectiveExclusions,
     completedAt,
     fetchHtml: scopedFetch,
     sources,
   });
+  const inclusionEans = policyEansV69(policy, "include");
+  const discoveredEans = new Set(
+    detailedGroups.flatMap((group) => [
+      group.detail?.barcode,
+      ...(group.members || []).map((member) => member.barcode),
+    ]).map(normalizeBarcode).filter(Boolean),
+  );
+  const inclusionMatched = [...inclusionEans].filter((ean) => discoveredEans.has(ean)).length;
+  const inclusionMetrics = {
+    inclusionRules: inclusionEans.size,
+    inclusionMatched,
+    inclusionPending: inclusionEans.size - inclusionMatched,
+  };
+  result.catalog.discoverySync.metrics = {
+    ...result.catalog.discoverySync.metrics,
+    ...inclusionMetrics,
+  };
+  result.discoverySync = result.catalog.discoverySync;
+  return result;
+}
+
+export function applyPolicyEanRulesV69(exclusions = emptyExclusions(), policy) {
+  const include = policyEansV69(policy, "include");
+  const exclude = policyEansV69(policy, "exclude");
+  if ([...include].some((ean) => exclude.has(ean))) {
+    throw new Error("La política EAN semanal contiene un conflicto inclusión/exclusión.");
+  }
+  const includedProducts = (exclusions.products || []).filter(
+    (entry) => include.has(normalizeBarcode(entry?.barcode)),
+  );
+  const includedSkus = new Set(includedProducts.map((entry) => normalizeSku(entry?.sku)).filter(Boolean));
+  const includedUrls = new Set(includedProducts.map((entry) => normalizeGpsProductUrl(entry?.url)).filter(Boolean));
+  const products = (exclusions.products || []).filter(
+    (entry) => !include.has(normalizeBarcode(entry?.barcode)),
+  );
+  return {
+    ...exclusions,
+    products,
+    barcodes: unique([
+      ...(exclusions.barcodes || []).filter((ean) => !include.has(normalizeBarcode(ean))),
+      ...products.map((entry) => entry?.barcode),
+      ...exclude,
+    ].map(normalizeBarcode).filter(Boolean)),
+    skus: unique([
+      ...(exclusions.skus || []).filter((sku) => !includedSkus.has(normalizeSku(sku))),
+      ...products.map((entry) => entry?.sku),
+    ]),
+    urls: unique([
+      ...(exclusions.urls || []).filter((url) => !includedUrls.has(normalizeGpsProductUrl(url))),
+      ...products.map((entry) => entry?.url),
+    ]),
+  };
+}
+
+async function loadLocalAdminPolicyV69(rootDir) {
+  const filePath = String(process.env.V69_ADMIN_CONFIG_FILE || "").trim();
+  if (!filePath) return null;
+  const parsed = JSON.parse(await fs.readFile(path.resolve(rootDir, filePath), "utf8"));
+  return parsed?.policy || parsed;
+}
+
+function policyEansV69(policy, kind) {
+  return new Set(
+    (policy?.eanRules?.[kind] || []).map((entry) => normalizeBarcode(entry?.ean)).filter(Boolean),
+  );
 }
 
 export async function finalizeCatalogDiscoveryV69({

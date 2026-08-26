@@ -89,6 +89,13 @@ body.v69 .v69-live-views a{
 body.v69 .v69-live-views a.is-active{background:var(--fg-blue);color:#fff}
 body.v69 .v69-live-views small{font:inherit;opacity:.72}
 
+body.v69 .v67-brand-option[data-view]{
+  margin-top:8px;
+  border-top:3px solid var(--fg-blue);
+  background:#f2f6ff;
+}
+body.v69 .v67-brand-option[data-view] .v67-brand-copy small{color:var(--fg-blue);font-weight:850}
+
 body.v69 .v69-sort{
   position:relative;
   display:block;

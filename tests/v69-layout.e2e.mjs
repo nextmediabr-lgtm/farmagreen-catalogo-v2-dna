@@ -382,16 +382,17 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator('[data-filter-menu="brand"] .v67-menu-label').textContent(), "Elegir Marca");
     assert.equal(await page.locator("#brandSummaryV69").textContent(), "Todas");
     const publicBrands = [...new Set(api.products.map((product) => product.brand.name))];
-    assert.equal(await page.locator(".v69-home-brand").count(), publicBrands.length);
-    if (remoteOrigin) {
-      assert.equal(publicBrands.includes("Productos Saludables"), false);
-      assert.equal(
-        await page.locator(".v69-home-brand h2").evaluateAll(
-          (headings) => headings.some((heading) => heading.textContent?.trim() === "Productos Saludables"),
-        ),
-        false,
-      );
-    }
+    assert.equal(await page.locator(".v69-home-brand").count(), api.navigation.brands.length);
+    assert.ok(publicBrands.includes("Productos Saludables"));
+    assert.equal(
+      await page.locator(".v69-home-brand h2").evaluateAll(
+        (headings) => headings.filter((heading) => heading.textContent?.trim() === "Productos Saludables").length,
+      ),
+      1,
+    );
+    assert.equal(api.navigation.brands.length, 16);
+    assert.equal(api.navigation.brands.at(-1).name, "Productos Saludables");
+    assert.equal(api.navigation.brands.some((entry) => entry.name === "Goodskin"), false);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "CeraVe" }).count(), 1);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Neutrogena" }).count(), 1);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Vitamin Way" }).count(), 1);
@@ -453,8 +454,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.locator("#gridV69 .v66-card").first().waitFor();
-    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-1\.css\?v=20260813-1945$/);
-    const localCssResponse = await page.request.get(`${runtime.origin}/styles-v6-9-1.css`);
+    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-2\.css\?v=20260826-1$/);
+    const localCssResponse = await page.request.get(`${runtime.origin}/styles-v6-9-2.css`);
     assert.equal(localCssResponse.status(), 200);
     if (!remoteOrigin) assert.equal(localCssResponse.headers()["cache-control"], "no-store");
     assert.equal(await firstRowColumns(page), 5);

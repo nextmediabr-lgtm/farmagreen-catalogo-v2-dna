@@ -2,6 +2,12 @@ import type http from "node:http";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import type { CatalogV69 } from "./data-v69.js";
 import {
+  createCatalogAdminRuntimeV69,
+  type CatalogAdminRuntimeV69,
+} from "./catalog-admin-v69.js";
+import { handleCatalogAdminRequestV69 } from "./catalog-admin-http-v69.js";
+import { applyCatalogPolicyV69, isProductExcludedByPolicyV69 } from "./catalog-policy-v69.js";
+import {
   RuntimeHttpErrorV69,
   createCommerceRuntimeV69,
   type CommerceRuntimeV69,
@@ -38,8 +44,8 @@ const META_EVENT_NAMES_V69 = new Set([
 ]);
 const V69_CSP =
   "default-src 'self'; script-src 'self' https://connect.facebook.net https://www.googletagmanager.com https://www.googleadservices.com https://www.google.com https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; style-src 'self'; img-src 'self' data: https://storage.googleapis.com https://www.facebook.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://*.g.doubleclick.net https://www.google.com https://google.com https://www.google.com.ar https://google.com.ar https://pagead2.googlesyndication.com https://www.googleadservices.com; connect-src 'self' https://connect.facebook.net https://www.facebook.com https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://www.googletagmanager.com https://*.g.doubleclick.net https://pagead2.googlesyndication.com https://www.googleadservices.com https://ad.doubleclick.net https://www.google.com https://google.com https://www.google.com.ar https://google.com.ar; base-uri 'self'; form-action 'self' https://www.facebook.com; frame-src https://www.facebook.com https://www.googletagmanager.com; frame-ancestors 'self'";
-const PUBLIC_HTML_CACHE = "public, max-age=0, s-maxage=300, stale-while-revalidate=60";
-const PUBLIC_CATALOG_CACHE = "public, max-age=60, s-maxage=300, stale-while-revalidate=60";
+const PUBLIC_HTML_CACHE = "public, max-age=0, s-maxage=60, stale-while-revalidate=30";
+const PUBLIC_CATALOG_CACHE = "public, max-age=0, s-maxage=60, stale-while-revalidate=30";
 const PUBLIC_DISCOVERY_CACHE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=300";
 
 export type Environment = Readonly<Record<string, string | undefined>>;
@@ -142,6 +148,7 @@ export async function handleV69Request(
   environment: Environment = process.env,
   commerceRuntime: CommerceRuntimeV69 = createCommerceRuntimeV69(environment),
   request?: http.IncomingMessage,
+  adminRuntime: CatalogAdminRuntimeV69 = createCatalogAdminRuntimeV69(environment),
 ) {
   const publicAliasesEnabled =
     environment.V69_ENABLE_PRODUCTION === "1" || environment.V69_LOCAL_PREVIEW === "1";
@@ -157,6 +164,8 @@ export async function handleV69Request(
     pathname === "/api/catalog-v6-9" ||
     pathname === "/api/catalog-v6-9/health" ||
     pathname === "/api/meta-events-v6-9" ||
+    pathname === "/admin-v6-9" ||
+    pathname.startsWith("/api/admin-v69/") ||
     pathname === "/robots.txt" ||
     pathname === "/sitemap.xml" ||
     pathname === "/internal/catalog-v6-9/refresh" ||
@@ -202,6 +211,22 @@ export async function handleV69Request(
     sendTextV69(response, "V6.9 todavía no está habilitada para esta ejecución.", 503);
     return true;
   }
+  const policy = await adminRuntime.policy();
+
+  if (
+    await handleCatalogAdminRequestV69({
+      response,
+      request,
+      url,
+      pathname,
+      environment,
+      adminRuntime,
+      commerceRuntime,
+      catalog,
+    })
+  ) {
+    return true;
+  }
 
   if (servesPublicHome) {
     sendHtmlV69(
@@ -209,6 +234,7 @@ export async function handleV69Request(
       catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment), {
         route: "/",
         canonicalPath: "/",
+        policy,
       }),
       200,
       request,
@@ -217,22 +243,23 @@ export async function handleV69Request(
   }
 
   if (pathname === "/catalogo-v6-9" || servesPublicCatalog) {
-    sendHtmlV69(response, catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment)), 200, request);
+    sendHtmlV69(response, catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment), { policy }), 200, request);
     return true;
   }
 
   if (pathname === "/inicio-v6-9" || (pathname === "/inicio" && publicAliasesEnabled)) {
-    sendHtmlV69(response, homePageV69(catalog, publicOriginV69(url.origin, environment)), 200, request);
+    sendHtmlV69(response, homePageV69(catalog, publicOriginV69(url.origin, environment), policy), 200, request);
     return true;
   }
 
   if (pathname.startsWith("/producto-v6-9/")) {
     const found = await productV69(pathname.slice("/producto-v6-9/".length));
+    const visible = found && !isProductExcludedByPolicyV69(found, policy) ? found : null;
     const origin = publicOriginV69(url.origin, environment);
     sendHtmlV69(
       response,
-      found ? productPageV69(found, await similarV69(found), origin) : notFoundPageV69(origin),
-      found ? 200 : 404,
+      visible ? productPageV69(visible, (await similarV69(visible)).filter((entry) => !isProductExcludedByPolicyV69(entry, policy)), origin, policy) : notFoundPageV69(origin),
+      visible ? 200 : 404,
       request,
     );
     return true;
@@ -240,18 +267,19 @@ export async function handleV69Request(
 
   if (servesShortProduct) {
     const found = await productV69(pathname.slice("/p/".length));
+    const visible = found && !isProductExcludedByPolicyV69(found, policy) ? found : null;
     const origin = publicOriginV69(url.origin, environment);
     sendHtmlV69(
       response,
-      found ? productPageV69(found, await similarV69(found), origin) : notFoundPageV69(origin),
-      found ? 200 : 404,
+      visible ? productPageV69(visible, (await similarV69(visible)).filter((entry) => !isProductExcludedByPolicyV69(entry, policy)), origin, policy) : notFoundPageV69(origin),
+      visible ? 200 : 404,
       request,
     );
     return true;
   }
 
   if (pathname === "/api/catalog-v6-9") {
-    sendJsonV69(response, publicCatalogV69(catalog), 200, { "cache-control": PUBLIC_CATALOG_CACHE }, request);
+    sendJsonV69(response, publicCatalogV69(catalog, policy), 200, { "cache-control": PUBLIC_CATALOG_CACHE }, request);
     return true;
   }
 
@@ -259,8 +287,13 @@ export async function handleV69Request(
     sendJsonV69(
       response,
       {
-        ...catalogHealthV69(catalog),
+        ...catalogHealthV69(applyCatalogPolicyV69(catalog, policy)),
         runtime: commerceRuntime.health(),
+        navigationPolicy: {
+          revision: (await adminRuntime.current()).document.revision,
+          configured: adminRuntime.configured,
+          authenticationConfigured: adminRuntime.authenticationConfigured,
+        },
         analytics: {
           ga4MeasurementId: "G-SL7GG138WV",
           googleAdsTagId: GOOGLE_ADS_TAG_ID_V69,
@@ -289,7 +322,7 @@ export async function handleV69Request(
   if (pathname === "/sitemap.xml") {
     sendDocumentV69(
       response,
-      sitemapXmlV69(catalog, publicOriginV69(url.origin, environment)),
+      sitemapXmlV69(applyCatalogPolicyV69(catalog, policy), publicOriginV69(url.origin, environment)),
       "application/xml; charset=utf-8",
       PUBLIC_DISCOVERY_CACHE,
       request,

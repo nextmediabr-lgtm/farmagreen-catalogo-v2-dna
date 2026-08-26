@@ -8,6 +8,7 @@ import { catalogPageV67, catalogV67, notFoundPageV67, productPageV67, productV67
 import { handleV68Request, headersV68, type Environment } from "./server-v68.js";
 import { handleV69Request } from "./server-v69.js";
 import { createCommerceRuntimeV69 } from "./commerce-runtime-v69.js";
+import { createCatalogAdminRuntimeV69 } from "./catalog-admin-v69.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = path.join(ROOT, "public");
@@ -41,6 +42,10 @@ const PUBLIC_ASSETS = new Set([
   "/app-v6-9-7.js",
   "/app-v6-9-8.js",
   "/app-v6-9-9.js",
+  "/app-v6-9-10.js",
+  "/styles-v6-9-2.css",
+  "/admin-v69-1.js",
+  "/admin-v69-1.css",
   "/analytics-v69.js",
   "/analytics-v69-1.js",
   "/analytics-v69-2.js",
@@ -63,6 +68,10 @@ const PUBLIC_ALIASES = new Map([
   ["/app-v6-9-7.js", "/app-v6-9.js"],
   ["/app-v6-9-8.js", "/app-v6-9.js"],
   ["/app-v6-9-9.js", "/app-v6-9.js"],
+  ["/app-v6-9-10.js", "/app-v6-9.js"],
+  ["/styles-v6-9-2.css", "/styles-v6-9-1.css"],
+  ["/admin-v69-1.js", "/admin-v69.js"],
+  ["/admin-v69-1.css", "/admin-v69.css"],
   ["/analytics-v69-1.js", "/analytics-v69.js"],
   ["/analytics-v69-2.js", "/analytics-v69.js"],
   ["/analytics-v69-3.js", "/analytics-v69.js"],
@@ -73,12 +82,13 @@ const PUBLIC_ALIASES = new Map([
 
 export function app(environment: Environment = process.env) {
   const commerceRuntimeV69 = createCommerceRuntimeV69(environment);
+  const catalogAdminRuntimeV69 = createCatalogAdminRuntimeV69(environment);
   return http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", `http://${request.headers.host || "local"}`);
       const pathname = normalize(decodeURIComponent(url.pathname));
 
-      if (await handleV69Request(response, url, pathname, environment, commerceRuntimeV69, request)) return;
+      if (await handleV69Request(response, url, pathname, environment, commerceRuntimeV69, request, catalogAdminRuntimeV69)) return;
       if (pathname === "/") {
         sendRedirect(response, DEFAULT_ROUTE);
         return;
@@ -113,14 +123,14 @@ export function app(environment: Environment = process.env) {
         const file = path.join(PUBLIC, PUBLIC_ALIASES.get(pathname) || pathname);
         const localV69Asset =
           environment.V69_LOCAL_PREVIEW === "1" &&
-          (pathname.includes("v6-9") || pathname.startsWith("/meta-pixel-v69") || pathname.startsWith("/analytics-v69"));
+          (pathname.includes("v6-9") || pathname.startsWith("/admin-v69") || pathname.startsWith("/meta-pixel-v69") || pathname.startsWith("/analytics-v69"));
         sendBinary(
           response,
           await fs.readFile(file),
           MIME[path.extname(file)] || "application/octet-stream",
           localV69Asset
             ? "no-store"
-            : pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js" || pathname === "/app-v6-9-1.js" || pathname === "/app-v6-9-2.js" || pathname === "/app-v6-9-3.js" || pathname === "/app-v6-9-4.js" || pathname === "/app-v6-9-5.js" || pathname === "/app-v6-9-6.js" || pathname === "/app-v6-9-7.js" || pathname === "/app-v6-9-8.js" || pathname === "/app-v6-9-9.js" || pathname === "/analytics-v69-1.js" || pathname === "/analytics-v69-2.js" || pathname === "/analytics-v69-3.js" || pathname === "/meta-pixel-v69-1.js" || pathname === "/meta-pixel-v69-2.js" || pathname === "/styles-v6-9-1.css"
+            : pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js" || pathname === "/app-v6-9-1.js" || pathname === "/app-v6-9-2.js" || pathname === "/app-v6-9-3.js" || pathname === "/app-v6-9-4.js" || pathname === "/app-v6-9-5.js" || pathname === "/app-v6-9-6.js" || pathname === "/app-v6-9-7.js" || pathname === "/app-v6-9-8.js" || pathname === "/app-v6-9-9.js" || pathname === "/app-v6-9-10.js" || pathname === "/admin-v69-1.js" || pathname === "/admin-v69-1.css" || pathname === "/analytics-v69-1.js" || pathname === "/analytics-v69-2.js" || pathname === "/analytics-v69-3.js" || pathname === "/meta-pixel-v69-1.js" || pathname === "/meta-pixel-v69-2.js" || pathname === "/styles-v6-9-1.css" || pathname === "/styles-v6-9-2.css"
             ? "public, max-age=31536000, immutable"
             : pathname.includes("v6-9")
               ? "public, max-age=300, s-maxage=300, stale-while-revalidate=60"

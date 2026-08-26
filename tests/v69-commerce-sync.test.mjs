@@ -36,6 +36,7 @@ import {
 } from "../scripts/build-local-v7-beta.mjs";
 import {
   assertRuntimeAssetsV69,
+  applyPolicyEanRulesV69,
   assertUniqueCanonicalProductsV69,
   attachMagentoTaxonomyV69,
   discoverySourcesV69,
@@ -277,6 +278,30 @@ test("Productos Saludables es una vista transversal y la ficha canónica sigue s
   assert.equal(result.discoverySync.metrics.positive, 1);
   assert.equal(result.discoverySync.metrics.negative, 0);
   assert.equal(result.discoverySync.activationReady, false);
+});
+
+test("la política EAN dinámica integra inclusión y exclusión sin filtrar por accidente", () => {
+  const exclusions = {
+    products: [
+      { sku: "INCLUDE-SKU", barcode: "3337875694469", url: "https://gpsfarma.com/include.html" },
+      { sku: "KEEP-HIDDEN", barcode: "7793640992929", url: "https://gpsfarma.com/hidden.html" },
+    ],
+    skus: ["INCLUDE-SKU", "KEEP-HIDDEN"],
+    barcodes: ["3337875694469", "7793640992929"],
+    urls: ["https://gpsfarma.com/include.html", "https://gpsfarma.com/hidden.html"],
+    hidden: {},
+  };
+  const policy = {
+    eanRules: {
+      include: [{ ean: "3337875694469" }],
+      exclude: [{ ean: "7798008296039" }],
+    },
+  };
+  const effective = applyPolicyEanRulesV69(exclusions, policy);
+  assert.deepEqual(effective.products, [exclusions.products[1]]);
+  assert.deepEqual(effective.skus, ["KEEP-HIDDEN"]);
+  assert.deepEqual(effective.urls, ["https://gpsfarma.com/hidden.html"]);
+  assert.deepEqual(effective.barcodes.sort(), ["7793640992929", "7798008296039"]);
 });
 
 test("la ficha técnica resuelve la marca real y repara el legado de Productos Saludables", async () => {

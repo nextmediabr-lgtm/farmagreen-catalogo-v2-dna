@@ -472,6 +472,11 @@ gcloud scheduler jobs describe fg-v69-weekly-discovery \
 4. Observar la primera ejecución automática del lunes a las 04:00 ART. El Job
    directo y su IAM ya fueron validados; el Scheduler aún no tiene intento
    histórico y muestra su próxima ejecución correctamente.
+5. La rama contiene una consola `/admin-v6-9` localmente verificada, todavía no
+   desplegada. Separa 15 marcas legacy y el paraguas Saludables, administra
+   reglas EAN, guarda memoria/rollback en GCS y recibe comprobantes post-deploy
+   de Codex Agent Manager. Antes de publicarla faltan el OAuth Client ID, la
+   allowlist Google y los secretos productivos; el panel no ejecuta deploy.
 
 ## 17. Cierre
 

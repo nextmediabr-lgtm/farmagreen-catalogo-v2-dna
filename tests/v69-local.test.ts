@@ -37,6 +37,11 @@ import {
   schedulerIdempotencyKeyV69,
   sourceImageBridgeEnabled,
 } from "../src/server-v69.js";
+import {
+  applyCatalogPolicyV69,
+  defaultCatalogPolicyV69,
+  navigationBrandsV69,
+} from "../src/catalog-policy-v69.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CATALOG_FILE = path.join(ROOT, "data", "catalog-v69.json");
@@ -471,8 +476,8 @@ test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente 
     assert.equal(bootPayload(html).context.sort, sort);
     assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-9\.js/);
-    assert.match(html, /styles-v6-9-1\.css/);
+    assert.match(html, /app-v6-9-10\.js/);
+    assert.match(html, /styles-v6-9-2\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
     assert.doesNotMatch(html, /gpsfarma/i);
@@ -493,7 +498,7 @@ test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente 
   );
 });
 
-test("Productos Saludables se publica como vista transversal sin reemplazar la marca real", async () => {
+test("Productos Saludables se integra como paraguas y preserva las marcas legacy", async () => {
   const base = await baseCatalog();
   const selected = {
     ...base.products[0],
@@ -514,8 +519,9 @@ test("Productos Saludables se publica como vista transversal sin reemplazar la m
   );
   assert.equal(bootPayload(html).context.view, "productos-saludables");
   assert.equal(firstGridProductId(html), selected.publicId);
-  assert.match(html, /data-view="productos-saludables" class="is-active"/);
-  assert.match(html, />Productos Saludables <small>1<\/small><\/a>/);
+  assert.match(html, /class="v67-brand-option on"[^>]*data-view="productos-saludables"/);
+  assert.match(html, /<strong>Productos Saludables<\/strong><small>1 productos · paraguas<\/small>/);
+  assert.doesNotMatch(html, /Vistas vivas/);
   const api = publicCatalogV69(catalog);
   assert.deepEqual(api.products[0].catalogViews, [{
     slug: "productos-saludables",
@@ -523,6 +529,7 @@ test("Productos Saludables se publica como vista transversal sin reemplazar la m
     kind: "collection",
   }]);
   assert.equal(api.products[0].brand.name, "Vitamin Way");
+  assert.equal(api.navigation.brands.at(-1)?.name, "Productos Saludables");
 });
 
 test("la búsqueda por ID de categoría muestra únicamente su ruta jerárquica pura", async () => {
@@ -546,10 +553,10 @@ test("la búsqueda por ID de categoría muestra únicamente su ruta jerárquica 
 test("la home V6.9 organiza dos filas por marca con disponibilidad primero", async () => {
   const catalog = await baseCatalog();
   const html = homePageV69(catalog, "http://127.0.0.1:8109");
-  const brands = [...new Set(catalog.products.map((product) => product.brand.name))];
-  assert.equal((html.match(/class="v69-home-brand"/g) || []).length, brands.length);
-  assert.equal((html.match(/class="v65-grid v69-home-grid"/g) || []).length, brands.length);
-  assert.equal((html.match(/class="v66-card(?: |")/g) || []).length, brands.length * 10);
+  assert.equal((html.match(/class="v69-home-brand"/g) || []).length, 16);
+  assert.equal((html.match(/class="v65-grid v69-home-grid"/g) || []).length, 16);
+  assert.equal((html.match(/class="v66-card(?: |")/g) || []).length, 150);
+  assert.match(html, /<p class="v65-k">Paraguas<\/p><h2[^>]*>Productos Saludables<\/h2>/);
   assert.match(html, /id="buscar-v69"/);
   assert.match(html, /<span>Buscá<\/span> <span>como<\/span> <span>hablás<\/span>/);
   assert.match(html, /id="needSummaryV69">Todas<\/strong>/);
@@ -590,16 +597,20 @@ test("la home V6.9 organiza dos filas por marca con disponibilidad primero", asy
   assert.equal("openingHours" in pharmacy, false);
   assert.doesNotMatch(html, /gpsfarma|provider|"sku"|"source"/i);
 
-  for (const brand of brands) {
+  const policy = defaultCatalogPolicyV69();
+  const presented = applyCatalogPolicyV69(catalog, policy);
+  for (const brand of navigationBrandsV69(catalog, policy)) {
     const brandProducts = sortProductsV69(
-      catalog.products.filter((product) => product.brand.name === brand),
+      presented.products.filter((product) => brand.kind === "collection"
+        ? (product.catalogFacets || []).some((entry) => entry.kind === "collection" && entry.slug === brand.slug)
+        : product.brand.name === brand.name),
       "disponibilidad",
     );
-    const sectionStart = html.indexOf(`id="marca-${brandProducts[0].brand.slug}"`);
+    const sectionStart = html.indexOf(`id="${brand.kind === "collection" ? "coleccion" : "marca"}-${brand.slug}"`);
     const sectionEnd = html.indexOf('<section class="v69-home-brand"', sectionStart + 1);
     const section = html.slice(sectionStart, sectionEnd < 0 ? undefined : sectionEnd);
-    assert.match(section, new RegExp(`/p/${brandProducts[0].publicId}`), brand);
-    assert.equal((section.match(/class="v66-card(?: |")/g) || []).length, 10, brand);
+    if (brandProducts.length) assert.match(section, new RegExp(`/p/${brandProducts[0].publicId}`), brand.name);
+    assert.equal((section.match(/class="v66-card(?: |")/g) || []).length, Math.min(10, brandProducts.length), brand.name);
   }
 });
 
@@ -660,10 +671,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-9.js`),
+      fetch(`${origin}/app-v6-9-10.js`),
       fetch(`${origin}/analytics-v69-3.js`),
       fetch(`${origin}/meta-pixel-v69-2.js`),
-      fetch(`${origin}/styles-v6-9-1.css`),
+      fetch(`${origin}/styles-v6-9-2.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
       fetch(`${origin}/robots.txt`),
       fetch(`${origin}/sitemap.xml`),
@@ -690,7 +701,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(robotsResponse.headers.get("cache-control"), "public, max-age=300, s-maxage=3600, stale-while-revalidate=300");
     assert.equal(sitemapResponse.headers.get("cache-control"), "public, max-age=300, s-maxage=3600, stale-while-revalidate=300");
     assert.equal(socialImageResponse.headers.get("content-type"), "image/png");
-    assert.equal(apiResponse.headers.get("cache-control"), "public, max-age=60, s-maxage=300, stale-while-revalidate=60");
+    assert.equal(apiResponse.headers.get("cache-control"), "public, max-age=0, s-maxage=60, stale-while-revalidate=30");
     assert.equal(healthResponse.headers.get("cache-control"), "no-store");
 
     const root = await rootResponse.text();
@@ -711,6 +722,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       "availabilitySummary",
       "commerceSyncedAt",
       "magentoCategoryPaths",
+      "navigation",
       "products",
       "syncedAt",
       "totalProducts",
@@ -759,12 +771,12 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(home, /Farmacia y Dermocosmetica, Catalogo de Precios y Promociones/);
     assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
-    assert.match(root, /styles-v6-9-1\.css/);
-    assert.match(root, /app-v6-9-9\.js/);
+    assert.match(root, /styles-v6-9-2\.css/);
+    assert.match(root, /app-v6-9-10\.js/);
     assert.match(root, /analytics-v69-3\.js/);
     assert.match(root, /meta-pixel-v69-2\.js/);
     assert.ok(root.indexOf("analytics-v69-3.js") < root.indexOf("meta-pixel-v69-2.js"));
-    assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-9.js"));
+    assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-10.js"));
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
     assert.ok(api.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));
