@@ -1,9 +1,9 @@
 # FarmaGreen Catálogo V6.9 — handoff canónico de producción
 
-Creado: 13 de agosto de 2026  
-Última actualización: 25 de agosto de 2026  
-Estado: V6.9 desplegada y saludable; catálogo vivo semanal, stock diario y medición digital activos.  
-Propósito: punto único de continuidad para código, datos, GCP, búsqueda, taxonomía, exclusiones, navegación, imágenes y analítica.  
+Creado: 13 de agosto de 2026
+Última actualización: 26 de agosto de 2026
+Estado: V6.9 desplegada y saludable; panel GCP, catálogo vivo semanal, stock diario y medición digital activos.
+Propósito: punto único de continuidad para código, datos, GCP, búsqueda, taxonomía, exclusiones, navegación, imágenes y analítica.
 
 Este documento describe estado; no amplía autorizaciones. Commit, push, deploy,
 refresh, IAM, Scheduler y cualquier mutación futura requieren una autorización
@@ -15,14 +15,14 @@ explícita en el turno correspondiente.
 | --- | --- |
 | Worktree dueño | `/Users/danielbernardes/Documents/New project/.worktrees/eucerin-catalogo-v69-local` |
 | Rama | `codex/v69-stock-ordering` |
-| Último commit técnico/test | `bfa1ef2` — `test(v69): derive search counts from live catalog` |
+| Último commit técnico/test | `f2826b7` — `fix(v69): simplify healthy collection menu label` |
 | Remoto | `origin/codex/v69-stock-ordering` |
 | Producción | <https://farmagreenrosario.web.app/> |
 | Proyecto GCP | `project-e2a7bc6d-e741-4d4e-85d` |
 | Servicio Cloud Run | `farmagreen-v69-preprod` |
 | Región | `southamerica-east1` |
-| Revisión activa | `farmagreen-v69-preprod-identity3-20260825`, 100% |
-| Imagen activa | build `bb992f81-255b-42fc-b884-15ee001d4e91` |
+| Revisión activa | `farmagreen-v69-preprod-admin4-20260826`, 100% |
+| Imagen activa | build `062344d5-4cdf-4044-a292-f6e2b631e9bf` |
 | Refresh comercial | `fg-v69-preprod-sync-0700-art` |
 | Discovery semanal | Job `farmagreen-v69-weekly-discovery`; Scheduler `fg-v69-weekly-discovery` |
 
@@ -31,14 +31,14 @@ arquitectura de 11 fuentes y estado Git no representan producción actual.
 
 ## 2. Estado público confirmado
 
-Lectura directa del health/API el 25/8/2026 después del release final:
+Lectura directa del health/API el 26/8/2026 después del release final:
 
 ```json
 {
   "version": 6.9,
   "status": "ready",
   "reason": "current",
-  "commerceSyncedAt": "2026-08-26T01:50:28.644Z",
+  "commerceSyncedAt": "2026-08-26T04:00:06.651Z",
   "totalProducts": 1459,
   "availabilitySummary": {
     "available": 1227,
@@ -253,6 +253,17 @@ Cada scan reconstruye `primaryCategory`, `needs`, aliases y auditoría desde
 nombre, marca real, categorías Magento y vistas. El snapshot vigente tiene 0
 fichas sin necesidad.
 
+El scan del 26/8 eliminó aliases taxonómicos históricos del conjunto de
+evidencia antes de inferir necesidades. Eran términos genéricos heredados de
+`Productos Saludables` (`vitaminas`, `suplementos`, etc.) y hacían que algunas
+fichas dermocosméticas entraran en `Nutrición`. Resultado remoto verificado:
+
+- `Nutrición`: 606 -> 569 fichas;
+- el sérum Eucerin Vitamin C señalado quedó `rostro`, con `hidratacion` y
+  `antiedad`;
+- el protector Dermaglós FPS50 señalado quedó `solares`;
+- auditoría de categorías dermo/solar dentro de `Nutrición`: 0 sospechosos.
+
 ### Magento
 
 - extracción GraphQL pura hasta `level <= 7`;
@@ -297,10 +308,10 @@ No copiar sus SKU/URLs a issues, commits, handoffs o logs públicos.
 - el Job sólo puede crear objetos; un asset existente se reutiliza;
 - el snapshot no se guarda hasta terminar imágenes y taxonomía.
 
-Durante el release, Firebase seguía sirviendo un JavaScript viejo porque
-`app-v6-9-8.js` había sido reutilizado pese a su cache `immutable`. La solución
-publicó `app-v6-9-9.js?v=20260826-1`. El hash del asset en Cloud Run, Firebase y
-el archivo local coincidió.
+Los assets inmutables vigentes son `app-v6-9-11.js?v=20260826-2`,
+`styles-v6-9-2.css?v=20260826-1` y `admin-v69-2.js?v=20260826-2`. Cada cambio de
+JavaScript usa una URL nueva para impedir que Firebase/Chrome retengan una
+versión anterior.
 
 ## 10. Navegación y visual desplegado
 
@@ -309,15 +320,33 @@ el archivo local coincidió.
 - cinco columnas desktop y dos móvil;
 - 48 productos por carga;
 - orden inicial `Relevancia`;
-- opciones: relevancia, marca, disponibilidad, descuento, precio ascendente,
-  precio descendente y nombre;
+- opciones: relevancia, marca, disponibilidad, `Sin stock`, descuento, precio
+  ascendente, precio descendente y nombre;
+- `Sin stock` filtra sólo los 232 productos para consultar; es temporal, no es
+  el orden inicial y puede ocultarse desde el panel sin deploy;
 - `Marca`, `Necesidad` y `Ordenar por` emiten eventos al abrir/seleccionar;
 - marca, necesidad, búsqueda y vista transversal se normalizan de forma
   mutuamente consistente;
 - la URL `?view=productos-saludables` conserva el parámetro, muestra 48 de 664 y
   sólo renderiza miembros de la colección;
+- el tile del menú muestra `Productos Saludables` y `hasta 50%`, sin cantidad ni
+  la palabra `paraguas`;
 - el target `3337875694469` abre PDP 200 con barcode, disponibilidad e imagen;
 - no hay overflow horizontal en 320, 390 ni desktop.
+
+### Panel integral
+
+- ruta productiva `/admin-v6-9`, dentro del mismo servicio Cloud Run;
+- acceso Google limitado por allowlist; la API anónima responde 401;
+- cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones;
+- permite curar marcas, paraguas, orden inicial, opción temporal `Sin stock` y
+  listas de inclusión/exclusión EAN;
+- guarda configuración, memoria, snapshots y rollback en GCS;
+- puede lanzar refresh comercial o el Job semanal con IAM mínimo;
+- no edita precios, stock, colores, código, analítica o usuarios y no despliega;
+- Codex Agent Manager registró el recibo post-deploy `f2826b7`, build
+  `062344d5-4cdf-4044-a292-f6e2b631e9bf`, revisión
+  `farmagreen-v69-preprod-admin4-20260826`, `healthy=true`.
 
 El zócalo comercial fijo para PDP móvil sigue siendo un concepto pendiente. No
 se implementó. Conserva como referencia dos líneas azules `#1557FF` de 6 px,
@@ -373,8 +402,13 @@ vinculación externa GA4–Maps hayan quedado guardados. Tratarlos como pendient
 | `cd22b63` | Repara marcas heredadas y versiona el asset cliente. |
 | `53a3ef3` | Da prioridad a taxonomía viva embebida sobre fallback local. |
 | `bfa1ef2` | Hace que el E2E derive conteos desde el catálogo actual. |
+| `880d213` | Agrega navegación curada, panel integral, reglas EAN y memoria operativa. |
+| `fe1d8c8` | Evita duplicar marcas legacy entre las técnicas detectadas. |
+| `1c0d820` | Versiona el asset del panel para respetar cache inmutable. |
+| `5fb3532` | Agrega `Sin stock` temporal y endurece la evidencia viva de Nutrición. |
+| `f2826b7` | Simplifica el tile de Productos Saludables conservando el mejor descuento. |
 
-El release final se construyó desde `53a3ef3`; `bfa1ef2` modifica sólo tests.
+El release final se construyó desde `f2826b7`.
 
 ## 13. Verificación contemporánea
 
@@ -387,10 +421,10 @@ npm run verify:v69
 Resultado:
 
 - build TypeScript/CSS: aprobado;
-- lógica/contratos: 96/96;
-- sync/GCP: 38/38;
-- E2E: 1/1;
-- total: 135/135, 0 fallas;
+- lógica/contratos: 104/104;
+- sync/GCP/post-deploy: 42/42;
+- E2E: 2/2;
+- total: 148/148, 0 fallas;
 - `git diff --check`: limpio;
 - TruffleHog: limpio;
 - autoreview: sin hallazgos aceptados/accionables.
@@ -405,6 +439,11 @@ Verificación remota:
 - asset público nuevo con hash idéntico al local;
 - servicio web: 1 CPU, 512 MiB, timeout 900 s;
 - revisión final al 100% y revisiones fallidas/intermedias al 0%.
+- autenticación Google real comprobada con la cuenta permitida;
+- recibo post-deploy persistido en GCS y visible en Memoria operativa después
+  del TTL de lectura de 30 segundos;
+- ejecución `farmagreen-v69-weekly-discovery-mqdfl` completada con `exit(0)` y
+  snapshot vivo adoptado por producción.
 
 Una primera candidata detectó el conflicto de taxonomía y nunca recibió
 tráfico. No presentar una revisión `Ready` como release sin pasar health, datos
@@ -419,6 +458,7 @@ y navegador sobre su URL etiquetada.
 | Datos, exclusiones y precedencia Magento | `src/data-v69.ts` |
 | Runtime, GCS y last-known-good | `src/commerce-runtime-v69.ts` |
 | Cliente, búsqueda, vistas y filtros | `public/app-v6-9.js` |
+| Panel y política pública | `public/admin-v69.js`, `src/catalog-admin-v69.ts`, `src/catalog-admin-http-v69.ts`, `src/catalog-policy-v69.ts` |
 | Medición Google | `public/analytics-v69.js` |
 | Meta Pixel/CAPI cliente | `public/meta-pixel-v69.js` |
 | Sync comercial | `scripts/sync-catalog-commerce-v69.mjs` |
@@ -472,11 +512,9 @@ gcloud scheduler jobs describe fg-v69-weekly-discovery \
 4. Observar la primera ejecución automática del lunes a las 04:00 ART. El Job
    directo y su IAM ya fueron validados; el Scheduler aún no tiene intento
    histórico y muestra su próxima ejecución correctamente.
-5. La rama contiene una consola `/admin-v6-9` localmente verificada, todavía no
-   desplegada. Separa 15 marcas legacy y el paraguas Saludables, administra
-   reglas EAN, guarda memoria/rollback en GCS y recibe comprobantes post-deploy
-   de Codex Agent Manager. Antes de publicarla faltan el OAuth Client ID, la
-   allowlist Google y los secretos productivos; el panel no ejecuta deploy.
+5. Cuando termine la revisión manual de discontinuados, desmarcar `Mostrar “Sin
+   stock” en Ordenar` en `/admin-v6-9` y usar `Guardar y publicar`. No requiere
+   commit ni deploy y no altera por sí mismo las exclusiones EAN.
 
 ## 17. Cierre
 
@@ -486,5 +524,6 @@ vista transversal de 664 fichas; el catálogo conserva SKU canónico único y 14
 marcas reales. El scan semanal del lunes 04:00 ART reconstruye altas, bajas,
 búsqueda, necesidades, Magento e imágenes; el refresh 07:00/14:00 mantiene el
 estado comercial Rosario/STOM. Cloud Run sirve
-`farmagreen-v69-preprod-identity3-20260825` al 100%, y los gates local/remoto
-quedaron verdes.
+`farmagreen-v69-preprod-admin4-20260826` al 100%; la imagen del servicio y el
+Job semanal corresponde al build `062344d5-4cdf-4044-a292-f6e2b631e9bf`, y los
+gates local/remoto quedaron verdes (148/148).

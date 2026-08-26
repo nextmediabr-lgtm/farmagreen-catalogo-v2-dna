@@ -23,8 +23,8 @@ Vista local: <http://127.0.0.1:8099/>.
 
 ## Administración V6.9
 
-La rama incorpora una consola integral en `/admin-v6-9`, todavía pendiente de
-publicación. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones.
+La consola integral productiva vive en `/admin-v6-9` dentro de la misma app de
+Cloud Run. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones.
 
 - limita la navegación a las marcas legacy más `Productos Saludables` como
   paraguas;
@@ -32,6 +32,10 @@ publicación. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operacio
 - conserva memoria operativa, revisiones y rollback;
 - recibe el comprobante post-deploy de Codex Agent Manager;
 - no puede editar precio, stock, código, analítica, IAM ni desplegar.
+
+La opción temporal `Sin stock` del selector público muestra sólo los productos
+para consultar. Se habilita o retira desde Navegación en el panel, sin deploy y
+sin excluir productos automáticamente.
 
 Configuración: [`.env.example`](./.env.example). Los valores reales permanecen
 fuera de Git. En desarrollo puede usarse un token local efímero:
@@ -62,6 +66,10 @@ El catálogo completo se reconcilia los lunes a las 04:00 ART: detecta altas y
 bajas conservadoras, reconstruye búsqueda/necesidades/taxonomía y sólo activa
 un snapshot completo. `Productos Saludables` es una vista transversal de 664
 productos, no una marca.
+
+El reindexado vivo descarta aliases taxonómicos históricos antes de reconstruir
+necesidades. En el snapshot vigente, `Nutrición` contiene 569 productos y ya no
+incluye dermocosmética por herencia del paraguas.
 
 ```bash
 npm run scan:data:v69       # auditoría local, no escribe
