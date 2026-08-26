@@ -23,6 +23,11 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   '"': "&quot;",
   "'": "&#39;",
 })[character]);
+const brandKey = (value) => String(value ?? "")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "");
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -97,8 +102,12 @@ function statusView() {
 
 function navigationView() {
   const navigation = S.policy.navigation;
-  const featuredSlugs = new Set(navigation.featuredBrands.map((entry) => entry.slug));
-  const detected = S.state.catalog.technicalBrands.filter((entry) => !featuredSlugs.has(entry.slug));
+  const featuredIdentities = new Set(navigation.featuredBrands.flatMap((entry) =>
+    [entry.slug, entry.name, ...(entry.aliases || [])].map(brandKey),
+  ));
+  const detected = S.state.catalog.technicalBrands.filter((entry) =>
+    ![entry.slug, entry.name].map(brandKey).some((identity) => featuredIdentities.has(identity)),
+  );
   return `<div class="admin-heading"><div><p>Navegación pública</p><h1>Marcas y paraguas</h1></div><button class="primary" data-action="publish-navigation">Guardar y publicar</button></div>
     <p class="admin-intro">El scan puede detectar marcas, pero sólo las que habilites aquí aparecen en el menú y la home.</p>
     <section class="admin-panel"><div class="admin-panel-head"><div><h2>Marcas legacy</h2><p>${navigation.featuredBrands.filter((entry) => entry.enabled).length} habilitadas</p></div></div>
