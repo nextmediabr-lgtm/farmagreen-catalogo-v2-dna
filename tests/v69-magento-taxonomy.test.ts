@@ -95,7 +95,7 @@ test("rechaza una asociación Magento cuya identidad privada no coincide", () =>
   assert.throws(() => applyMagentoTaxonomyV69([product], taxonomy, true), /identidad Magento no coincide/);
 });
 
-test("acepta taxonomía Magento embebida por el scan semanal para una ficha nueva", () => {
+test("la taxonomía viva embebida prevalece sobre un artefacto local anterior", () => {
   const product = fixtureProduct(
     "weekly-new",
     "SKU-WEEKLY",
@@ -112,7 +112,15 @@ test("acepta taxonomía Magento embebida por el scan semanal para una ficha nuev
     source: { platform: "Magento 2", endpoint: "https://gpsfarma.com/graphql", extractedAt: "2026-08-25T00:00:00.000Z", maxNormalizedLevel: 7 },
     catalog: { version: 6.9, syncedAt: "", commerceSyncedAt: "", sourceProducts: 1, visibleProducts: 1 },
     categories: [],
-    products: [],
+    products: [{
+      publicId: "weekly-new",
+      sku: "SKU-ANTERIOR",
+      barcode: "3337875694469",
+      productUrl: "https://gpsfarma.com/ficha-anterior.html",
+      urlKey: "ficha-anterior",
+      magentoProductId: 1,
+      categoryIds: [],
+    }],
   }, true);
   assert.deepEqual(enriched[0].magentoCategories, product.magentoCategories);
   assert.equal(enriched[0].magentoTaxonomyAttached, true);

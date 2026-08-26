@@ -255,16 +255,16 @@ export function applyMagentoTaxonomyV69(
   const categoryById = new Map(taxonomy.categories.map((category) => [category.id, category]));
   const taxonomyByProduct = new Map(taxonomy.products.map((product) => [product.publicId, product]));
   return products.map((product) => {
+    const embedded = embeddedMagentoCategoriesV69(product);
+    if (embedded) {
+      return {
+        ...product,
+        magentoCategories: embedded,
+        magentoTaxonomyAttached: true,
+      };
+    }
     const membership = taxonomyByProduct.get(product.publicId);
     if (!membership) {
-      const embedded = embeddedMagentoCategoriesV69(product);
-      if (embedded) {
-        return {
-          ...product,
-          magentoCategories: embedded,
-          magentoTaxonomyAttached: true,
-        };
-      }
       if (required) throw new Error(`Falta taxonomía Magento para ${product.publicId}.`);
       return product;
     }
