@@ -45,7 +45,7 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CATALOG_FILE = path.join(ROOT, "data", "catalog-v69.json");
-const SORTS: SortV69[] = ["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"];
+const SORTS: SortV69[] = ["relevancia", "marca", "disponibilidad", "sin-stock", "descuento", "precio-asc", "precio-desc", "nombre"];
 
 test("V6.9 normaliza eventos CAPI sin aceptar orígenes, eventos ni datos arbitrarios", () => {
   const normalized = normalizeMetaEventV69(
@@ -456,7 +456,7 @@ test("V6.9.1 publica imágenes responsivas con dimensiones y prioridad sólo par
   assert.deepEqual(api.products[0].images.responsive?.card, responsive);
 });
 
-test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente exclusivas", async () => {
+test("SSR V6.9 respeta los órdenes, filtra sin stock y mantiene marca/necesidad mutuamente exclusivas", async () => {
   const catalog = await baseCatalog();
   const defaultHtml = catalogPageV69(
     catalog,
@@ -474,9 +474,17 @@ test("SSR V6.9 respeta los siete órdenes y mantiene marca/necesidad mutuamente 
       "http://127.0.0.1:8109",
     );
     assert.equal(bootPayload(html).context.sort, sort);
-    assert.equal(firstGridProductId(html), sortProductsV69(catalog.products, sort)[0].publicId, sort);
+    const sortable = sort === "sin-stock"
+      ? catalog.products.filter((product) => product.availability === "out_of_stock")
+      : catalog.products;
+    assert.equal(firstGridProductId(html), sortProductsV69(sortable, sort)[0].publicId, sort);
+    if (sort === "sin-stock") {
+      assert.equal(bootPayload(html).context.scope, "todo");
+      assert.match(html, /id="catalogTitleV69">Sin stock<\/h1>/);
+      assert.doesNotMatch(html, /Disponible para Entrega/);
+    }
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-10\.js/);
+    assert.match(html, /app-v6-9-11\.js/);
     assert.match(html, /styles-v6-9-2\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -671,7 +679,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-10.js`),
+      fetch(`${origin}/app-v6-9-11.js`),
       fetch(`${origin}/analytics-v69-3.js`),
       fetch(`${origin}/meta-pixel-v69-2.js`),
       fetch(`${origin}/styles-v6-9-2.css`),
@@ -772,11 +780,11 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-2\.css/);
-    assert.match(root, /app-v6-9-10\.js/);
+    assert.match(root, /app-v6-9-11\.js/);
     assert.match(root, /analytics-v69-3\.js/);
     assert.match(root, /meta-pixel-v69-2\.js/);
     assert.ok(root.indexOf("analytics-v69-3.js") < root.indexOf("meta-pixel-v69-2.js"));
-    assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-10.js"));
+    assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-11.js"));
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
     assert.ok(api.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));

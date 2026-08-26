@@ -11,8 +11,8 @@ const PAGE = 48;
 const ROUTE = BOOT.catalogRoute || "/catalogo";
 const PDP = "/p/";
 const CONTEXT = BOOT.context || {};
-const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"]);
 const NAVIGATION = BOOT.navigation || {};
+const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", ...(NAVIGATION.showOutOfStockSort ? ["sin-stock"] : []), "descuento", "precio-asc", "precio-desc", "nombre"]);
 const DEFAULT_SORT = SORT_VALUES.has(NAVIGATION.defaultSort) ? NAVIGATION.defaultSort : "relevancia";
 const S = {
   all: BOOT.products || [],
@@ -594,6 +594,7 @@ function filterProductsBySearch(products, query) {
 
 function matches(product, searchIds, hasQuery) {
   if (S.scope === "ofertas" && !(product.discountPercent > 0)) return false;
+  if (S.sort === "sin-stock" && product?.availability !== "unavailable_reference") return false;
   if (S.brand !== "Todas" && brandName(product) !== S.brand) return false;
   if (S.need !== "Todas" && !(product.needs || []).includes(S.need)) return false;
   if (S.view !== "Todas" && !(product.catalogViews || []).some((view) => view.kind === "collection" && view.slug === S.view)) return false;
@@ -858,6 +859,8 @@ function sorted(products) {
         (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
         productTie(left.product, right.product),
     );
+  } else if (S.sort === "sin-stock") {
+    entries.sort((left, right) => productTie(left.product, right.product));
   } else if (S.sort === "descuento") {
     entries.sort(
       (left, right) =>
@@ -958,6 +961,7 @@ function catalogCopy() {
     const label = view?.name || S.view;
     return { mode: "Marca", title: label, context: `Selección paraguas de ${label}.`, nav: "marcas" };
   }
+  if (S.sort === "sin-stock") return { mode: "Revisión", title: "Sin stock", context: "Productos para consultar y revisar como posibles discontinuados.", nav: "productos" };
   if (S.scope === "todo") return { mode: "Catálogo", title: "Todos los productos", context: "Explorá el catálogo completo.", nav: "productos" };
   return { mode: "Ofertas", title: "Oportunidades de hoy", context: "Los mejores descuentos disponibles primero.", nav: "ofertas" };
 }
@@ -1069,7 +1073,7 @@ function applyParams(params) {
     S.need = "Todas";
   }
   S.scope =
-    S.q || S.brand !== "Todas" || S.need !== "Todas" || S.view !== "Todas"
+    S.sort === "sin-stock" || S.q || S.brand !== "Todas" || S.need !== "Todas" || S.view !== "Todas"
       ? "todo"
       : params.get("scope") === "todo"
         ? "todo"
@@ -1224,6 +1228,7 @@ async function boot() {
   });
   $("#sortV69")?.addEventListener("change", (event) => {
     S.sort = SORT_VALUES.has(event.target.value) ? event.target.value : DEFAULT_SORT;
+    if (S.sort === "sin-stock") S.scope = "todo";
     trackFilterSelect("order", S.sort);
     S.limit = PAGE;
     render("push");

@@ -875,7 +875,7 @@ export function inferTaxonomyV69(nameValue, brandValue) {
     primaryCategory,
     needs: needs.slice(0, 2),
     audit: {
-      reasonerVersion: "v69.2-expansion-source-position",
+      reasonerVersion: "v69.3-live-taxonomy-evidence",
       evidenceScope: ["name", "brand"],
       selected: needs.slice(0, 2).map((need) => ({ need, source: "deterministic-title-rule" })),
       rejected: [],

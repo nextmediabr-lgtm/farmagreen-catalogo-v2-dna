@@ -136,7 +136,9 @@ function publicAvailabilitySummary(products) {
 }
 
 function expectedFirst(products, sort) {
-  const copy = [...products];
+  const copy = sort === "sin-stock"
+    ? products.filter((product) => product.availability === "unavailable_reference")
+    : [...products];
   if (sort === "disponibilidad") {
     const rank = (product) => product.availability === "available_reference" ? 0 : product.availability === "unverified" ? 1 : 2;
     copy.sort(
@@ -146,6 +148,8 @@ function expectedFirst(products, sort) {
         (right.savingAmount || 0) - (left.savingAmount || 0) ||
         tie(left, right),
     );
+  } else if (sort === "sin-stock") {
+    copy.sort(tie);
   } else if (sort === "descuento" || sort === "relevancia") {
     copy.sort(
       (left, right) =>
@@ -519,6 +523,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       "relevancia",
       "marca",
       "disponibilidad",
+      "sin-stock",
       "descuento",
       "precio-asc",
       "precio-desc",
@@ -570,6 +575,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await selectSort(page, api.products, "descuento");
     await selectSort(page, api.products, "disponibilidad");
     assert.equal(await page.locator("#gridV69 .v69-stock").first().innerText(), "Disponible para Entrega");
+    await selectSort(page, api.products, "sin-stock");
+    assert.equal(await page.locator("#gridV69 .v66-card:not(.v69-card-unavailable)").count(), 0);
     await selectSort(page, api.products, "nombre");
     await selectSort(page, api.products, "marca");
 

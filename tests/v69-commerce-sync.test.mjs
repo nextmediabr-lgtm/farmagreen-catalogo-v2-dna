@@ -121,7 +121,7 @@ test("Bagóvit conserva marca, posición, búsqueda y usos determinísticos", ()
     primaryCategory: "rostro",
     needs: ["antiedad"],
     audit: {
-      reasonerVersion: "v69.2-expansion-source-position",
+      reasonerVersion: "v69.3-live-taxonomy-evidence",
       evidenceScope: ["name", "brand"],
       selected: [{ need: "antiedad", source: "deterministic-title-rule" }],
       rejected: [],
@@ -133,7 +133,7 @@ test("Bagóvit conserva marca, posición, búsqueda y usos determinísticos", ()
       primaryCategory: "cuerpo",
       needs: ["reparacion"],
       audit: {
-        reasonerVersion: "v69.2-expansion-source-position",
+        reasonerVersion: "v69.3-live-taxonomy-evidence",
         evidenceScope: ["name", "brand"],
         selected: [{ need: "reparacion", source: "deterministic-title-rule" }],
         rejected: [],
@@ -184,7 +184,7 @@ test("CeraVe conserva marca, posición, búsqueda y usos determinísticos", () =
     primaryCategory: "rostro",
     needs: ["hidratacion"],
     audit: {
-      reasonerVersion: "v69.2-expansion-source-position",
+      reasonerVersion: "v69.3-live-taxonomy-evidence",
       evidenceScope: ["name", "brand"],
       selected: [{ need: "hidratacion", source: "deterministic-title-rule" }],
       rejected: [],
@@ -201,7 +201,7 @@ test("Neutrogena, Vitamin Way y Capilatis conservan familias y usos determiníst
     primaryCategory: "nutricion",
     needs: ["nutricion"],
     audit: {
-      reasonerVersion: "v69.2-expansion-source-position",
+      reasonerVersion: "v69.3-live-taxonomy-evidence",
       evidenceScope: ["name", "brand"],
       selected: [{ need: "nutricion", source: "deterministic-title-rule" }],
       rejected: [],
@@ -475,6 +475,31 @@ test("el reindexado semanal reconstruye necesidades desde evidencia viva", () =>
   assert.equal(catalog.products[0].taxonomy.indexedAt, indexedAt);
   assert.equal(catalog.searchIndexedAt, indexedAt);
   assert.equal(catalog.needsIndexedAt, indexedAt);
+});
+
+test("el reindexado vivo no convierte dermocosmética en Nutrición por aliases del paraguas", () => {
+  const catalog = reindexCatalogV69({
+    version: 6.9,
+    products: [
+      product("eucerin-vitamin-c", "Sérum facial antiedad Eucerin Vitamin C Booster x 8 ml", {
+        sku: "DERMO-1",
+        aliases: ["salud", "nutricion", "vitaminas", "suplementos", "bienestar"],
+        catalogFacets: [{ slug: "productos-saludables", name: "Productos Saludables", kind: "collection" }],
+        magentoCategories: [{ id: "1", name: "Dermocosmética" }, { id: "2", name: "Faciales" }],
+      }),
+      product("dermaglos-solar", "Dermaglós Protector Solar con FPS50 Fluido Facial x 50 g", {
+        sku: "DERMO-2",
+        brand: { id: "5808", slug: "dermaglos", name: "Dermaglos", aliases: ["dermaglós"] },
+        aliases: ["salud", "nutricion", "vitaminas", "suplementos", "bienestar"],
+        catalogFacets: [{ slug: "productos-saludables", name: "Productos Saludables", kind: "collection" }],
+        magentoCategories: [{ id: "3", name: "Cuidado de la Piel" }, { id: "4", name: "Solares" }],
+      }),
+    ],
+  });
+  assert.equal(catalog.products[0].primaryCategory, "rostro");
+  assert.equal(catalog.products[0].needs.includes("nutricion"), false);
+  assert.deepEqual(catalog.products[1].needs, ["solares"]);
+  assert.equal(catalog.products.some((entry) => entry.aliases.includes("suplementos")), false);
 });
 
 test("el candidato semanal sólo queda activable después de imágenes GCS y taxonomía embebida", async () => {

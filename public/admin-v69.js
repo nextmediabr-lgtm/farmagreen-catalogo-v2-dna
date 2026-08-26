@@ -114,7 +114,7 @@ function navigationView() {
       <div class="admin-brand-list">${navigation.featuredBrands.map((entry, index) => brandRow(entry, index)).join("")}</div>
     </section>
     <section class="admin-panel"><h2>Productos Saludables</h2><label class="admin-toggle"><input type="checkbox" data-field="umbrella-enabled"${navigation.umbrella.enabled ? " checked" : ""}><span>Mostrar como marca paraguas</span></label><p class="admin-muted">Las marcas PS-only se presentan bajo el paraguas. Las legacy marcadas “conservar” mantienen su nombre.</p></section>
-    <section class="admin-panel"><label>Orden inicial<select data-field="default-sort">${["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"].map((value) => `<option value="${value}"${navigation.defaultSort === value ? " selected" : ""}>${value}</option>`).join("")}</select></label></section>
+    <section class="admin-panel"><label>Orden inicial<select data-field="default-sort">${["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"].map((value) => `<option value="${value}"${navigation.defaultSort === value ? " selected" : ""}>${value}</option>`).join("")}</select></label><label class="admin-toggle"><input type="checkbox" data-field="show-out-of-stock-sort"${navigation.showOutOfStockSort ? " checked" : ""}><span>Mostrar “Sin stock” en Ordenar</span></label><p class="admin-muted">Activado temporalmente para revisar posibles discontinuados. No excluye productos automáticamente.</p></section>
     <section class="admin-panel"><div class="admin-panel-head"><div><h2>Detectadas, no publicadas</h2><p>${detected.length} marcas técnicas</p></div></div><div class="admin-detected">${detected.slice(0, 120).map((entry) => `<div><span><strong>${esc(entry.name)}</strong><small>${entry.count} SKU</small></span><button data-action="add-brand" data-slug="${esc(entry.slug)}" data-name="${esc(entry.name)}">Agregar</button></div>`).join("")}</div></section>`;
 }
 
@@ -264,6 +264,7 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches('[data-field="show-out-of-stock-sort"]')) S.policy.navigation.showOutOfStockSort = event.target.checked;
   if (event.target.matches('[data-action="toggle-brand"]')) {
     const entry = S.policy.navigation.featuredBrands[Number(event.target.dataset.index)];
     entry.enabled = event.target.checked;

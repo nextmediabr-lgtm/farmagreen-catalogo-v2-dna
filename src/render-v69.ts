@@ -78,7 +78,7 @@ const SEARCH_CONCEPTS_V69: SearchConceptV69[] = [
   { stems: ["cabell", "pelo", "capilar"], targets: ["cabello", "pelo", "capilar"] },
   { stems: ["acne", "grano", "imperfec", "gras"], targets: ["acne", "granos", "imperfecciones", "piel grasa"] },
 ];
-const SORTS_V69 = ["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
+const SORTS_V69 = ["relevancia", "marca", "disponibilidad", "sin-stock", "descuento", "precio-asc", "precio-desc", "nombre"] as const;
 export type SortV69 = (typeof SORTS_V69)[number];
 
 export type PublicProductV69 = {
@@ -130,6 +130,7 @@ export type PublicCatalogV69 = {
     brands: NavigationBrandV69[];
     needs: string[];
     defaultSort: string;
+    showOutOfStockSort: boolean;
   };
   products: PublicProductV69[];
 };
@@ -161,6 +162,7 @@ export function publicCatalogV69(
       brands: navigationBrandsV69(presented, policy),
       needs: [...policy.navigation.needs],
       defaultSort: policy.navigation.defaultSort,
+      showOutOfStockSort: policy.navigation.showOutOfStockSort,
     },
     products: presented.products.map(publicProductV69),
   };
@@ -300,6 +302,7 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
         brands: navigationBrandsV69(presented, policy),
         needs: policy.navigation.needs,
         defaultSort: policy.navigation.defaultSort,
+        showOutOfStockSort: policy.navigation.showOutOfStockSort,
       },
       context: context.state,
     })}</script>`,
@@ -402,6 +405,7 @@ function discoveryPanelV69(
           <option value="relevancia"${context.sort === "relevancia" ? " selected" : ""}>Relevancia</option>
           <option value="marca"${context.sort === "marca" ? " selected" : ""}>Marca</option>
           <option value="disponibilidad"${context.sort === "disponibilidad" ? " selected" : ""}>Disponibilidad</option>
+          ${policy.navigation.showOutOfStockSort ? `<option value="sin-stock"${context.sort === "sin-stock" ? " selected" : ""}>Sin stock</option>` : ""}
           <option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Descuento</option>
           <option value="precio-asc"${context.sort === "precio-asc" ? " selected" : ""}>Menor precio</option>
           <option value="precio-desc"${context.sort === "precio-desc" ? " selected" : ""}>Mayor precio</option>
@@ -461,6 +465,7 @@ export function homePageV69(
         brands: navigationBrandsV69(presented, policy),
         needs: policy.navigation.needs,
         defaultSort: policy.navigation.defaultSort,
+        showOutOfStockSort: policy.navigation.showOutOfStockSort,
       },
       context: homeContext.state,
     })}</script>`,
@@ -722,12 +727,14 @@ function pageContext(
   } else if (brand !== "Todas" && need !== "Todas") {
     need = "Todas";
   }
-  const scope: "ofertas" | "todo" = query.get("scope") === "todo" || q || brand !== "Todas" || need !== "Todas" || view !== "Todas" ? "todo" : "ofertas";
   const requestedSort = query.get("orden");
   const defaultSort = SORTS_V69.includes(policy.navigation.defaultSort as SortV69)
     ? policy.navigation.defaultSort as SortV69
     : "relevancia";
-  const sort: SortV69 = SORTS_V69.includes(requestedSort as SortV69) ? (requestedSort as SortV69) : defaultSort;
+  const sortAllowed = SORTS_V69.includes(requestedSort as SortV69) &&
+    (requestedSort !== "sin-stock" || policy.navigation.showOutOfStockSort);
+  const sort: SortV69 = sortAllowed ? (requestedSort as SortV69) : defaultSort;
+  const scope: "ofertas" | "todo" = query.get("scope") === "todo" || sort === "sin-stock" || q || brand !== "Todas" || need !== "Todas" || view !== "Todas" ? "todo" : "ofertas";
   const state = { q, brand, need, view, scope, sort };
   let mode = "Ofertas";
   let title = "Oportunidades de hoy";
@@ -749,6 +756,10 @@ function pageContext(
     mode = "Vista";
     title = availableViews.get(view) || view;
     copy = `Selección transversal de ${title}.`;
+  } else if (sort === "sin-stock") {
+    mode = "Revisión";
+    title = "Sin stock";
+    copy = "Productos para consultar y revisar como posibles discontinuados.";
   } else if (scope === "todo") {
     mode = "Catálogo";
     title = "Todos los productos";
@@ -1091,6 +1102,7 @@ function filteredProducts(products: ProductV69[], state: QueryState) {
     .filter((product) => state.brand === "Todas" || brandName(product) === state.brand)
     .filter((product) => state.need === "Todas" || safeList(product.needs).includes(state.need))
     .filter((product) => state.view === "Todas" || (product.catalogFacets || []).some((view) => view.kind === "collection" && view.slug === state.view))
+    .filter((product) => state.sort !== "sin-stock" || product.availability === "out_of_stock")
     .filter((product) => !hasQuery || searchIds.has(product.publicId));
   return sortProductsV69(filtered, state.sort, state.q);
 }
@@ -1165,6 +1177,7 @@ export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "
         tie(left, right),
     );
   }
+  if (sort === "sin-stock") return copy.sort(tie);
   if (sort === "descuento") {
     return copy.sort(
       (left, right) =>
@@ -1228,7 +1241,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-2.css?v=20260826-1")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script src="${u("/analytics-v69-3.js?v=20260823-1")}"></script><script src="${u("/meta-pixel-v69-2.js?v=20260822-1")}"></script><script type="module" src="${u("/app-v6-9-10.js?v=20260826-1")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-2.css?v=20260826-1")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script src="${u("/analytics-v69-3.js?v=20260823-1")}"></script><script src="${u("/meta-pixel-v69-2.js?v=20260822-1")}"></script><script type="module" src="${u("/app-v6-9-11.js?v=20260826-2")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
 }
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority = false) {

@@ -12,6 +12,7 @@ import type { CatalogV69, ProductV69 } from "../src/data-v69.js";
 
 test("la navegación separa marcas legacy del paraguas Productos Saludables", () => {
   const policy = defaultCatalogPolicyV69();
+  assert.equal(policy.navigation.showOutOfStockSort, true);
   const catalog = fixtureCatalog([
     product("eucerin", "Eucerin", []),
     product("ena-healthy", "ENA", [healthyFacet()]),
@@ -36,6 +37,9 @@ test("la navegación separa marcas legacy del paraguas Productos Saludables", ()
   assert.equal(navigation.at(-1)?.name, "Productos Saludables");
   assert.equal(navigation.at(-1)?.count, 3);
   assert.equal(navigation.some((entry) => entry.name === "Goodskin"), false);
+
+  policy.navigation.showOutOfStockSort = false;
+  assert.equal(validateCatalogPolicyV69(policy).navigation.showOutOfStockSort, false);
 });
 
 test("las reglas EAN validan checksum, unicidad y conflicto inclusión/exclusión", () => {

@@ -70,6 +70,7 @@ export type CatalogPolicyV69 = {
     };
     needs: string[];
     defaultSort: string;
+    showOutOfStockSort: boolean;
   };
   eanRules: {
     include: EanRuleV69[];
@@ -101,6 +102,7 @@ export function defaultCatalogPolicyV69(): CatalogPolicyV69 {
       },
       needs: [...DEFAULT_NEEDS_V69],
       defaultSort: "relevancia",
+      showOutOfStockSort: true,
     },
     eanRules: {
       include: [],
@@ -175,6 +177,7 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
       },
       needs,
       defaultSort,
+      showOutOfStockSort: navigation.showOutOfStockSort !== false,
     },
     eanRules: { include, exclude },
   };

@@ -37,6 +37,24 @@ const DEFAULT_CATALOG = path.join(ROOT, "data", "catalog-v69.json");
 const DEFAULT_EXCLUSIONS = path.join(ROOT, "data", "catalog-exclusions-v69.local.json");
 const PERMANENT_MISSING = /^(?:404|410)\b/;
 const GCS_SCOPE = "https://www.googleapis.com/auth/devstorage.read_write";
+const DERIVED_TAXONOMY_ALIASES_V69 = new Set([
+  "salud",
+  "saludables",
+  "nutricion",
+  "vitaminas",
+  "suplementos",
+  "bienestar",
+  "manchas",
+  "acne",
+  "piel-sensible",
+  "hidratacion",
+  "limpieza",
+  "solares",
+  "capilar",
+  "antiedad",
+  "reparacion",
+  "cuidado-diario",
+]);
 
 const SOURCE_FACETS_V69 = Object.freeze({
   "5930": facet("eucerin", "Eucerin", ["eucerin"]),
@@ -612,6 +630,9 @@ export function reindexCatalogV69(catalog, indexedAt = new Date().toISOString())
     needsIndexedAt: indexedAt,
     products: catalog.products.map((product) => {
       const categoryNames = (product.magentoCategories || []).map((category) => category.name);
+      const evidenceAliases = (product.aliases || []).filter(
+        (alias) => !DERIVED_TAXONOMY_ALIASES_V69.has(normalizeText(alias)),
+      );
       const viewTerms = (product.catalogFacets || []).flatMap((entry) => [
         entry.name,
         ...(entry.aliases || []),
@@ -619,7 +640,7 @@ export function reindexCatalogV69(catalog, indexedAt = new Date().toISOString())
       const evidence = unique([
         product.name,
         product.line,
-        ...(product.aliases || []),
+        ...evidenceAliases,
         ...categoryNames,
         ...viewTerms,
       ]);
@@ -630,7 +651,7 @@ export function reindexCatalogV69(catalog, indexedAt = new Date().toISOString())
         categorySlugs: [inferred.primaryCategory],
         needs: inferred.needs,
         aliases: unique([
-          ...(product.aliases || []),
+          ...evidenceAliases,
           product.name,
           product.brand?.name,
           ...(product.brand?.aliases || []),

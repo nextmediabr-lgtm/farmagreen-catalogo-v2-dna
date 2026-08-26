@@ -50,9 +50,13 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     assert.equal(await page.locator(".admin-brand-row").count(), 15);
     assert.match(await page.locator("#adminContent").innerText(), /Productos Saludables/);
     assert.equal(await page.locator('[data-action="add-brand"][data-name="L\'Oréal Revitalift"]').count(), 0);
+    const outOfStockSort = page.locator('[data-field="show-out-of-stock-sort"]');
+    assert.equal(await outOfStockSort.isChecked(), true);
+    await outOfStockSort.uncheck();
     await page.locator('.admin-brand-row input[data-action="toggle-brand"]').first().uncheck();
     await page.locator('[data-action="publish-navigation"]').click();
     await page.waitForFunction(() => document.querySelector("#adminContent")?.textContent?.includes("14 habilitadas"));
+    assert.doesNotMatch(await page.request.get(`${origin}/catalogo-v6-9?scope=todo`).then((response) => response.text()), /option value="sin-stock"/);
 
     await page.locator('[data-tab="ean"]').click();
     await page.locator('[data-ean-input="exclude"]').fill("3337875694469");
