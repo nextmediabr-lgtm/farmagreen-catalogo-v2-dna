@@ -510,6 +510,8 @@ test("Productos Saludables se integra como paraguas y preserva las marcas legacy
   const base = await baseCatalog();
   const selected = {
     ...base.products[0],
+    discountPercent: 50,
+    savingAmount: Math.max(1, base.products[0].savingAmount || 1),
     brand: { id: "6312", slug: "vitamin-way", name: "Vitamin Way", aliases: ["vitamin way"] },
     catalogFacets: [{
       slug: "productos-saludables",
@@ -528,7 +530,9 @@ test("Productos Saludables se integra como paraguas y preserva las marcas legacy
   assert.equal(bootPayload(html).context.view, "productos-saludables");
   assert.equal(firstGridProductId(html), selected.publicId);
   assert.match(html, /class="v67-brand-option on"[^>]*data-view="productos-saludables"/);
-  assert.match(html, /<strong>Productos Saludables<\/strong><small>1 productos · paraguas<\/small>/);
+  assert.match(html, /<span class="v67-brand-copy"><strong>Productos Saludables<\/strong><\/span>/);
+  assert.match(html, /<strong>Productos Saludables<\/strong><\/span>\s*<em>hasta \d+%<\/em>/);
+  assert.doesNotMatch(html, /<strong>Productos Saludables<\/strong><small>/);
   assert.doesNotMatch(html, /Vistas vivas/);
   const api = publicCatalogV69(catalog);
   assert.deepEqual(api.products[0].catalogViews, [{

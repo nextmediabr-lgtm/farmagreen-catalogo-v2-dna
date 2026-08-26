@@ -397,6 +397,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(api.navigation.brands.length, 16);
     assert.equal(api.navigation.brands.at(-1).name, "Productos Saludables");
     assert.equal(api.navigation.brands.some((entry) => entry.name === "Goodskin"), false);
+    const healthyOptionText = await page.locator(".v67-brand-option").last().textContent();
+    assert.match(healthyOptionText, /Productos Saludables/);
+    assert.doesNotMatch(healthyOptionText, /\d+\s+productos|paraguas/i);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "CeraVe" }).count(), 1);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Neutrogena" }).count(), 1);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "Vitamin Way" }).count(), 1);

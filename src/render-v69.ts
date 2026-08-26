@@ -390,7 +390,7 @@ function discoveryPanelV69(
             ${brandStats
               .map(
                 (item) => `<button class="v67-brand-option${context.brand === item.name || context.view === item.slug ? " on" : ""}" type="button" ${item.kind === "collection" ? `data-view="${e(item.slug)}" data-view-name="${e(item.name)}"` : `data-brand="${e(item.name)}"`} aria-pressed="${context.brand === item.name || context.view === item.slug}">
-                  <span class="v67-brand-copy"><strong>${e(item.name)}</strong><small>${item.count} productos${item.kind === "collection" ? " · paraguas" : ""}</small></span>
+                  <span class="v67-brand-copy"><strong>${e(item.name)}</strong>${item.kind === "collection" ? "" : `<small>${item.count} productos</small>`}</span>
                   ${item.best ? `<em>hasta ${Math.round(item.best)}%</em>` : ""}
                   ${optionCheckIcon()}
                 </button>`,
