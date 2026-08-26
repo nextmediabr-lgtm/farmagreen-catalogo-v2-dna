@@ -336,7 +336,7 @@ function validateEanRulesV69(value: unknown, field: string) {
     if (Number.isNaN(new Date(createdAt).getTime())) throw new Error(`La fecha de ${field}[${index}] es inválida.`);
     return {
       ean,
-      note: item.note === undefined ? "" : shortText(item.note, `${field}[${index}].note`, 240),
+      note: optionalText(item.note, `${field}[${index}].note`, 240),
       createdAt: new Date(createdAt).toISOString(),
     };
   });
@@ -364,6 +364,16 @@ function shortText(value: unknown, field: string, limit: number) {
   if (typeof value !== "string") throw new Error(`El campo ${field} debe ser texto.`);
   const cleaned = value.trim();
   if (!cleaned || cleaned.length > limit || /[\u0000-\u001f\u007f]/.test(cleaned)) {
+    throw new Error(`El campo ${field} es inválido.`);
+  }
+  return cleaned;
+}
+
+function optionalText(value: unknown, field: string, limit: number) {
+  if (value === undefined) return "";
+  if (typeof value !== "string") throw new Error(`El campo ${field} debe ser texto.`);
+  const cleaned = value.trim();
+  if (cleaned.length > limit || /[\u0000-\u001f\u007f]/.test(cleaned)) {
     throw new Error(`El campo ${field} es inválido.`);
   }
   return cleaned;

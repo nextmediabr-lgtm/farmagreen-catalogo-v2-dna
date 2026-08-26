@@ -160,6 +160,9 @@ export class CatalogAdminRuntimeV69 {
       throw new CatalogAdminConflictV69("La configuración cambió en otra sesión; recargá antes de publicar.");
     }
     const validatedPolicy = validateCatalogPolicyV69(policy);
+    if (JSON.stringify(validatedPolicy) === JSON.stringify(current.document.policy)) {
+      return current;
+    }
     const nextRevision = current.document.revision + 1;
     const at = this.#now().toISOString();
     const previousSnapshot: CatalogAdminSnapshotV69 = {

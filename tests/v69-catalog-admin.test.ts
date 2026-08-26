@@ -23,6 +23,15 @@ test("la memoria administrativa versiona, detecta conflictos y permite rollback"
     verifyAdminToken: async () => actor,
   });
   const initial = await runtime.current(true);
+  const unchanged = await runtime.publishPolicy({
+    policy: structuredClone(initial.document.policy),
+    expectedRevision: 0,
+    actor,
+    summary: "Sin cambios.",
+  });
+  assert.equal(unchanged.document.revision, 0);
+  assert.equal(unchanged.document.memory.length, 0);
+  assert.equal(unchanged.document.snapshots.length, 0);
   const changed = structuredClone(initial.document.policy);
   changed.navigation.featuredBrands[0].enabled = false;
   changed.navigation.umbrella.preserveBrandSlugs = changed.navigation.umbrella.preserveBrandSlugs.filter(

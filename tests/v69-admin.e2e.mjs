@@ -85,12 +85,15 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
 
     await page.locator('[data-tab="ean"]').click();
     await page.locator('[data-ean-input="exclude"]').fill("3337875694469");
-    await page.locator('[data-ean-note="exclude"]').fill("E2E local");
     await page.locator('[data-action="add-ean"][data-kind="exclude"]').click();
     assert.match(await page.locator("#adminContent").innerText(), /3337875694469/);
     await page.locator('[data-action="publish-ean"]').click();
     await page.waitForFunction(() => !document.body.classList.contains("is-busy"));
     await page.waitForFunction(() => document.querySelector("#adminContent")?.textContent?.includes("Retinol B3") || document.querySelector("#adminContent")?.textContent?.includes("Pendiente"));
+    const eanState = await page.request.get(`${origin}/api/admin-v69/state`, {
+      headers: { authorization: "Bearer admin-e2e-token" },
+    }).then((response) => response.json());
+    assert.equal(eanState.policy.eanRules.exclude.find((entry) => entry.ean === "3337875694469")?.note, "");
 
     await page.locator('[data-tab="operations"]').click();
     assert.match(await page.locator(".admin-no-deploy").innerText(), /no despliega/i);

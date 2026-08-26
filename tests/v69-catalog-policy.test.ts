@@ -56,10 +56,11 @@ test("las reglas EAN validan checksum, unicidad y conflicto inclusión/exclusió
   const policy = defaultCatalogPolicyV69();
   policy.eanRules.exclude.push({
     ean: "3337875694469",
-    note: "Ocultar",
+    note: "",
     createdAt: "2026-08-25T00:00:00.000Z",
   });
   const validated = validateCatalogPolicyV69(policy);
+  assert.equal(validated.eanRules.exclude[0].note, "");
   const catalog = fixtureCatalog([
     { ...product("excluded", "Goodskin", [healthyFacet()]), barcode: "3337875694469" },
     { ...product("visible", "Eucerin", []), barcode: "7793640992929" },
