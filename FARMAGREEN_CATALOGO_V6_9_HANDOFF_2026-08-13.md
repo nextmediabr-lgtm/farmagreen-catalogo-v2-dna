@@ -15,14 +15,14 @@ explícita en el turno correspondiente.
 | --- | --- |
 | Worktree dueño | `/Users/danielbernardes/Documents/New project/.worktrees/eucerin-catalogo-v69-local` |
 | Rama | `codex/v69-stock-ordering` |
-| Último commit técnico/test | `8c14622` — `feat(v69): add reversible brand exclusions` |
+| Último commit técnico/test | `c0855f2` — `fix(v69): allow empty EAN notes` |
 | Remoto | `origin/codex/v69-stock-ordering` |
 | Producción | <https://farmagreenrosario.web.app/> |
 | Proyecto GCP | `project-e2a7bc6d-e741-4d4e-85d` |
 | Servicio Cloud Run | `farmagreen-v69-preprod` |
 | Región | `southamerica-east1` |
-| Revisión activa | `farmagreen-v69-preprod-brandx-20260826`, 100% |
-| Imagen activa | build `8a5005a9-d72b-4543-9a1c-938e3dce6544` |
+| Revisión activa | `farmagreen-v69-preprod-eanfix-20260826`, 100% |
+| Imagen activa | build `b8ed7a8f-2a58-413f-91c2-eecb83899df3` |
 | Refresh comercial | `fg-v69-preprod-sync-0700-art` |
 | Discovery semanal | Job `farmagreen-v69-weekly-discovery`; Scheduler `fg-v69-weekly-discovery` |
 
@@ -39,10 +39,10 @@ Lectura directa del health/API el 26/8/2026 después del release final:
   "status": "ready",
   "reason": "current",
   "commerceSyncedAt": "2026-08-26T04:00:06.651Z",
-  "totalProducts": 1459,
+  "totalProducts": 1285,
   "availabilitySummary": {
-    "available": 1227,
-    "unavailable": 232,
+    "available": 1097,
+    "unavailable": 188,
     "unverified": 0
   },
   "analytics": {
@@ -56,7 +56,8 @@ Lectura directa del health/API el 26/8/2026 después del release final:
 
 Controles adicionales:
 
-- 1.459 DTO públicos y 1.459 `publicId` únicos;
+- 1.459 fichas canónicas en el snapshot base;
+- 1.285 DTO y `publicId` públicos después de la política dinámica vigente;
 - 140 marcas reales;
 - 664 productos en la vista transversal `Productos Saludables`;
 - 685 rutas Magento públicas;
@@ -344,12 +345,16 @@ versión anterior.
 - `Deshabilitar` una marca técnica elimina sus productos de catálogo, búsqueda,
   necesidades, PDP, sitemap y conteos; `Rehabilitar` los restaura. Ninguna marca
   queda excluida automáticamente ni por tener pocos SKU;
+- Nota es opcional en reglas EAN; una nota vacía se persiste como `""` sin
+  relajar checksum, tipo, longitud ni caracteres de control;
+- guardar una política idéntica devuelve la revisión vigente y no agrega
+  snapshots o eventos falsos;
 - guarda configuración, memoria, snapshots y rollback en GCS;
 - puede lanzar refresh comercial o el Job semanal con IAM mínimo;
 - no edita precios, stock, colores, código, analítica o usuarios y no despliega;
-- Codex Agent Manager registró el recibo post-deploy `8c14622`, build
-  `8a5005a9-d72b-4543-9a1c-938e3dce6544`, revisión
-  `farmagreen-v69-preprod-brandx-20260826`, `healthy=true`.
+- Codex Agent Manager registró el recibo post-deploy `c0855f2`, build
+  `b8ed7a8f-2a58-413f-91c2-eecb83899df3`, revisión
+  `farmagreen-v69-preprod-eanfix-20260826`, `healthy=true`.
 
 El zócalo comercial fijo para PDP móvil sigue siendo un concepto pendiente. No
 se implementó. Conserva como referencia dos líneas azules `#1557FF` de 6 px,
@@ -411,8 +416,9 @@ vinculación externa GA4–Maps hayan quedado guardados. Tratarlos como pendient
 | `5fb3532` | Agrega `Sin stock` temporal y endurece la evidencia viva de Nutrición. |
 | `f2826b7` | Simplifica el tile de Productos Saludables conservando el mejor descuento. |
 | `8c14622` | Agrega exclusión y rehabilitación reversible de marcas completas. |
+| `c0855f2` | Permite notas EAN vacías y evita revisiones sin cambios. |
 
-El release final se construyó desde `8c14622`.
+El release final se construyó desde `c0855f2`.
 
 ## 13. Verificación contemporánea
 
@@ -522,12 +528,13 @@ gcloud scheduler jobs describe fg-v69-weekly-discovery \
 
 ## 17. Cierre
 
-V6.9 ya no depende de una foto fija. Producción publica 1.459 productos, 1.227
-disponibles, 232 para consultar y 0 sin verificar. `Productos Saludables` es una
-vista transversal de 664 fichas; el catálogo conserva SKU canónico único y 140
-marcas reales. El scan semanal del lunes 04:00 ART reconstruye altas, bajas,
+V6.9 ya no depende de una foto fija. El snapshot conserva 1.459 fichas; la
+política dinámica vigente publica 1.285, con 1.097 disponibles, 188 para
+consultar y 0 sin verificar. `Productos Saludables` tiene 664 membresías base y
+490 visibles después de exclusiones; el catálogo conserva SKU canónico único y
+140 marcas reales. El scan semanal del lunes 04:00 ART reconstruye altas, bajas,
 búsqueda, necesidades, Magento e imágenes; el refresh 07:00/14:00 mantiene el
 estado comercial Rosario/STOM. Cloud Run sirve
-`farmagreen-v69-preprod-brandx-20260826` al 100%; la imagen del servicio y el
-Job semanal corresponde al build `8a5005a9-d72b-4543-9a1c-938e3dce6544`, y los
+`farmagreen-v69-preprod-eanfix-20260826` al 100%; la imagen del servicio y el
+Job semanal corresponde al build `b8ed7a8f-2a58-413f-91c2-eecb83899df3`, y los
 gates local/remoto quedaron verdes (148/148).

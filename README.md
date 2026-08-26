@@ -59,9 +59,13 @@ V69_AGENT_MANAGER_TOKEN=... npm run record:deploy:v69 -- \
 
 ## Estado y continuidad
 
-Producción publica 1.459 productos: 1.227 disponibles, 232 para consultar y
-0 sin verificar. Meta Pixel/CAPI, GA4 y la etiqueta Google Ads correcta
-`AW-18405204387` están desplegados.
+El snapshot productivo conserva 1.459 fichas canónicas. La política dinámica
+vigente publica 1.285: 1.097 disponibles, 188 para consultar y 0 sin verificar,
+después de exclusiones reversibles por marca y EAN. Meta Pixel/CAPI, GA4 y la
+etiqueta Google Ads correcta `AW-18405204387` están desplegados.
+
+Las notas EAN son opcionales. Guardar una política idéntica no crea una revisión
+ni memoria falsa.
 
 La disponibilidad/precio se actualiza todos los días a las 07:00 y 14:00 ART.
 El catálogo completo se reconcilia los lunes a las 04:00 ART: detecta altas y
