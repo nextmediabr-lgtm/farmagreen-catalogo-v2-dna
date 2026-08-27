@@ -800,6 +800,14 @@ test("el refresh comercial sigue la membresía transversal sin convertir la vist
           sku: "VW-CROSS-1",
           brand: { id: "6312", slug: "vitamin-way", name: "Vitamin Way", aliases: ["vitamin way"] },
           source: { url: sourceUrl },
+          images: {
+            card: "https://storage.googleapis.com/images/catalog/product.jpg",
+            detail: "https://storage.googleapis.com/images/catalog/product.jpg",
+            responsive: {
+              card: { width: 900, height: 700, jpeg: { "320": "https://storage.googleapis.com/images/catalog/product-320.jpg" } },
+              detail: { width: 900, height: 700, jpeg: { "640": "https://storage.googleapis.com/images/catalog/product-640.jpg" } },
+            },
+          },
           sourceMemberships: [{
             sourceId: "9100",
             viewSlug: "productos-saludables",
@@ -840,6 +848,12 @@ test("el refresh comercial sigue la membresía transversal sin convertir la vist
   );
   assert.equal(result.products[0].availability, "limited");
   assert.equal(result.products[0].brand.name, "Vitamin Way");
+  assert.deepEqual(result.products[0].images.responsive.card.jpeg, {
+    "320": "https://storage.googleapis.com/images/catalog/product-320.jpg",
+  });
+  assert.deepEqual(result.products[0].images.responsive.detail.jpeg, {
+    "640": "https://storage.googleapis.com/images/catalog/product-640.jpg",
+  });
   assert.equal(result.commerceSync.metrics.matchedByUrl, 1);
 });
 
