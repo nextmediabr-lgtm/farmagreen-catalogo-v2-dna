@@ -11,6 +11,7 @@ const MAX_IMAGE_DIMENSION = 12_000;
 const MAX_DERIVATIVE_BYTES = 4_000_000;
 const DEFAULT_CONCURRENCY = 8;
 const RESPONSIVE_WIDTHS = [320, 640, 1000];
+const JPEG_RESPONSIVE_WIDTHS = [320, 640];
 
 export function privateImageUrlV69(value) {
   try {
@@ -97,9 +98,9 @@ export function imageObjectNameV69(sourceUrl, prefix, contentType) {
 
 export function responsiveObjectNameV69(sourceUrl, prefix, width, format) {
   if (!RESPONSIVE_WIDTHS.includes(Number(width))) throw new Error(`Ancho responsivo inválido: ${width}`);
-  if (!['webp', 'avif'].includes(format)) throw new Error(`Formato responsivo inválido: ${format}`);
+  if (!["webp", "avif", "jpeg"].includes(format)) throw new Error(`Formato responsivo inválido: ${format}`);
   const digest = crypto.createHash("sha256").update(sourceUrl).digest("hex").slice(0, 32);
-  return `${cleanPrefix(prefix)}/${digest}-${width}.${format}`;
+  return `${cleanPrefix(prefix)}/${digest}-${width}.${format === "jpeg" ? "jpg" : format}`;
 }
 
 export function rewriteCatalogImagesV69(catalog, replacements, responsiveBySource = new Map()) {
@@ -199,7 +200,7 @@ export async function prepareGcpCatalogV69({
       await writePreparedAsset(path.join(storeDirectory, path.basename(objectName)), body);
       replacements.set(sourceUrl, `https://storage.googleapis.com/${bucket}/${objectName}`);
     }
-    const variants = { width: sourceWidth, height: sourceHeight, webp: {}, avif: {} };
+    const variants = { width: sourceWidth, height: sourceHeight, webp: {}, avif: {}, jpeg: {} };
     for (const requestedWidth of RESPONSIVE_WIDTHS) {
       const width = Math.min(requestedWidth, sourceWidth);
       if (variants.webp[String(width)] && variants.avif[String(width)]) continue;
@@ -216,6 +217,21 @@ export async function prepareGcpCatalogV69({
         generatedDerivatives += 1;
         variants[format][String(info.width)] = `https://storage.googleapis.com/${bucket}/${objectName}`;
       }
+    }
+    for (const requestedWidth of JPEG_RESPONSIVE_WIDTHS) {
+      const width = Math.min(requestedWidth, sourceWidth);
+      if (variants.jpeg[String(width)]) continue;
+      const pipeline = sharp(body, inputOptions).rotate().resize({ width, withoutEnlargement: true });
+      const { data, info } = await pipeline
+        .jpeg({ quality: 82, progressive: true, mozjpeg: true })
+        .toBuffer({ resolveWithObject: true });
+      if (!data.length || data.length > derivativeLimit) {
+        throw new Error(`Derivado de imagen demasiado grande: ${sourceUrl}`);
+      }
+      const objectName = responsiveObjectNameV69(sourceUrl, prefix, requestedWidth, "jpeg");
+      await writePreparedAsset(path.join(storeDirectory, path.basename(objectName)), data);
+      generatedDerivatives += 1;
+      variants.jpeg[String(info.width)] = `https://storage.googleapis.com/${bucket}/${objectName}`;
     }
     responsiveBySource.set(sourceUrl, variants);
   });
@@ -234,7 +250,7 @@ export async function prepareGcpCatalogV69({
   if (invalidImages.length) throw new Error(`Quedaron ${invalidImages.length} imágenes fuera de GCS.`);
   const incompleteResponsive = rewritten.products.filter((product) =>
     [product.images?.responsive?.card, product.images?.responsive?.detail].some(
-      (set) => !set?.width || !set?.height || Object.keys(set.webp || {}).length < 1 || Object.keys(set.avif || {}).length < 1,
+      (set) => !set?.width || !set?.height || Object.keys(set.webp || {}).length < 1 || Object.keys(set.avif || {}).length < 1 || Object.keys(set.jpeg || {}).length < 1,
     ),
   );
   if (incompleteResponsive.length) {

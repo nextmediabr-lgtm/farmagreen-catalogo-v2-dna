@@ -7,6 +7,7 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 COPY scripts/build-v69-css.mjs ./scripts/build-v69-css.mjs
+COPY scripts/build-v69-client.mjs ./scripts/build-v69-client.mjs
 COPY public ./public
 RUN npm run build
 

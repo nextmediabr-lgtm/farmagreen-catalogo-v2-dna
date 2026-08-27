@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import { catalog, product, similar } from "./data.js";
 import { catalogPage, notFound, productPage } from "./render.js";
 import { catalogPageV67, catalogV67, notFoundPageV67, productPageV67, productV67, similarV67 } from "./render-v67.js";
@@ -18,6 +19,8 @@ const DEFAULT_ROUTE = process.env.DEFAULT_ROUTE || "/catalogo/";
 const MIME: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".png": "image/png",
 };
 const PUBLIC_ASSETS = new Set([
@@ -44,7 +47,9 @@ const PUBLIC_ASSETS = new Set([
   "/app-v6-9-9.js",
   "/app-v6-9-10.js",
   "/app-v6-9-11.js",
+  "/app-v6-9-12.js",
   "/styles-v6-9-2.css",
+  "/styles-v6-9-3.css",
   "/admin-v69-1.js",
   "/admin-v69-2.js",
   "/admin-v69-3.js",
@@ -53,10 +58,14 @@ const PUBLIC_ASSETS = new Set([
   "/analytics-v69-1.js",
   "/analytics-v69-2.js",
   "/analytics-v69-3.js",
+  "/analytics-v69-4.js",
   "/meta-pixel-v69.js",
   "/meta-pixel-v69-1.js",
   "/meta-pixel-v69-2.js",
+  "/meta-pixel-v69-3.js",
+  "/measurement-loader-v69-1.js",
   "/logo_farmagreen.png",
+  "/logo_farmagreen-v69-1.png",
   "/farmagreen-social-preview-v69.png",
   "/farmagreen-social-preview-v69-social-2.png",
 ]);
@@ -73,7 +82,9 @@ const PUBLIC_ALIASES = new Map([
   ["/app-v6-9-9.js", "/app-v6-9.js"],
   ["/app-v6-9-10.js", "/app-v6-9.js"],
   ["/app-v6-9-11.js", "/app-v6-9.js"],
+  ["/app-v6-9-12.js", "/app-v6-9-compat.js"],
   ["/styles-v6-9-2.css", "/styles-v6-9-1.css"],
+  ["/styles-v6-9-3.css", "/styles-v6-9-1.css"],
   ["/admin-v69-1.js", "/admin-v69.js"],
   ["/admin-v69-2.js", "/admin-v69.js"],
   ["/admin-v69-3.js", "/admin-v69.js"],
@@ -81,10 +92,22 @@ const PUBLIC_ALIASES = new Map([
   ["/analytics-v69-1.js", "/analytics-v69.js"],
   ["/analytics-v69-2.js", "/analytics-v69.js"],
   ["/analytics-v69-3.js", "/analytics-v69.js"],
+  ["/analytics-v69-4.js", "/analytics-v69-compat.js"],
   ["/meta-pixel-v69-1.js", "/meta-pixel-v69.js"],
   ["/meta-pixel-v69-2.js", "/meta-pixel-v69.js"],
+  ["/meta-pixel-v69-3.js", "/meta-pixel-v69-compat.js"],
+  ["/measurement-loader-v69-1.js", "/measurement-loader-v69.js"],
+  ["/logo_farmagreen-v69-1.png", "/logo_farmagreen.png"],
   ["/farmagreen-social-preview-v69-social-2.png", "/farmagreen-social-preview-v69.png"],
 ]);
+const IMMUTABLE_PUBLIC_ASSETS = new Set(PUBLIC_ALIASES.keys());
+type EncodedStaticAsset = {
+  source: Buffer;
+  br?: Buffer;
+  gzip?: Buffer;
+  compressible: boolean;
+};
+const STATIC_ASSET_CACHE = new Map<string, EncodedStaticAsset>();
 
 export function app(environment: Environment = process.env) {
   const commerceRuntimeV69 = createCommerceRuntimeV69(environment);
@@ -127,20 +150,25 @@ export function app(environment: Environment = process.env) {
 
       if (PUBLIC_ASSETS.has(pathname)) {
         const file = path.join(PUBLIC, PUBLIC_ALIASES.get(pathname) || pathname);
+        const contentType = MIME[path.extname(file)] || "application/octet-stream";
         const localV69Asset =
           environment.V69_LOCAL_PREVIEW === "1" &&
-          (pathname.includes("v6-9") || pathname.startsWith("/admin-v69") || pathname.startsWith("/meta-pixel-v69") || pathname.startsWith("/analytics-v69"));
+          (pathname.includes("v6-9") || pathname.includes("v69"));
+        const asset = localV69Asset
+          ? encodedStaticAsset(await fs.readFile(file), contentType)
+          : await cachedStaticAsset(file, contentType);
         sendBinary(
           response,
-          await fs.readFile(file),
-          MIME[path.extname(file)] || "application/octet-stream",
+          asset,
+          contentType,
           localV69Asset
             ? "no-store"
-            : pathname === "/farmagreen-social-preview-v69-social-2.png" || pathname === "/app-v6-9-r20260803.js" || pathname === "/app-v6-9-1.js" || pathname === "/app-v6-9-2.js" || pathname === "/app-v6-9-3.js" || pathname === "/app-v6-9-4.js" || pathname === "/app-v6-9-5.js" || pathname === "/app-v6-9-6.js" || pathname === "/app-v6-9-7.js" || pathname === "/app-v6-9-8.js" || pathname === "/app-v6-9-9.js" || pathname === "/app-v6-9-10.js" || pathname === "/app-v6-9-11.js" || pathname === "/admin-v69-1.js" || pathname === "/admin-v69-2.js" || pathname === "/admin-v69-3.js" || pathname === "/admin-v69-1.css" || pathname === "/analytics-v69-1.js" || pathname === "/analytics-v69-2.js" || pathname === "/analytics-v69-3.js" || pathname === "/meta-pixel-v69-1.js" || pathname === "/meta-pixel-v69-2.js" || pathname === "/styles-v6-9-1.css" || pathname === "/styles-v6-9-2.css"
+            : IMMUTABLE_PUBLIC_ASSETS.has(pathname)
             ? "public, max-age=31536000, immutable"
             : pathname.includes("v6-9")
               ? "public, max-age=300, s-maxage=300, stale-while-revalidate=60"
               : "no-cache",
+          request,
         );
         return;
       }
@@ -198,15 +226,54 @@ function sendText(response: http.ServerResponse, body: string, status: number) {
   response.end(body);
 }
 
-function sendBinary(response: http.ServerResponse, body: Buffer, contentType: string, cacheControl = "no-cache") {
+async function cachedStaticAsset(file: string, contentType: string) {
+  const existing = STATIC_ASSET_CACHE.get(file);
+  if (existing) return existing;
+  const asset = encodedStaticAsset(await fs.readFile(file), contentType);
+  STATIC_ASSET_CACHE.set(file, asset);
+  return asset;
+}
+
+function encodedStaticAsset(source: Buffer, contentType: string): EncodedStaticAsset {
+  return {
+    source,
+    compressible: /^(?:text\/|application\/(?:javascript|json))/.test(contentType),
+  };
+}
+
+function sendBinary(
+  response: http.ServerResponse,
+  body: EncodedStaticAsset,
+  contentType: string,
+  cacheControl = "no-cache",
+  request?: http.IncomingMessage,
+) {
+  const accepted = String(request?.headers["accept-encoding"] || "").toLowerCase();
+  const canCompress = body.compressible && body.source.length >= 1_024;
+  let encoded = body.source;
+  let encoding = "";
+  if (canCompress && accepted.includes("br")) {
+    body.br ||= brotliCompressSync(body.source, {
+      params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 },
+    });
+    encoded = body.br;
+    encoding = "br";
+  } else if (canCompress && accepted.includes("gzip")) {
+    body.gzip ||= gzipSync(body.source, { level: 6 });
+    encoded = body.gzip;
+    encoding = "gzip";
+  }
   response.writeHead(
     200,
     headersV68({
       "content-type": contentType,
       "cache-control": cacheControl,
+      "content-length": String(encoded.length),
+      ...(canCompress ? { vary: "accept-encoding" } : {}),
+      ...(encoding ? { "content-encoding": encoding } : {}),
     }),
   );
-  response.end(body);
+  response.end(request?.method === "HEAD" ? undefined : encoded);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

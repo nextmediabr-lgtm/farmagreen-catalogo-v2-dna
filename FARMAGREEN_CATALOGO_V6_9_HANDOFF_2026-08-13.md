@@ -1,8 +1,8 @@
 # FarmaGreen Catálogo V6.9 — handoff canónico de producción
 
 Creado: 13 de agosto de 2026
-Última actualización: 26 de agosto de 2026
-Estado: V6.9 desplegada y saludable; panel GCP, catálogo vivo semanal, stock diario y medición digital activos.
+Última actualización: 27 de agosto de 2026
+Estado: V6.9 desplegada y saludable; mejora de performance verificada localmente y todavía no desplegada.
 Propósito: punto único de continuidad para código, datos, GCP, búsqueda, taxonomía, exclusiones, navegación, imágenes y analítica.
 
 Este documento describe estado; no amplía autorizaciones. Commit, push, deploy,
@@ -526,7 +526,51 @@ gcloud scheduler jobs describe fg-v69-weekly-discovery \
    stock” en Ordenar` en `/admin-v6-9` y usar `Guardar y publicar`. No requiere
    commit ni deploy y no altera por sí mismo las exclusiones EAN.
 
-## 17. Cierre
+## 17. Performance y compatibilidad — cambio local pendiente de release
+
+El 27/8 se implementó y verificó localmente un paquete de performance que aún
+no forma parte de producción:
+
+- build público ES2017 generado por `scripts/build-v69-client.mjs`; el cliente
+  resultante no contiene optional chaining, nullish coalescing, `Array.at` ni
+  `String.matchAll`;
+- las 48 fichas SSR quedan interactivas sin descargar el DTO completo; la API
+  `/api/catalog-v6-9` se carga una sola vez al buscar, filtrar, ordenar o cargar
+  más. Un enlace profundo `pagina=N` hidrata después del primer render;
+- Google/GA4/Ads y Meta Pixel se inician después de `load` en tiempo ocioso o
+  ante la primera interacción. Las colas `__FG_GA_QUEUE` y `__FG_META_QUEUE`
+  preservan eventos tempranos;
+- DTO, sitemap y HTML se cachean en memoria por objeto snapshot y revisión más
+  firma de política. La caché HTML es LRU acotada y reutiliza las variantes
+  Brotli/gzip ya codificadas;
+- JS/CSS versionados se sirven con Brotli/gzip; el logo usa una URL inmutable
+  común para favicon y cabecera;
+- el pipeline genera JPEG responsive 320/640 además de AVIF/WebP y el `<picture>`
+  lo usa como fallback para Safari sin formatos modernos.
+
+Prueba local completa: `npm run verify:v69`, 106 lógica + 42 sync/GCP + 3 E2E,
+151/151 verdes. La prueba de red asegura 0 requests al DTO en la entrada, 0
+terceros antes de idle/interacción y exactamente 1 request al DTO en la primera
+búsqueda. La revisión pre-commit estructurada no reportó bloqueantes.
+
+Microbenchmark local, no comparable de forma absoluta con la red de Cloud Run:
+la raíz pasó de 243 ms en el primer cálculo a ~0,5 ms cacheada y el DTO de 37 ms
+a ~0,5 ms. Con CPU/red sintéticos y terceros retenidos hasta idle, Android 2017
+marcó FCP 0,82 s, LCP 1,43 s y 535 KB; iPhone 6 sintético marcó FCP 1,11 s,
+LCP 1,39 s y 325 KB. En ambos casos hubo 48 fichas, 0 carga del DTO y TBT 0.
+
+Gates pendientes antes del release:
+
+1. generar y subir el backfill JPEG de las fichas existentes junto con el
+   snapshot que referencia esos objetos;
+2. desplegar una revisión candidata sin tráfico y repetir health, API, E2E y
+   benchmark contra su URL;
+3. validar un Android físico viejo y Safari real en iPhone, o BrowserStack con
+   una cuenta aprobada. Chromium con viewport/CPU/red de iPhone no prueba WebKit.
+
+No se hizo push, deploy, backfill GCS ni cambio de Cloud Run en esta etapa.
+
+## 18. Cierre
 
 V6.9 ya no depende de una foto fija. El snapshot conserva 1.459 fichas; la
 política dinámica vigente publica 1.285, con 1.097 disponibles, 188 para

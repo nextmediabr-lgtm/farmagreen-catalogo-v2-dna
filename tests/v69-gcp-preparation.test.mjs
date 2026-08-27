@@ -34,6 +34,7 @@ test("las imágenes nuevas usan un prefijo V6.9 determinista", () => {
   assert.match(objectName, /^v69\/catalog-images\/[a-f0-9]{32}\.jpg$/);
   assert.equal(objectName, imageObjectNameV69(source, "v69/catalog-images", "image/jpeg"));
   assert.match(responsiveObjectNameV69(source, "v69/catalog-images", 320, "webp"), /^v69\/catalog-images\/[a-f0-9]{32}-320\.webp$/);
+  assert.match(responsiveObjectNameV69(source, "v69/catalog-images", 320, "jpeg"), /^v69\/catalog-images\/[a-f0-9]{32}-320\.jpg$/);
   assert.throws(() => responsiveObjectNameV69(source, "v69/catalog-images", 500, "webp"), /Ancho responsivo inválido/);
 });
 
@@ -49,7 +50,7 @@ test("la reescritura no altera imágenes existentes del Store compartido", () =>
   );
 });
 
-test("la preparación local conserva originales y genera WebP/AVIF 320, 640 y 1000", async () => {
+test("la preparación local conserva originales y genera WebP/AVIF más JPEG 320/640", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "farmagreen-v691-images-"));
   const inputPath = path.join(directory, "catalog.json");
   const exclusionsPath = path.join(directory, "exclusions.json");
@@ -75,7 +76,7 @@ test("la preparación local conserva originales y genera WebP/AVIF 320, 640 y 10
     });
     assert.equal(result.products, 2);
     assert.equal(result.downloadedImages, 2);
-    assert.equal(result.generatedDerivatives, 12);
+    assert.equal(result.generatedDerivatives, 16);
     const prepared = JSON.parse(await readFile(outputPath, "utf8"));
     assert.doesNotMatch(JSON.stringify(prepared.products.map((product) => product.images)), /gpsfarma/i);
     for (const product of prepared.products) {
@@ -83,11 +84,12 @@ test("la preparación local conserva originales y genera WebP/AVIF 320, 640 y 10
         const set = product.images.responsive[kind];
         assert.deepEqual(Object.keys(set.webp), ["320", "640", "1000"]);
         assert.deepEqual(Object.keys(set.avif), ["320", "640", "1000"]);
+        assert.deepEqual(Object.keys(set.jpeg), ["320", "640"]);
         assert.equal(set.width, 1200);
         assert.equal(set.height, 800);
       }
     }
-    assert.equal((await readdir(storeDirectory)).length, 13);
+    assert.equal((await readdir(storeDirectory)).length, 17);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

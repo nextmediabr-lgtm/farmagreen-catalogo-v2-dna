@@ -33,6 +33,7 @@ import {
   catalogHealthV69,
   catalogReadyForRuntimeV69,
   normalizeMetaEventV69,
+  responsiveJpegImagesReadyV691,
   responsiveImagesReadyV691,
   schedulerIdempotencyKeyV69,
   sourceImageBridgeEnabled,
@@ -186,6 +187,8 @@ function bootPayload(html: string) {
     products?: Array<Record<string, unknown>>;
     totalProducts?: number;
     dataEndpoint?: string;
+    catalogRoute?: string;
+    initialResultCount?: number;
   };
 }
 
@@ -439,6 +442,10 @@ test("V6.9.1 publica imágenes responsivas con dimensiones y prioridad sólo par
       "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/sample-320.avif",
       "640": "https://storage.googleapis.com/farmagreen-catalog-images/v69/sample-640.avif",
     },
+    jpeg: {
+      "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/sample-320.jpg",
+      "640": "https://storage.googleapis.com/farmagreen-catalog-images/v69/sample-640.jpg",
+    },
   };
   const prepared = {
     ...catalog,
@@ -450,6 +457,7 @@ test("V6.9.1 publica imágenes responsivas con dimensiones y prioridad sólo par
   const html = catalogPageV69(prepared, new URLSearchParams({ scope: "todo" }), "https://farmagreenrosario.web.app");
   assert.match(html, /<source type="image\/avif" srcset="[^"]+320w, [^"]+640w" sizes="[^"]+">/);
   assert.match(html, /<source type="image\/webp" srcset="[^"]+320w, [^"]+640w" sizes="[^"]+">/);
+  assert.match(html, /<source type="image\/jpeg" srcset="[^"]+320w, [^"]+640w" sizes="[^"]+">/);
   assert.match(html, /<img [^>]*width="1000" height="1000"[^>]*loading="eager" fetchpriority="high">/);
   assert.match(html, /<img [^>]*width="1000" height="1000"[^>]*loading="lazy">/);
   const api = publicCatalogV69(prepared);
@@ -484,8 +492,8 @@ test("SSR V6.9 respeta los órdenes, filtra sin stock y mantiene marca/necesidad
       assert.doesNotMatch(html, /Disponible para Entrega/);
     }
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-11\.js/);
-    assert.match(html, /styles-v6-9-2\.css/);
+    assert.match(html, /app-v6-9-12\.js/);
+    assert.match(html, /styles-v6-9-3\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
     assert.doesNotMatch(html, /gpsfarma/i);
@@ -660,6 +668,50 @@ test("V6.9.1 consolida los cuatro CSS y conserva la paleta visual aprobada", asy
   assert.match(css, /:focus-visible/);
 });
 
+test("el build público V6.9 es parseable por Safari antiguo y conserva las colas de medición", async () => {
+  const [appSource, analyticsSource, metaSource, loaderSource] = await Promise.all([
+    readFile(path.join(ROOT, "public", "app-v6-9-compat.js"), "utf8"),
+    readFile(path.join(ROOT, "public", "analytics-v69-compat.js"), "utf8"),
+    readFile(path.join(ROOT, "public", "meta-pixel-v69-compat.js"), "utf8"),
+    readFile(path.join(ROOT, "public", "measurement-loader-v69.js"), "utf8"),
+  ]);
+  for (const source of [appSource, analyticsSource, metaSource]) {
+    assert.doesNotMatch(source, /\?\.|\?\?|\.at\s*\(|\.matchAll\s*\(/);
+  }
+  assert.doesNotMatch(appSource, /toggleAttribute\s*\(/);
+  assert.match(appSource, /v69CatalogLoaded/);
+  assert.match(appSource, /ensureCatalogReady/);
+  assert.match(analyticsSource, /__FG_GA_QUEUE/);
+  assert.match(metaSource, /__FG_META_QUEUE/);
+  assert.match(loaderSource, /requestIdleCallback/);
+  assert.match(loaderSource, /touchstart/);
+  assert.doesNotMatch(loaderSource, /googletagmanager\.com|connect\.facebook\.net/);
+});
+
+test("los activos versionados V6.9 usan Brotli y caché inmutable fuera del preview local", async () => {
+  const server = app({ NODE_ENV: "test", V69_LOCAL_PREVIEW: "0" });
+  const origin = await listen(server);
+  try {
+    const [appResponse, cssResponse, logoResponse] = await Promise.all([
+      fetch(`${origin}/app-v6-9-12.js`, { headers: { "accept-encoding": "br" } }),
+      fetch(`${origin}/styles-v6-9-3.css`, { headers: { "accept-encoding": "br" } }),
+      fetch(`${origin}/logo_farmagreen-v69-1.png`, { headers: { "accept-encoding": "br" } }),
+    ]);
+    for (const response of [appResponse, cssResponse]) {
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("content-encoding"), "br");
+      assert.equal(response.headers.get("vary"), "accept-encoding");
+      assert.equal(response.headers.get("cache-control"), "public, max-age=31536000, immutable");
+      assert.ok((await response.text()).length > 1_000);
+    }
+    assert.equal(logoResponse.status, 200);
+    assert.equal(logoResponse.headers.get("content-encoding"), null);
+    assert.equal(logoResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  } finally {
+    await close(server);
+  }
+});
+
 test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza producción", async () => {
   const base = await baseCatalog();
   const fixture = await privateFixture(base);
@@ -683,10 +735,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-11.js`),
-      fetch(`${origin}/analytics-v69-3.js`),
-      fetch(`${origin}/meta-pixel-v69-2.js`),
-      fetch(`${origin}/styles-v6-9-2.css`),
+      fetch(`${origin}/app-v6-9-12.js`),
+      fetch(`${origin}/analytics-v69-4.js`),
+      fetch(`${origin}/meta-pixel-v69-3.js`),
+      fetch(`${origin}/styles-v6-9-3.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
       fetch(`${origin}/robots.txt`),
       fetch(`${origin}/sitemap.xml`),
@@ -783,12 +835,13 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(home, /Farmacia y Dermocosmetica, Catalogo de Precios y Promociones/);
     assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
-    assert.match(root, /styles-v6-9-2\.css/);
-    assert.match(root, /app-v6-9-11\.js/);
-    assert.match(root, /analytics-v69-3\.js/);
-    assert.match(root, /meta-pixel-v69-2\.js/);
-    assert.ok(root.indexOf("analytics-v69-3.js") < root.indexOf("meta-pixel-v69-2.js"));
-    assert.ok(root.indexOf("meta-pixel-v69-2.js") < root.indexOf("app-v6-9-11.js"));
+    assert.match(root, /styles-v6-9-3\.css/);
+    assert.match(root, /measurement-loader-v69-1\.js/);
+    assert.match(root, /app-v6-9-12\.js/);
+    assert.match(root, /data-analytics-src="\/analytics-v69-4\.js"/);
+    assert.match(root, /data-meta-src="\/meta-pixel-v69-3\.js"/);
+    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-12.js"));
+    assert.equal((root.match(/logo_farmagreen-v69-1\.png/g) || []).length >= 2, true);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
     assert.ok(api.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));
@@ -981,11 +1034,42 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     })),
   };
   assert.equal(responsiveImagesReadyV691(responsiveReady.products[0]), true);
+  assert.equal(responsiveJpegImagesReadyV691(responsiveReady.products[0]), false);
   assert.equal(
     catalogReadyForRuntimeV69(responsiveReady, {
       NODE_ENV: "production",
       V69_ENABLE_PRODUCTION: "1",
       V691_REQUIRE_RESPONSIVE_IMAGES: "1",
+      PUBLIC_ORIGIN: "https://farmagreen-v69-preprod.example",
+    }),
+    true,
+  );
+  const jpegReady = {
+    ...responsiveReady,
+    products: responsiveReady.products.map((product) => ({
+      ...product,
+      images: {
+        ...product.images,
+        responsive: {
+          card: {
+            ...product.images.responsive?.card,
+            jpeg: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/card-320.jpg" },
+          },
+          detail: {
+            ...product.images.responsive?.detail,
+            jpeg: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/detail-320.jpg" },
+          },
+        },
+      },
+    })),
+  };
+  assert.equal(responsiveJpegImagesReadyV691(jpegReady.products[0]), true);
+  assert.equal(
+    catalogReadyForRuntimeV69(jpegReady, {
+      NODE_ENV: "production",
+      V69_ENABLE_PRODUCTION: "1",
+      V691_REQUIRE_RESPONSIVE_IMAGES: "1",
+      V691_REQUIRE_JPEG_RESPONSIVE_IMAGES: "1",
       PUBLIC_ORIGIN: "https://farmagreen-v69-preprod.example",
     }),
     true,

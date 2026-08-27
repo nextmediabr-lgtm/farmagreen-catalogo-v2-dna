@@ -47,6 +47,80 @@ const V69_CSP =
 const PUBLIC_HTML_CACHE = "public, max-age=0, s-maxage=60, stale-while-revalidate=30";
 const PUBLIC_CATALOG_CACHE = "public, max-age=0, s-maxage=60, stale-while-revalidate=30";
 const PUBLIC_DISCOVERY_CACHE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=300";
+const MAX_HTML_RESPONSES_PER_SNAPSHOT = 32;
+
+type EncodedResponseV69 = {
+  source: Buffer;
+  br?: Buffer;
+  gzip?: Buffer;
+};
+
+type SnapshotResponseCacheV69 = {
+  policyKey: string;
+  presented?: CatalogV69;
+  publicCatalog?: ReturnType<typeof publicCatalogV69>;
+  publicCatalogBody?: EncodedResponseV69;
+  sitemapBody?: EncodedResponseV69;
+  html: Map<string, EncodedResponseV69>;
+  htmlPending: Map<string, Promise<EncodedResponseV69>>;
+};
+
+let responseCacheV69 = new WeakMap<CatalogV69, SnapshotResponseCacheV69>();
+
+export function resetResponseCacheV69ForTests() {
+  responseCacheV69 = new WeakMap<CatalogV69, SnapshotResponseCacheV69>();
+}
+
+function snapshotResponseCacheV69(catalog: CatalogV69, policyRevision: number, policy: unknown) {
+  const policyKey = `${policyRevision}:${JSON.stringify(policy)}`;
+  const existing = responseCacheV69.get(catalog);
+  if (existing?.policyKey === policyKey) return existing;
+  const created: SnapshotResponseCacheV69 = { policyKey, html: new Map(), htmlPending: new Map() };
+  responseCacheV69.set(catalog, created);
+  return created;
+}
+
+function encodedResponseV69(body: string): EncodedResponseV69 {
+  return { source: Buffer.from(body) };
+}
+
+async function cachedHtmlResponseV69(
+  cache: SnapshotResponseCacheV69,
+  key: string,
+  render: () => string | Promise<string>,
+) {
+  const existing = cache.html.get(key);
+  if (existing) {
+    cache.html.delete(key);
+    cache.html.set(key, existing);
+    return existing;
+  }
+  const pending = cache.htmlPending.get(key);
+  if (pending) return pending;
+  const created = Promise.resolve()
+    .then(render)
+    .then((body) => {
+      const encoded = encodedResponseV69(body);
+      cache.html.set(key, encoded);
+      if (cache.html.size > MAX_HTML_RESPONSES_PER_SNAPSHOT) {
+        const oldest = cache.html.keys().next().value;
+        if (oldest) cache.html.delete(oldest);
+      }
+      return encoded;
+    })
+    .finally(() => cache.htmlPending.delete(key));
+  cache.htmlPending.set(key, created);
+  return created;
+}
+
+function publicHtmlCacheKeyV69(pathname: string, url: URL, origin: string) {
+  const normalized = new URLSearchParams();
+  for (const name of ["scope", "q", "marca", "need", "view", "orden", "pagina"]) {
+    const value = url.searchParams.get(name);
+    if (value !== null) normalized.set(name, value);
+  }
+  return `${pathname}|${origin}|${normalized.toString()}`;
+}
 
 export type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -95,7 +169,8 @@ export function catalogReadyForRuntimeV69(catalog: CatalogV69, environment: Envi
           }
         }),
     ) &&
-    (environment.V691_REQUIRE_RESPONSIVE_IMAGES !== "1" || catalog.products.every(responsiveImagesReadyV691))
+    (environment.V691_REQUIRE_RESPONSIVE_IMAGES !== "1" || catalog.products.every(responsiveImagesReadyV691)) &&
+    (environment.V691_REQUIRE_JPEG_RESPONSIVE_IMAGES !== "1" || catalog.products.every(responsiveJpegImagesReadyV691))
   );
 }
 
@@ -114,6 +189,21 @@ export function responsiveImagesReadyV691(product: CatalogV69["products"][number
           return false;
         }
       });
+    });
+  });
+}
+
+export function responsiveJpegImagesReadyV691(product: CatalogV69["products"][number]) {
+  return (["card", "detail"] as const).every((kind) => {
+    const variants = Object.entries(product.images?.responsive?.[kind]?.jpeg || {});
+    return variants.length > 0 && variants.every(([width, value]) => {
+      if (!/^\d+$/.test(width)) return false;
+      try {
+        const url = new URL(String(value || ""));
+        return url.protocol === "https:" && url.hostname === "storage.googleapis.com";
+      } catch {
+        return false;
+      }
     });
   });
 }
@@ -211,7 +301,10 @@ export async function handleV69Request(
     sendTextV69(response, "V6.9 todavía no está habilitada para esta ejecución.", 503);
     return true;
   }
-  const policy = await adminRuntime.policy();
+  const adminCurrent = await adminRuntime.current();
+  const policy = adminCurrent.document.policy;
+  const policyRevision = adminCurrent.document.revision;
+  const responseCache = snapshotResponseCacheV69(catalog, policyRevision, policy);
 
   if (
     await handleCatalogAdminRequestV69({
@@ -229,13 +322,18 @@ export async function handleV69Request(
   }
 
   if (servesPublicHome) {
+    const origin = publicOriginV69(url.origin, environment);
     sendHtmlV69(
       response,
-      catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment), {
-        route: "/",
-        canonicalPath: "/",
-        policy,
-      }),
+      await cachedHtmlResponseV69(
+        responseCache,
+        publicHtmlCacheKeyV69(pathname, url, origin),
+        () => catalogPageV69(catalog, url.searchParams, origin, {
+          route: "/",
+          canonicalPath: "/",
+          policy,
+        }),
+      ),
       200,
       request,
     );
@@ -243,12 +341,32 @@ export async function handleV69Request(
   }
 
   if (pathname === "/catalogo-v6-9" || servesPublicCatalog) {
-    sendHtmlV69(response, catalogPageV69(catalog, url.searchParams, publicOriginV69(url.origin, environment), { policy }), 200, request);
+    const origin = publicOriginV69(url.origin, environment);
+    sendHtmlV69(
+      response,
+      await cachedHtmlResponseV69(
+        responseCache,
+        publicHtmlCacheKeyV69(pathname, url, origin),
+        () => catalogPageV69(catalog, url.searchParams, origin, { policy }),
+      ),
+      200,
+      request,
+    );
     return true;
   }
 
   if (pathname === "/inicio-v6-9" || (pathname === "/inicio" && publicAliasesEnabled)) {
-    sendHtmlV69(response, homePageV69(catalog, publicOriginV69(url.origin, environment), policy), 200, request);
+    const origin = publicOriginV69(url.origin, environment);
+    sendHtmlV69(
+      response,
+      await cachedHtmlResponseV69(
+        responseCache,
+        publicHtmlCacheKeyV69(pathname, url, origin),
+        () => homePageV69(catalog, origin, policy),
+      ),
+      200,
+      request,
+    );
     return true;
   }
 
@@ -258,7 +376,13 @@ export async function handleV69Request(
     const origin = publicOriginV69(url.origin, environment);
     sendHtmlV69(
       response,
-      visible ? productPageV69(visible, (await similarV69(visible)).filter((entry) => !isProductExcludedByPolicyV69(entry, policy)), origin, policy) : notFoundPageV69(origin),
+      await cachedHtmlResponseV69(
+        responseCache,
+        publicHtmlCacheKeyV69(pathname, url, origin),
+        async () => visible
+          ? productPageV69(visible, (await similarV69(visible)).filter((entry) => !isProductExcludedByPolicyV69(entry, policy)), origin, policy)
+          : notFoundPageV69(origin),
+      ),
       visible ? 200 : 404,
       request,
     );
@@ -271,7 +395,13 @@ export async function handleV69Request(
     const origin = publicOriginV69(url.origin, environment);
     sendHtmlV69(
       response,
-      visible ? productPageV69(visible, (await similarV69(visible)).filter((entry) => !isProductExcludedByPolicyV69(entry, policy)), origin, policy) : notFoundPageV69(origin),
+      await cachedHtmlResponseV69(
+        responseCache,
+        publicHtmlCacheKeyV69(pathname, url, origin),
+        async () => visible
+          ? productPageV69(visible, (await similarV69(visible)).filter((entry) => !isProductExcludedByPolicyV69(entry, policy)), origin, policy)
+          : notFoundPageV69(origin),
+      ),
       visible ? 200 : 404,
       request,
     );
@@ -279,7 +409,18 @@ export async function handleV69Request(
   }
 
   if (pathname === "/api/catalog-v6-9") {
-    sendJsonV69(response, publicCatalogV69(catalog, policy), 200, { "cache-control": PUBLIC_CATALOG_CACHE }, request);
+    responseCache.publicCatalog ||= publicCatalogV69(catalog, policy);
+    responseCache.publicCatalogBody ||= encodedResponseV69(JSON.stringify(responseCache.publicCatalog));
+    sendEncodedV69(
+      response,
+      responseCache.publicCatalogBody,
+      200,
+      headersV69({
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": PUBLIC_CATALOG_CACHE,
+      }),
+      request,
+    );
     return true;
   }
 
@@ -287,10 +428,10 @@ export async function handleV69Request(
     sendJsonV69(
       response,
       {
-        ...catalogHealthV69(applyCatalogPolicyV69(catalog, policy)),
+        ...catalogHealthV69(responseCache.presented ||= applyCatalogPolicyV69(catalog, policy)),
         runtime: commerceRuntime.health(),
         navigationPolicy: {
-          revision: (await adminRuntime.current()).document.revision,
+          revision: policyRevision,
           configured: adminRuntime.configured,
           authenticationConfigured: adminRuntime.authenticationConfigured,
         },
@@ -320,9 +461,13 @@ export async function handleV69Request(
   }
 
   if (pathname === "/sitemap.xml") {
+    responseCache.presented ||= applyCatalogPolicyV69(catalog, policy);
+    responseCache.sitemapBody ||= encodedResponseV69(
+      sitemapXmlV69(responseCache.presented, publicOriginV69(url.origin, environment)),
+    );
     sendDocumentV69(
       response,
-      sitemapXmlV69(applyCatalogPolicyV69(catalog, policy), publicOriginV69(url.origin, environment)),
+      responseCache.sitemapBody,
       "application/xml; charset=utf-8",
       PUBLIC_DISCOVERY_CACHE,
       request,
@@ -559,7 +704,7 @@ function headerV69(request: http.IncomingMessage, name: string) {
 
 function sendHtmlV69(
   response: http.ServerResponse,
-  body: string,
+  body: string | EncodedResponseV69,
   status = 200,
   request?: http.IncomingMessage,
 ) {
@@ -577,7 +722,7 @@ function sendHtmlV69(
 
 function sendDocumentV69(
   response: http.ServerResponse,
-  body: string,
+  body: string | EncodedResponseV69,
   contentType: string,
   cacheControl: string,
   request?: http.IncomingMessage,
@@ -630,28 +775,33 @@ function sendJsonV69(
 
 function sendEncodedV69(
   response: http.ServerResponse,
-  body: string,
+  body: string | EncodedResponseV69,
   status: number,
   headers: Record<string, string>,
   request?: http.IncomingMessage,
 ) {
-  const source = Buffer.from(body);
+  const cached = typeof body === "string" ? encodedResponseV69(body) : body;
+  const source = cached.source;
   const accepted = String(request?.headers["accept-encoding"] || "").toLowerCase();
   let encoded = source;
   let encoding = "";
   if (source.length >= 1_024 && accepted.includes("br")) {
-    encoded = brotliCompressSync(source, {
+    cached.br ||= brotliCompressSync(source, {
       params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 },
     });
+    encoded = cached.br;
     encoding = "br";
   } else if (source.length >= 1_024 && accepted.includes("gzip")) {
-    encoded = gzipSync(source, { level: 6 });
+    cached.gzip ||= gzipSync(source, { level: 6 });
+    encoded = cached.gzip;
     encoding = "gzip";
   }
+  const canCompress = source.length >= 1_024;
   const outputHeaders = {
     ...headers,
     "content-length": String(encoded.length),
-    ...(encoding ? { "content-encoding": encoding, vary: "accept-encoding" } : {}),
+    ...(canCompress ? { vary: "accept-encoding" } : {}),
+    ...(encoding ? { "content-encoding": encoding } : {}),
   };
   response.writeHead(status, outputHeaders);
   response.end(request?.method === "HEAD" ? undefined : encoded);

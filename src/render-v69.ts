@@ -298,6 +298,7 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
       dataEndpoint: "/api/catalog-v6-9",
       magentoCategoryPaths: presented.magentoCategoryPaths || {},
       totalProducts: presented.totalProducts,
+      initialResultCount: initial.length,
       navigation: {
         brands: navigationBrandsV69(presented, policy),
         needs: policy.navigation.needs,
@@ -649,7 +650,7 @@ export function validGtinV69(value: unknown) {
   for (let index = body.length - 1, position = 0; index >= 0; index -= 1, position += 1) {
     sum += Number(body[index]) * (position % 2 === 0 ? 3 : 1);
   }
-  if ((10 - (sum % 10)) % 10 !== Number(digits.at(-1))) return null;
+  if ((10 - (sum % 10)) % 10 !== Number(digits[digits.length - 1])) return null;
   return { key: `gtin${digits.length}`, value: digits };
 }
 
@@ -662,7 +663,7 @@ function pharmacySchemaV69(origin: string) {
     name: BUSINESS_NAME,
     description: SOCIAL_DESCRIPTION,
     url,
-    logo: absolute(origin, "/logo_farmagreen.png"),
+    logo: absolute(origin, "/logo_farmagreen-v69-1.png"),
     telephone: "+54 9 341 723-4000",
     address: {
       "@type": "PostalAddress",
@@ -1241,7 +1242,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-2.css?v=20260826-1")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script src="${u("/analytics-v69-3.js?v=20260823-1")}"></script><script src="${u("/meta-pixel-v69-2.js?v=20260822-1")}"></script><script type="module" src="${u("/app-v6-9-11.js?v=20260826-2")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-3.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-12.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
 }
 
 function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority = false) {
@@ -1307,7 +1308,7 @@ function priceDetail(product: ProductV69) {
 function presentation(product: ProductV69) {
   const name = String(product.name || "");
   const matches = [...name.matchAll(/\b(\d+(?:[.,]\d+)?)\s*(ml|cc|cm3|g|gr|grs|kg|cápsulas?|caps?\.?|comprimidos?|tabletas?|sobres?|ampollas?|unidades?)\b/gi)];
-  const match = matches.at(-1);
+  const match = matches[matches.length - 1];
   if (match) return `${match[1]} ${unit(match[2])}`;
   if (/\bx\s*ud\b/i.test(name)) return "1 unidad";
   if (/\bkit\b/i.test(name)) return "Kit";
@@ -1426,7 +1427,7 @@ function productImage(product: Partial<ProductV69>, kind: "card" | "detail", cla
     ? "(max-width: 760px) calc((100vw - 52px) / 2), (max-width: 980px) calc((100vw - 72px) / 3), calc((100vw - 112px) / 5)"
     : "(max-width: 760px) calc(100vw - 36px), 50vw";
   const sources = responsive
-    ? `${responsive.avif ? `<source type="image/avif" srcset="${e(srcsetV69(responsive.avif))}" sizes="${e(sizes)}">` : ""}${responsive.webp ? `<source type="image/webp" srcset="${e(srcsetV69(responsive.webp))}" sizes="${e(sizes)}">` : ""}`
+    ? `${responsive.avif ? `<source type="image/avif" srcset="${e(srcsetV69(responsive.avif))}" sizes="${e(sizes)}">` : ""}${responsive.webp ? `<source type="image/webp" srcset="${e(srcsetV69(responsive.webp))}" sizes="${e(sizes)}">` : ""}${responsive.jpeg ? `<source type="image/jpeg" srcset="${e(srcsetV69(responsive.jpeg))}" sizes="${e(sizes)}">` : ""}`
     : "";
   return image
     ? `<div class="${className}"><picture>${sources}<img src="${e(image)}" alt="${e(name)}" width="${width}" height="${height}" decoding="async"${priority ? ' loading="eager" fetchpriority="high"' : ' loading="lazy"'}></picture></div>`
@@ -1445,8 +1446,9 @@ function safeResponsiveImagesV69(product: Partial<ProductV69> | undefined) {
     if (!width || !height) continue;
     const avif = safeVariantMapV69(candidate.avif);
     const webp = safeVariantMapV69(candidate.webp);
-    if (!avif && !webp) continue;
-    output[kind] = { width, height, ...(avif ? { avif } : {}), ...(webp ? { webp } : {}) };
+    const jpeg = safeVariantMapV69(candidate.jpeg);
+    if (!avif && !webp && !jpeg) continue;
+    output[kind] = { width, height, ...(avif ? { avif } : {}), ...(webp ? { webp } : {}), ...(jpeg ? { jpeg } : {}) };
   }
   return output.card || output.detail ? output : undefined;
 }

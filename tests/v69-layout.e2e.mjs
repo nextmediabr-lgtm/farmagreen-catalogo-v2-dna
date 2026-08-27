@@ -243,12 +243,14 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       window.fbq = (...args) => window.__metaEvents.push(args);
     });
     const providerRequests = [];
+    const catalogApiRequests = [];
     const consoleErrors = [];
     const failedResponses = [];
     const failedRequests = [];
     const capiEvents = [];
     page.on("request", (request) => {
       if (/gpsfarma/i.test(request.url())) providerRequests.push(request.url());
+      if (new URL(request.url()).pathname === "/api/catalog-v6-9") catalogApiRequests.push(request.url());
     });
     page.on("requestfailed", (request) => {
       const failure = request.failure();
@@ -301,6 +303,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     await page.goto(`${runtime.origin}/?scope=todo`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
+    assert.equal(await page.evaluate(() => document.body.dataset.v69CatalogLoaded), "false");
+    assert.equal(catalogApiRequests.length, 0, "La carga inicial no debe descargar el DTO completo.");
     await page.waitForFunction(() => window.__metaEvents.some(([command, event]) => command === "track" && event === "PageView"));
     await page.waitForTimeout(50);
     const browserPageView = await page.evaluate(() => window.__metaEvents.find(([command, event]) => command === "track" && event === "PageView"));
@@ -329,6 +333,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.waitForFunction(
       () => location.pathname === "/" && new URL(location.href).searchParams.get("q") === "eucerin",
     );
+    await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");
+    assert.equal(catalogApiRequests.length, 1, "La primera interacción debe cargar el DTO una sola vez.");
     await page.waitForFunction(() =>
       window.__metaEvents.some(([, event, parameters]) => event === "Search" && parameters?.search_string === "eucerin"),
     );
@@ -344,20 +350,20 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(viewContent[2].content_type, "product");
     assert.equal(viewContent[2].currency, "ARS");
     assert.ok(viewContent[2].content_ids[0]);
-    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => {
+    await page.waitForFunction(() => window.dataLayer?.some((entry) => {
       const values = Array.from(entry);
       return values[0] === "event" && values[1] === "view_item" && values[2]?.currency === "ARS";
-    })), true);
+    }));
     await page.locator(".pdp .cta").evaluate((link) => {
       link.addEventListener("click", (event) => event.preventDefault(), { once: true });
       link.click();
     });
     assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Contact").length), 1);
     assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Lead").length), 1);
-    assert.equal(await page.evaluate(() => window.dataLayer.some((entry) => {
+    await page.waitForFunction(() => window.dataLayer?.some((entry) => {
       const values = Array.from(entry);
       return values[0] === "event" && values[1] === "generate_lead" && values[2]?.lead_type === "product" && values[2]?.method === "WhatsApp";
-    })), true);
+    }));
     assert.equal(await page.locator("[data-history-back]").count(), 1);
     const brandCatalogLink = page.locator(".v69-crumb-context");
     const productBrand = (await page.locator(".v67-pdp-card-top .v66-brand").textContent()).trim();
@@ -461,8 +467,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.locator("#gridV69 .v66-card").first().waitFor();
-    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-2\.css\?v=20260826-1$/);
-    const localCssResponse = await page.request.get(`${runtime.origin}/styles-v6-9-2.css`);
+    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-3\.css$/);
+    const localCssResponse = await page.request.get(`${runtime.origin}/styles-v6-9-3.css`);
     assert.equal(localCssResponse.status(), 200);
     if (!remoteOrigin) assert.equal(localCssResponse.headers()["cache-control"], "no-store");
     assert.equal(await firstRowColumns(page), 5);
@@ -1138,6 +1144,64 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.deepEqual(failedRequests, []);
   } finally {
     if (browser) await browser.close();
+    await runtime.cleanup();
+  }
+});
+
+test("V6.9 difiere catálogo y medición hasta una interacción real", { timeout: 60_000 }, async () => {
+  assert.ok(executablePath, "No se encontró Chrome/Chromium para la prueba de red diferida.");
+  const runtime = await runtimeTarget();
+  let browser;
+  try {
+    browser = await chromium.launch({ executablePath, headless: true });
+    const page = await browser.newPage({ viewport: { width: 390, height: 700 } });
+    await page.addInitScript(() => {
+      window.requestIdleCallback = (callback) => {
+        window.__heldIdleCallbackV69 = callback;
+        return 1;
+      };
+    });
+    const requests = [];
+    page.on("request", (request) => requests.push(request.url()));
+    await page.route("https://storage.googleapis.com/**", (route) =>
+      route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"></svg>' }),
+    );
+    await page.route("https://www.googletagmanager.com/**", (route) =>
+      route.fulfill({ status: 200, contentType: "text/javascript", body: "" }),
+    );
+    await page.route("https://connect.facebook.net/**", (route) =>
+      route.fulfill({ status: 200, contentType: "text/javascript", body: "" }),
+    );
+    await page.route("**/api/meta-events-v6-9", (route) =>
+      route.fulfill({ status: 202, contentType: "application/json", body: '{"accepted":true}' }),
+    );
+
+    await page.goto(`${runtime.origin}/?scope=todo`, { waitUntil: "load" });
+    await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
+    assert.equal(await page.evaluate(() => document.body.dataset.v69CatalogLoaded), "false");
+    assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 0);
+    assert.equal(requests.some((value) => value.includes("/analytics-v69-4.js")), false);
+    assert.equal(requests.some((value) => value.includes("/meta-pixel-v69-3.js")), false);
+    assert.equal(requests.some((value) => /googletagmanager\.com|connect\.facebook\.net/.test(value)), false);
+
+    await page.locator('[data-filter-menu-trigger="brand"]').click();
+    await page.waitForFunction(() => window.__fgMeasurementStartedV69 === true);
+    await page.waitForFunction(() => typeof window.fgTrackGaV69 === "function" && typeof window.fgTrackMetaV69 === "function");
+    await page.waitForFunction(() => window.fbq?.queue?.some((entry) =>
+      entry[0] === "trackCustom" && entry[1] === "CatalogFilterOpen" && entry[2]?.filter_type === "brand"));
+    await page.waitForFunction(() => window.dataLayer?.some((entry) => {
+      const values = Array.from(entry);
+      return values[0] === "event" && values[1] === "filter_open" && values[2]?.filter_type === "brand";
+    }));
+    assert.equal(requests.some((value) => value.includes("/analytics-v69-4.js")), true);
+    assert.equal(requests.some((value) => value.includes("/meta-pixel-v69-3.js")), true);
+    assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 0);
+
+    await page.locator("#searchV69").fill("eucerin");
+    await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");
+    assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 1);
+  } finally {
+    await browser?.close();
     await runtime.cleanup();
   }
 });

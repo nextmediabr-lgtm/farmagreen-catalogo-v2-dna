@@ -1,0 +1,1395 @@
+/* Generado por scripts/build-v69-client.mjs. No editar. */
+const BOOT = (() => {
+    var _a;
+    try {
+        return JSON.parse(((_a = document.querySelector("#fg69-data")) === null || _a === void 0 ? void 0 : _a.textContent) || "{}");
+    }
+    catch (_b) {
+        return {};
+    }
+})();
+const BASE = (BOOT.base || "").replace(/\/$/, "");
+const PUBLIC_ORIGIN = BOOT.origin || window.location.origin;
+const PAGE = 48;
+const ROUTE = BOOT.catalogRoute || "/catalogo";
+const PDP = "/p/";
+const CONTEXT = BOOT.context || {};
+const NAVIGATION = BOOT.navigation || {};
+const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", ...(NAVIGATION.showOutOfStockSort ? ["sin-stock"] : []), "descuento", "precio-asc", "precio-desc", "nombre"]);
+const DEFAULT_SORT = SORT_VALUES.has(NAVIGATION.defaultSort) ? NAVIGATION.defaultSort : "relevancia";
+const S = {
+    all: BOOT.products || [],
+    q: CONTEXT.q || "",
+    brand: CONTEXT.brand || "Todas",
+    need: CONTEXT.need || "Todas",
+    view: CONTEXT.view || "Todas",
+    scope: CONTEXT.scope || "ofertas",
+    sort: SORT_VALUES.has(CONTEXT.sort) ? CONTEXT.sort : DEFAULT_SORT,
+    limit: PAGE,
+};
+const TOTAL_PRODUCTS = Number(BOOT.totalProducts || S.all.length || 0);
+let catalogLoadPromise = null;
+const NEED_LABELS = {
+    manchas: "Manchas",
+    acne: "Acné",
+    "piel-sensible": "Piel sensible",
+    hidratacion: "Hidratación",
+    limpieza: "Limpieza",
+    solares: "Solares",
+    capilar: "Capilar",
+    antiedad: "Antiedad",
+    reparacion: "Reparación",
+    nutricion: "Nutrición",
+    "cuidado-diario": "Cuidado diario",
+};
+const SEARCH_ALIASES = {
+    eucrin: ["eucerin"],
+    eucerim: ["eucerin"],
+    laroche: ["la roche posay"],
+    "la roche": ["la roche posay"],
+    lrp: ["la roche posay"],
+    dermaglo: ["dermaglos"],
+    loreal: ["l oreal revitalift", "l oreal", "l oréal revitalift"],
+    isdin: ["isdin"],
+    cetafil: ["cetaphil"],
+    aveno: ["aveno", "aveeno"],
+    aveeno: ["aveeno", "aveno"],
+    ena: ["ena", "ena suplementos", "ena sport"],
+};
+const SEARCH_STOPWORDS = new Set(["a", "al", "de", "del", "el", "la", "las", "los", "para", "por", "en", "un", "una", "unos", "unas", "y"]);
+const SEARCH_MIN_CHARS = 3;
+const SHORT_EXACT_SEARCH_TERMS = new Set(["ena", "lrp", "gel", "fps", "spf", "uv", "b5", "ha", "oil"]);
+const SEARCH_CONCEPTS = [
+    { exact: ["marcas"], stems: ["cicatr", "estria"], targets: ["reparacion", "manchas", "cicatriz", "estrias"] },
+    { stems: ["cuerp", "corpor"], targets: ["cuerpo", "corporal"] },
+    { stems: ["cara", "faci", "rostr"], targets: ["cara", "facial", "rostro"] },
+    {
+        stems: ["arrug", "antiarrug", "antiedad", "antiage", "linea", "expresion", "flex", "elast", "firme", "flacid", "lifting", "envejec"],
+        targets: ["antiedad", "antiarrugas", "arrugas", "lineas expresion", "firmeza", "elasticidad"],
+    },
+    { stems: ["manch", "pigment", "melasm"], targets: ["manchas", "antimanchas", "pigmentacion", "melasma"] },
+    {
+        stems: ["sec", "resec", "deshidra", "agriet", "agriat", "griet", "xerosis", "tirante", "asper", "descam"],
+        targets: ["hidratacion", "reparacion", "sequedad"],
+    },
+    { stems: ["hidra", "humect", "moistur"], targets: ["hidratacion", "hidratante", "humectante"] },
+    { stems: ["crem", "locion", "emulsion", "balsam", "pomad", "unguent"], targets: ["crema", "locion", "emulsion", "balsamo", "pomada", "unguento"] },
+    { stems: ["serum", "suero", "concentr", "booster", "ampoll"], targets: ["serum", "suero", "concentrado", "booster", "ampolla"] },
+    { stems: ["cabell", "pelo", "capilar"], targets: ["cabello", "pelo", "capilar"] },
+    { stems: ["acne", "grano", "imperfec", "gras"], targets: ["acne", "granos", "imperfecciones", "piel grasa"] },
+];
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+const norm = (value) => String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+const ars = (value) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value || 0);
+const esc = (value) => String(value !== null && value !== void 0 ? value : "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
+const url = (path) => `${BASE}${path}`;
+const absoluteUrl = (path) => new URL(url(path), PUBLIC_ORIGIN).href;
+const wa = (product) => `https://wa.me/5493417234000?text=${encodeURIComponent(`Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${(product === null || product === void 0 ? void 0 : product.name) || "Producto Farmagreen"}. Link: ${absoluteUrl(`${PDP}${(product === null || product === void 0 ? void 0 : product.publicId) || ""}`)}`)}`;
+const META_SEARCH_DELAY_MS = 700;
+const trackedMetaSearches = new Set();
+let metaSearchTimer;
+function trackMeta(eventName, parameters = {}, options = {}) {
+    if (typeof window.fgTrackMetaV69 === "function") {
+        window.fgTrackMetaV69(eventName, parameters, options);
+        return;
+    }
+    if (typeof window.fbq === "function") {
+        window.fbq(options.custom ? "trackCustom" : "track", eventName, parameters);
+        return;
+    }
+    window.__FG_META_QUEUE = window.__FG_META_QUEUE || [];
+    window.__FG_META_QUEUE.push([eventName, parameters, options]);
+}
+function trackGa(eventName, parameters = {}) {
+    if (typeof window.fgTrackGaV69 === "function") {
+        window.fgTrackGaV69(eventName, parameters);
+        return;
+    }
+    window.__FG_GA_QUEUE = window.__FG_GA_QUEUE || [];
+    window.__FG_GA_QUEUE.push([eventName, parameters]);
+}
+function metaProductParameters(product, includeValue = false) {
+    const parameters = {
+        content_ids: [String((product === null || product === void 0 ? void 0 : product.publicId) || "")],
+        content_name: (product === null || product === void 0 ? void 0 : product.name) || "Producto Farmagreen",
+        content_category: (product === null || product === void 0 ? void 0 : product.primaryCategory) || "catalogo",
+        content_type: "product",
+    };
+    if (includeValue) {
+        parameters.value = Number((product === null || product === void 0 ? void 0 : product.offerPrice) || (product === null || product === void 0 ? void 0 : product.listPrice) || 0);
+        parameters.currency = "ARS";
+    }
+    return parameters;
+}
+function trackSearch(query) {
+    const searchString = String(query || "").trim();
+    const key = norm(searchString);
+    if (!key || trackedMetaSearches.has(key))
+        return;
+    trackedMetaSearches.add(key);
+    trackMeta("Search", { search_string: searchString });
+    trackGa("search", { search_term: searchString });
+}
+function scheduleSearchTracking(query) {
+    window.clearTimeout(metaSearchTimer);
+    const searchString = String(query || "").trim();
+    if (!searchQueryReady(searchString))
+        return;
+    metaSearchTimer = window.setTimeout(() => trackSearch(searchString), META_SEARCH_DELAY_MS);
+}
+function productForWhatsAppLink(link) {
+    var _a, _b, _c, _d, _e, _f;
+    if (!link.matches(".v66-ask, .cta"))
+        return null;
+    if (BOOT.page === "product" && BOOT.product)
+        return BOOT.product;
+    const card = link.closest(".v66-card");
+    const productHref = ((_a = card === null || card === void 0 ? void 0 : card.querySelector(".v65-hit")) === null || _a === void 0 ? void 0 : _a.getAttribute("href")) || "";
+    const publicId = decodeURIComponent(((_b = productHref.split("/p/")[1]) === null || _b === void 0 ? void 0 : _b.split(/[/?#]/)[0]) || "");
+    return (S.all.find((product) => String((product === null || product === void 0 ? void 0 : product.publicId) || "") === publicId) || {
+        publicId,
+        name: ((_d = (_c = card === null || card === void 0 ? void 0 : card.querySelector("h3")) === null || _c === void 0 ? void 0 : _c.textContent) === null || _d === void 0 ? void 0 : _d.trim()) || "Producto Farmagreen",
+        brand: { name: ((_f = (_e = card === null || card === void 0 ? void 0 : card.querySelector(".v66-brand")) === null || _e === void 0 ? void 0 : _e.textContent) === null || _f === void 0 ? void 0 : _f.trim()) || "Farmagreen" },
+        primaryCategory: "catalogo",
+    });
+}
+function gaProductParameters(product) {
+    const value = Number((product === null || product === void 0 ? void 0 : product.offerPrice) || (product === null || product === void 0 ? void 0 : product.listPrice) || 0);
+    return {
+        currency: "ARS",
+        value,
+        items: [{
+                item_id: String((product === null || product === void 0 ? void 0 : product.publicId) || ""),
+                item_name: (product === null || product === void 0 ? void 0 : product.name) || "Producto Farmagreen",
+                item_brand: brandName(product),
+                item_category: (product === null || product === void 0 ? void 0 : product.primaryCategory) || "catalogo",
+                price: value,
+                quantity: 1,
+            }],
+    };
+}
+function trackFilterOpen(filterType) {
+    if (!["brand", "need", "order"].includes(filterType))
+        return;
+    const parameters = { filter_type: filterType };
+    trackMeta("CatalogFilterOpen", parameters, { custom: true });
+    trackGa("filter_open", parameters);
+}
+function trackFilterSelect(filterType, filterValue) {
+    if (!["brand", "need", "order"].includes(filterType))
+        return;
+    const parameters = {
+        filter_type: filterType,
+        filter_value: String(filterValue || "Todas").slice(0, 120),
+    };
+    trackMeta("CatalogFilterSelect", parameters, { custom: true });
+    trackGa("filter_select", parameters);
+}
+function wireConversionTracking() {
+    if (BOOT.page === "product" && BOOT.product) {
+        trackMeta("ViewContent", metaProductParameters(BOOT.product, true));
+        trackGa("view_item", gaProductParameters(BOOT.product));
+    }
+    document.addEventListener("click", (event) => {
+        var _a, _b;
+        const link = (_b = (_a = event.target).closest) === null || _b === void 0 ? void 0 : _b.call(_a, 'a[href^="https://wa.me/"]');
+        if (!link)
+            return;
+        const product = productForWhatsAppLink(link);
+        trackMeta("Contact", Object.assign({ contact_method: "WhatsApp" }, (product ? metaProductParameters(product) : {})));
+        trackGa("contact", Object.assign({ method: "WhatsApp" }, (product ? { item_id: String(product.publicId || ""), item_name: product.name || "Producto Farmagreen" } : {})));
+        trackGa("generate_lead", Object.assign({ method: "WhatsApp", lead_type: product ? "product" : "general" }, (product ? gaProductParameters(product) : {})));
+        if (product) {
+            trackMeta("Lead", metaProductParameters(product));
+        }
+    });
+}
+function brandName(product) {
+    var _a;
+    return ((_a = product === null || product === void 0 ? void 0 : product.brand) === null || _a === void 0 ? void 0 : _a.name) || "Farmagreen";
+}
+function productImageUrl(product) {
+    var _a, _b;
+    return ((_a = product === null || product === void 0 ? void 0 : product.images) === null || _a === void 0 ? void 0 : _a.card) || ((_b = product === null || product === void 0 ? void 0 : product.images) === null || _b === void 0 ? void 0 : _b.detail) || "";
+}
+function responsiveVariants(product, format) {
+    var _a, _b, _c;
+    const variants = (_c = (_b = (_a = product === null || product === void 0 ? void 0 : product.images) === null || _a === void 0 ? void 0 : _a.responsive) === null || _b === void 0 ? void 0 : _b.card) === null || _c === void 0 ? void 0 : _c[format];
+    if (!variants || typeof variants !== "object")
+        return "";
+    return Object.entries(variants)
+        .map(([width, source]) => [Number.parseInt(width, 10), String(source || "")])
+        .filter(([width, source]) => Number.isInteger(width) && width > 0 && source)
+        .sort((left, right) => left[0] - right[0])
+        .map(([width, source]) => `${esc(source)} ${width}w`)
+        .join(", ");
+}
+function productImageMarkup(product, priority = false) {
+    var _a, _b;
+    const image = productImageUrl(product);
+    const name = (product === null || product === void 0 ? void 0 : product.name) || "Producto Farmagreen";
+    if (!image) {
+        return `<div class="v66-media v67-image-missing" role="img" aria-label="Imagen no disponible para ${esc(name)}"></div>`;
+    }
+    const responsive = (_b = (_a = product === null || product === void 0 ? void 0 : product.images) === null || _a === void 0 ? void 0 : _a.responsive) === null || _b === void 0 ? void 0 : _b.card;
+    const width = Number.isInteger(Number(responsive === null || responsive === void 0 ? void 0 : responsive.width)) && Number(responsive.width) > 0 ? Number(responsive.width) : 1000;
+    const height = Number.isInteger(Number(responsive === null || responsive === void 0 ? void 0 : responsive.height)) && Number(responsive.height) > 0 ? Number(responsive.height) : 1000;
+    const sizes = "(max-width: 760px) calc((100vw - 52px) / 2), (max-width: 980px) calc((100vw - 72px) / 3), calc((100vw - 112px) / 5)";
+    const avif = responsiveVariants(product, "avif");
+    const webp = responsiveVariants(product, "webp");
+    const jpeg = responsiveVariants(product, "jpeg");
+    const sources = `${avif ? `<source type="image/avif" srcset="${avif}" sizes="${sizes}">` : ""}${webp ? `<source type="image/webp" srcset="${webp}" sizes="${sizes}">` : ""}${jpeg ? `<source type="image/jpeg" srcset="${jpeg}" sizes="${sizes}">` : ""}`;
+    return `<div class="v66-media"><picture>${sources}<img src="${esc(image)}" alt="${esc(name)}" width="${width}" height="${height}" decoding="async"${priority ? ' loading="eager" fetchpriority="high"' : ' loading="lazy"'}></picture></div>`;
+}
+function derivedSearchSignals(product) {
+    const name = norm(product === null || product === void 0 ? void 0 : product.name);
+    const signals = [];
+    if (/\b(piel (muy )?(seca|reseca|resecada|agrietada)|labios? (secos?|agrietados?)|manos? (secas?|agrietadas?))\b/.test(name)) {
+        signals.push("sequedad");
+    }
+    if (((product === null || product === void 0 ? void 0 : product.needs) || []).includes("nutricion") &&
+        /\b\d+(?:[.,]\d+)?\s*(g|gr|grs|kg)\b/.test(name) &&
+        !/(caps|capsula|comprim|tableta|sobre|gomita|unidad)/.test(name)) {
+        signals.push("polvo");
+    }
+    return signals;
+}
+function blob(product) {
+    return norm(`${baseBlob(product)} ${magentoCategoryBlob(product)}`);
+}
+function baseBlob(product) {
+    var _a, _b;
+    const needs = product.needs || [];
+    return norm([
+        product.name,
+        (_a = product.brand) === null || _a === void 0 ? void 0 : _a.name,
+        ...(((_b = product.brand) === null || _b === void 0 ? void 0 : _b.aliases) || []),
+        product.line,
+        product.barcode,
+        ...(product.aliases || []),
+        product.primaryCategory,
+        ...needs,
+        ...needs.map((need) => NEED_LABELS[need] || need),
+        ...derivedSearchSignals(product),
+    ].join(" "));
+}
+function magentoCategoryBlob(product) {
+    return norm((product.magentoCategories || []).flatMap((category) => [category.id, category.name]).join(" "));
+}
+function semanticBlob(product) {
+    const needs = product.needs || [];
+    return norm([
+        product.name,
+        product.line,
+        product.primaryCategory,
+        ...needs,
+        ...needs.map((need) => NEED_LABELS[need] || need),
+        ...derivedSearchSignals(product),
+    ].join(" "));
+}
+function levenshtein(left, right) {
+    if (Math.abs(left.length - right.length) > 2)
+        return 9;
+    const matrix = Array.from({ length: left.length + 1 }, (_, index) => [index]);
+    for (let column = 1; column <= right.length; column += 1)
+        matrix[0][column] = column;
+    for (let row = 1; row <= left.length; row += 1) {
+        for (let column = 1; column <= right.length; column += 1) {
+            matrix[row][column] = Math.min(matrix[row - 1][column] + 1, matrix[row][column - 1] + 1, matrix[row - 1][column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1));
+            if (row > 1 &&
+                column > 1 &&
+                left[row - 1] === right[column - 2] &&
+                left[row - 2] === right[column - 1]) {
+                matrix[row][column] = Math.min(matrix[row][column], matrix[row - 2][column - 2] + 1);
+            }
+        }
+    }
+    return matrix[left.length][right.length];
+}
+function isSearchStopWordLike(term) {
+    if (SHORT_EXACT_SEARCH_TERMS.has(term) || /^\d+$/.test(term))
+        return false;
+    if (SEARCH_STOPWORDS.has(term))
+        return true;
+    if (directConceptIndexes(term).length)
+        return false;
+    if (term.length < SEARCH_MIN_CHARS)
+        return false;
+    return [...SEARCH_STOPWORDS].some((stopWord) => stopWord.length >= SEARCH_MIN_CHARS &&
+        (stopWord.startsWith(term) ||
+            (Math.abs(stopWord.length - term.length) <= 1 && levenshtein(stopWord, term) <= 1)));
+}
+function directConceptIndexes(rawTerm) {
+    const term = norm(rawTerm);
+    if (!term)
+        return [];
+    return SEARCH_CONCEPTS.flatMap((concept, index) => (concept.exact || []).includes(term) ||
+        (concept.stems || []).some((stem) => term.startsWith(stem) || (term.length >= SEARCH_MIN_CHARS && stem.startsWith(term)))
+        ? [index]
+        : []);
+}
+function searchDistanceLimit(term) {
+    if (term.length < 4)
+        return 0;
+    return term.length > 7 ? 2 : 1;
+}
+function fuzzyConceptIndexes(rawTerm) {
+    const term = norm(rawTerm);
+    const limit = searchDistanceLimit(term);
+    if (!limit)
+        return [];
+    let bestDistance = limit + 1;
+    const bestIndexes = new Set();
+    SEARCH_CONCEPTS.forEach((concept, index) => {
+        const lexemes = [
+            ...(concept.exact || []),
+            ...(concept.stems || []),
+            ...concept.targets.flatMap((target) => norm(target).split(" ")),
+        ]
+            .map(norm)
+            .filter((lexeme) => lexeme.length >= SEARCH_MIN_CHARS && Math.abs(lexeme.length - term.length) <= limit);
+        for (const lexeme of lexemes) {
+            const distance = levenshtein(lexeme, term);
+            if (distance > limit || distance > bestDistance)
+                continue;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestIndexes.clear();
+            }
+            bestIndexes.add(index);
+        }
+    });
+    if (bestIndexes.size <= 1)
+        return [...bestIndexes];
+    const fingerprints = new Set([...bestIndexes].map((index) => SEARCH_CONCEPTS[index].targets.map(norm).sort().join("|")));
+    return fingerprints.size === 1 ? [...bestIndexes] : [];
+}
+function searchTerms(value) {
+    const terms = norm(value)
+        .split(" ")
+        .filter((term) => term && !isSearchStopWordLike(term))
+        .filter((term) => term.length >= SEARCH_MIN_CHARS ||
+        SHORT_EXACT_SEARCH_TERMS.has(term) ||
+        /^\d+$/.test(term));
+    if (!terms.length)
+        return [];
+    const first = terms[0];
+    if (first.length < SEARCH_MIN_CHARS && !SHORT_EXACT_SEARCH_TERMS.has(first) && !/^\d{8,14}$/.test(first))
+        return [];
+    return terms;
+}
+function searchQueryReady(value) {
+    return searchTerms(value).length > 0;
+}
+const SEARCH_INDEX_CACHE = new WeakMap();
+function searchIndex(products) {
+    const cached = SEARCH_INDEX_CACHE.get(products);
+    if (cached)
+        return cached;
+    const index = {
+        allIds: new Set(),
+        lexicalTextById: new Map(),
+        magentoCategoryTextById: new Map(),
+        semanticTextById: new Map(),
+        vocabulary: new Map(),
+        magentoCategoryVocabulary: new Map(),
+        exactMagentoCategoryPhrases: new Map(),
+    };
+    for (const product of products) {
+        const id = product.publicId;
+        const lexicalText = baseBlob(product);
+        const magentoCategoryText = magentoCategoryBlob(product);
+        index.allIds.add(id);
+        index.lexicalTextById.set(id, lexicalText);
+        index.magentoCategoryTextById.set(id, magentoCategoryText);
+        index.semanticTextById.set(id, semanticBlob(product));
+        for (const word of new Set(lexicalText.split(" ").filter(Boolean))) {
+            if (word.length < SEARCH_MIN_CHARS && !/^\d+$/.test(word))
+                continue;
+            const ids = index.vocabulary.get(word) || new Set();
+            ids.add(id);
+            index.vocabulary.set(word, ids);
+        }
+        for (const word of new Set(magentoCategoryText.split(" ").filter(Boolean))) {
+            if (word.length < SEARCH_MIN_CHARS && !/^\d+$/.test(word))
+                continue;
+            const ids = index.magentoCategoryVocabulary.get(word) || new Set();
+            ids.add(id);
+            index.magentoCategoryVocabulary.set(word, ids);
+        }
+        for (const category of product.magentoCategories || []) {
+            const phrase = searchTerms(category.name).join(" ");
+            if (!phrase.includes(" "))
+                continue;
+            const ids = index.exactMagentoCategoryPhrases.get(phrase) || new Set();
+            ids.add(id);
+            index.exactMagentoCategoryPhrases.set(phrase, ids);
+        }
+    }
+    SEARCH_INDEX_CACHE.set(products, index);
+    return index;
+}
+function directMagentoCategoryIds(index, rawTerm) {
+    const term = norm(rawTerm);
+    const result = new Set();
+    for (const [word, ids] of index.magentoCategoryVocabulary) {
+        const found = /^\d+$/.test(term)
+            ? word === term
+            : term.length === SEARCH_MIN_CHARS
+                ? word.startsWith(term)
+                : word === term || word.startsWith(term);
+        if (found)
+            unionIds(result, ids);
+    }
+    return result;
+}
+function unionIds(target, source = []) {
+    for (const id of source)
+        target.add(id);
+    return target;
+}
+function directLexicalIds(index, rawTerm) {
+    const term = norm(rawTerm);
+    const result = new Set();
+    for (const alias of SEARCH_ALIASES[term] || []) {
+        const target = norm(alias);
+        for (const [id, text] of index.lexicalTextById)
+            if (text.includes(target))
+                result.add(id);
+    }
+    for (const [word, ids] of index.vocabulary) {
+        const found = /^\d+$/.test(term)
+            ? word === term
+            : term.length === SEARCH_MIN_CHARS
+                ? word.startsWith(term)
+                : word === term || word.startsWith(term);
+        if (found)
+            unionIds(result, ids);
+    }
+    return result;
+}
+function fuzzyLexicalIds(index, rawTerm) {
+    const term = norm(rawTerm);
+    const limit = searchDistanceLimit(term);
+    if (!limit || /^\d+$/.test(term))
+        return new Set();
+    let bestDistance = limit + 1;
+    let candidates = [];
+    for (const word of index.vocabulary.keys()) {
+        if (word.length < 4 || Math.abs(word.length - term.length) > limit)
+            continue;
+        const distance = levenshtein(word, term);
+        if (distance > limit || distance > bestDistance)
+            continue;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            candidates = [];
+        }
+        candidates.push(word);
+    }
+    if (!candidates.length)
+        return new Set();
+    const families = new Set(candidates.map((word) => word.slice(0, SEARCH_MIN_CHARS)));
+    if (families.size > 1)
+        return new Set();
+    return candidates.reduce((ids, word) => unionIds(ids, index.vocabulary.get(word)), new Set());
+}
+function semanticTextMatchesTarget(text, rawTarget) {
+    const target = norm(rawTarget);
+    if (!target)
+        return false;
+    if (target.includes(" "))
+        return text.includes(target);
+    return text.split(" ").some((word) => word === target || word.startsWith(target));
+}
+function conceptIds(index, conceptIndexes) {
+    const targets = conceptTargets(conceptIndexes);
+    const ids = new Set();
+    for (const [id, text] of index.semanticTextById) {
+        if (targets.some((target) => semanticTextMatchesTarget(text, target)))
+            ids.add(id);
+    }
+    return ids;
+}
+function conceptTargets(conceptIndexes) {
+    return [...new Set(conceptIndexes.flatMap((conceptIndex) => SEARCH_CONCEPTS[conceptIndex].targets.map(norm)))];
+}
+function lexicalTargets(term) {
+    return [...new Set([norm(term), ...(SEARCH_ALIASES[norm(term)] || []).map(norm)])];
+}
+function searchClause(index, term) {
+    const directConcepts = directConceptIndexes(term);
+    if (directConcepts.length) {
+        return { term, kind: "concept", targets: conceptTargets(directConcepts), productIds: conceptIds(index, directConcepts) };
+    }
+    const directLexical = directLexicalIds(index, term);
+    if (directLexical.size)
+        return { term, kind: "lexical", targets: lexicalTargets(term), productIds: directLexical };
+    const fuzzyConcepts = fuzzyConceptIndexes(term);
+    if (fuzzyConcepts.length) {
+        return { term, kind: "concept", targets: conceptTargets(fuzzyConcepts), productIds: conceptIds(index, fuzzyConcepts) };
+    }
+    const fuzzyLexical = fuzzyLexicalIds(index, term);
+    if (fuzzyLexical.size)
+        return { term, kind: "lexical", targets: [norm(term)], productIds: fuzzyLexical };
+    const directCategory = directMagentoCategoryIds(index, term);
+    if (directCategory.size)
+        return { term, kind: "lexical", targets: [norm(term)], productIds: directCategory };
+    return { term, kind: "unresolved", targets: [norm(term)], productIds: new Set() };
+}
+function compileSearchPlan(products, query) {
+    const terms = searchTerms(query);
+    const index = searchIndex(products);
+    const clauses = terms.map((term) => searchClause(index, term));
+    let productIds = new Set(index.allIds);
+    for (const clause of clauses) {
+        productIds = new Set([...productIds].filter((id) => clause.productIds.has(id)));
+        if (!productIds.size)
+            break;
+    }
+    const categoryPhraseEligible = terms.every((term) => !directConceptIndexes(term).length && !fuzzyConceptIndexes(term).length);
+    const exactCategoryIds = categoryPhraseEligible
+        ? index.exactMagentoCategoryPhrases.get(terms.join(" "))
+        : undefined;
+    if (exactCategoryIds)
+        productIds = unionIds(productIds, exactCategoryIds);
+    return { terms, clauses, productIds: terms.length ? productIds : new Set() };
+}
+function filterProductsBySearch(products, query) {
+    if (!norm(query))
+        return [...products];
+    const plan = compileSearchPlan(products, query);
+    if (!plan.terms.length)
+        return [];
+    return products.filter((product) => plan.productIds.has(product.publicId));
+}
+function matches(product, searchIds, hasQuery) {
+    if (S.scope === "ofertas" && !(product.discountPercent > 0))
+        return false;
+    if (S.sort === "sin-stock" && (product === null || product === void 0 ? void 0 : product.availability) !== "unavailable_reference")
+        return false;
+    if (S.brand !== "Todas" && brandName(product) !== S.brand)
+        return false;
+    if (S.need !== "Todas" && !(product.needs || []).includes(S.need))
+        return false;
+    if (S.view !== "Todas" && !(product.catalogViews || []).some((view) => view.kind === "collection" && view.slug === S.view))
+        return false;
+    return !hasQuery || searchIds.has(product.publicId);
+}
+function textMatchesSearchTarget(text, rawTarget) {
+    const target = norm(rawTarget);
+    if (!target)
+        return false;
+    if (target.includes(" "))
+        return text.includes(target);
+    return text.split(" ").some((word) => word === target || word.startsWith(target));
+}
+function clauseMatchCount(text, clauses) {
+    return clauses.filter((clause) => clause.targets.some((target) => textMatchesSearchTarget(text, target))).length;
+}
+function phraseMatch(text, phrase) {
+    return phrase ? Number(text.includes(phrase)) : 0;
+}
+function searchRelevance(product, plan) {
+    var _a;
+    const fullQuery = plan.terms.join(" ");
+    const needs = product.needs || [];
+    const fields = {
+        magentoCategoryIds: norm((product.magentoCategories || []).map((category) => category.id).join(" ")),
+        magentoCategories: norm((product.magentoCategories || []).map((category) => category.name).join(" ")),
+        functional: norm([product.primaryCategory, ...needs, ...needs.map((need) => NEED_LABELS[need] || need)].join(" ")),
+        name: norm(product.name),
+        brand: norm([brandName(product), ...(((_a = product.brand) === null || _a === void 0 ? void 0 : _a.aliases) || [])].join(" ")),
+        line: norm(product.line),
+        aliases: norm((product.aliases || []).join(" ")),
+    };
+    return [
+        Number(/^\d{8,14}$/.test(fullQuery) && norm(product.barcode) === fullQuery),
+        Number(/^\d+$/.test(fullQuery) && fields.magentoCategoryIds.split(" ").includes(fullQuery)),
+        phraseMatch(fields.functional, fullQuery),
+        clauseMatchCount(fields.functional, plan.clauses),
+        phraseMatch(fields.name, fullQuery),
+        clauseMatchCount(fields.name, plan.clauses),
+        phraseMatch(fields.brand, fullQuery),
+        clauseMatchCount(fields.brand, plan.clauses),
+        phraseMatch(fields.line, fullQuery),
+        clauseMatchCount(fields.line, plan.clauses),
+        phraseMatch(fields.aliases, fullQuery),
+        clauseMatchCount(fields.aliases, plan.clauses),
+        phraseMatch(fields.magentoCategories, fullQuery),
+        clauseMatchCount(fields.magentoCategories, plan.clauses),
+    ];
+}
+function compareRelevance(left, right) {
+    for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+        const difference = (right[index] || 0) - (left[index] || 0);
+        if (difference)
+            return difference;
+    }
+    return 0;
+}
+function availabilityMeta(product) {
+    if ((product === null || product === void 0 ? void 0 : product.availability) === "available_reference") {
+        return {
+            className: "",
+            label: "Disponible para Entrega",
+            title: "Estado observado en Rosario durante la última verificación; consultá para confirmar.",
+        };
+    }
+    if ((product === null || product === void 0 ? void 0 : product.availability) === "unavailable_reference") {
+        return {
+            className: " is-unavailable",
+            label: "Consultar Disponibilidad",
+            title: "Estado observado en Rosario durante la última verificación; consultá para confirmar.",
+        };
+    }
+    return {
+        className: " is-unverified",
+        label: "Consultar Disponibilidad",
+        title: "Confirmamos disponibilidad por WhatsApp.",
+    };
+}
+function card(product, priority = false) {
+    const discount = Math.round(product.discountPercent || 0);
+    const name = (product === null || product === void 0 ? void 0 : product.name) || "Producto Farmagreen";
+    const availability = availabilityMeta(product);
+    const media = productImageMarkup(product, priority);
+    const stock = `<p class="v69-stock${availability.className}" title="${esc(availability.title)}"><span aria-hidden="true"></span><strong>${esc(availability.label)}</strong></p>`;
+    const needsAvailabilityConsult = (product === null || product === void 0 ? void 0 : product.availability) !== "available_reference";
+    const cta = "Consultar";
+    const statusClass = (product === null || product === void 0 ? void 0 : product.availability) === "unavailable_reference"
+        ? " v69-card-unavailable"
+        : (product === null || product === void 0 ? void 0 : product.availability) === "unverified"
+            ? " v69-card-unverified"
+            : "";
+    return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${url(`${PDP}${esc((product === null || product === void 0 ? void 0 : product.publicId) || "")}`)}" aria-label="Ver ${esc(name)}"></a><div class="v66-card-top"><p class="v66-brand">${esc(brandName(product))}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${media}<div class="v66-card-body"><h3>${esc(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${esc(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${esc(usage(product))}</dd></div></dl>${stock}<div class="v66-price">${product.discountPercent > 0 ? `<s>${ars(product.listPrice)}</s>` : ""}<strong>${ars(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${ars(product.savingAmount)}</small>` : ""}</div><a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(product)}">${cta}</a></div></article>`;
+}
+function presentation(product) {
+    const expression = /\b(\d+(?:[.,]\d+)?)\s*(ml|cc|cm3|g|gr|grs|kg|cápsulas?|caps?\.?|comprimidos?|tabletas?|sobres?|ampollas?|unidades?)\b/gi;
+    const name = String(product.name || "");
+    let match = null;
+    let candidate;
+    while ((candidate = expression.exec(name)) !== null)
+        match = candidate;
+    if (match)
+        return `${match[1]} ${unit(match[2])}`;
+    if (/\bx\s*ud\b/i.test(product.name || ""))
+        return "1 unidad";
+    if (/\bkit\b/i.test(product.name || ""))
+        return "Kit";
+    if (/\b(pack|combo|duo|trio)\b/i.test(product.name || ""))
+        return "Pack";
+    return "Consultar";
+}
+function usage(product) {
+    const priority = ["nutricion", "manchas", "acne", "solares", "capilar", "piel-sensible", "antiedad", "reparacion", "hidratacion", "limpieza", "cuidado-diario"];
+    const need = priority.find((candidate) => (product.needs || []).includes(candidate));
+    if (need)
+        return NEED_LABELS[need] || categoryLabel(need);
+    return categoryLabel(product.primaryCategory);
+}
+function categoryLabel(value) {
+    return ({
+        rostro: "Rostro",
+        cuerpo: "Cuerpo",
+        limpieza: "Limpieza",
+        solares: "Protección solar",
+        capilar: "Capilar",
+        bebe: "Bebés",
+        nutricion: "Nutrición",
+        otros: "Cuidado diario",
+    }[value] || String(value || "").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()));
+}
+function unit(value) {
+    const normalized = norm(value).replace(/\.$/, "");
+    if (["g", "gr", "grs"].includes(normalized))
+        return "g";
+    if (["caps", "capsula", "capsulas"].includes(normalized))
+        return "cápsulas";
+    return normalized;
+}
+function sync(selector, key, value) {
+    $$(selector).forEach((button) => {
+        const active = button.dataset[key] === value;
+        button.classList.toggle("on", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+}
+function setFilterMenuOpen(menu, open, restoreFocus = false) {
+    if (!menu)
+        return;
+    const trigger = menu.querySelector("[data-filter-menu-trigger]");
+    const popover = menu.querySelector("[data-filter-menu-popover]");
+    menu.classList.toggle("is-open", open);
+    trigger === null || trigger === void 0 ? void 0 : trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    popover === null || popover === void 0 ? void 0 : popover.setAttribute("aria-hidden", open ? "false" : "true");
+    if (popover) {
+        if (open)
+            popover.removeAttribute("inert");
+        else
+            popover.setAttribute("inert", "");
+    }
+    if (restoreFocus)
+        trigger === null || trigger === void 0 ? void 0 : trigger.focus();
+}
+function closeFilterMenus(except = null, restoreFocus = false) {
+    $$("[data-filter-menu]").forEach((menu) => {
+        if (menu !== except && menu.classList.contains("is-open"))
+            setFilterMenuOpen(menu, false, restoreFocus);
+    });
+}
+function openFilterMenu(name) {
+    const menu = $(`[data-filter-menu="${name}"]`);
+    if (!menu)
+        return;
+    closeFilterMenus(menu);
+    setFilterMenuOpen(menu, true);
+    trackFilterOpen(name);
+}
+function syncFilterMenuSummaries(resultCount) {
+    var _a, _b, _c;
+    const needLabel = S.need === "Todas" ? "Todas" : NEED_LABELS[S.need] || S.need;
+    const activeView = (((_a = BOOT.navigation) === null || _a === void 0 ? void 0 : _a.brands) || []).find((entry) => entry.kind === "collection" && entry.slug === S.view);
+    const brandLabel = (activeView === null || activeView === void 0 ? void 0 : activeView.name) || S.brand;
+    const needSummary = $("#needSummaryV69");
+    const brandSummary = $("#brandSummaryV69");
+    if (needSummary)
+        needSummary.textContent = needLabel;
+    if (brandSummary)
+        brandSummary.textContent = brandLabel;
+    (_b = $('[data-filter-menu-trigger="need"]')) === null || _b === void 0 ? void 0 : _b.setAttribute("aria-label", `Elegir necesidad. Selección actual: ${needLabel}`);
+    (_c = $('[data-filter-menu-trigger="brand"]')) === null || _c === void 0 ? void 0 : _c.setAttribute("aria-label", `Elegir marca. Selección actual: ${brandLabel}`);
+}
+function wireFilterMenus() {
+    $$("[data-filter-menu]").forEach((menu) => {
+        var _a;
+        (_a = menu.querySelector("[data-filter-menu-trigger]")) === null || _a === void 0 ? void 0 : _a.addEventListener("click", () => {
+            const willOpen = !menu.classList.contains("is-open");
+            closeFilterMenus(menu);
+            setFilterMenuOpen(menu, willOpen);
+            if (willOpen)
+                trackFilterOpen(menu.dataset.filterMenu || "");
+        });
+    });
+    const sort = $("#sortV69");
+    sort === null || sort === void 0 ? void 0 : sort.addEventListener("pointerdown", () => trackFilterOpen("order"));
+    sort === null || sort === void 0 ? void 0 : sort.addEventListener("keydown", (event) => {
+        if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(event.key))
+            trackFilterOpen("order");
+    });
+    document.addEventListener("click", (event) => {
+        if (!(event.target instanceof Element) || !event.target.closest("[data-filter-menu]"))
+            closeFilterMenus();
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape")
+            return;
+        const openMenu = $(".v67-filter-menu.is-open");
+        if (!openMenu)
+            return;
+        event.preventDefault();
+        setFilterMenuOpen(openMenu, false, true);
+    });
+}
+function markBrokenImage(image) {
+    if (!(image instanceof HTMLImageElement) || !image.matches(".v66-media img, .v65-photo img"))
+        return;
+    const holder = image.closest(".v66-media, .v65-photo");
+    if (!holder || holder.classList.contains("v67-image-missing"))
+        return;
+    holder.classList.add("v67-image-missing");
+    holder.setAttribute("role", "img");
+    holder.setAttribute("aria-label", image.alt || "Imagen no disponible");
+    image.hidden = true;
+}
+function wireImageFallbacks() {
+    document.addEventListener("error", (event) => {
+        if (event.target instanceof HTMLImageElement)
+            markBrokenImage(event.target);
+    }, true);
+    $$(".v66-media img, .v65-photo img").forEach((image) => {
+        if (image.complete && image.naturalWidth === 0)
+            markBrokenImage(image);
+    });
+}
+function currentPrice(product) {
+    return Math.round(Number((product === null || product === void 0 ? void 0 : product.offerPrice) || (product === null || product === void 0 ? void 0 : product.listPrice) || 0));
+}
+function productTie(left, right) {
+    return (String((left === null || left === void 0 ? void 0 : left.name) || "").localeCompare(String((right === null || right === void 0 ? void 0 : right.name) || ""), "es", { sensitivity: "base", numeric: true }) ||
+        String((left === null || left === void 0 ? void 0 : left.publicId) || "").localeCompare(String((right === null || right === void 0 ? void 0 : right.publicId) || ""), "es", { sensitivity: "base", numeric: true }));
+}
+function availabilityRank(product) {
+    if ((product === null || product === void 0 ? void 0 : product.availability) === "available_reference")
+        return 0;
+    if ((product === null || product === void 0 ? void 0 : product.availability) === "unverified")
+        return 1;
+    return 2;
+}
+function sorted(products) {
+    const plan = compileSearchPlan(products, S.q);
+    const entries = products.map((product) => ({ product, relevance: searchRelevance(product, plan) }));
+    if (S.sort === "disponibilidad") {
+        entries.sort((left, right) => availabilityRank(left.product) - availabilityRank(right.product) ||
+            (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
+            (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
+            productTie(left.product, right.product));
+    }
+    else if (S.sort === "sin-stock") {
+        entries.sort((left, right) => productTie(left.product, right.product));
+    }
+    else if (S.sort === "descuento") {
+        entries.sort((left, right) => (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
+            (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
+            productTie(left.product, right.product));
+    }
+    else if (S.sort === "precio-asc") {
+        entries.sort((left, right) => currentPrice(left.product) - currentPrice(right.product) || productTie(left.product, right.product));
+    }
+    else if (S.sort === "precio-desc") {
+        entries.sort((left, right) => currentPrice(right.product) - currentPrice(left.product) || productTie(left.product, right.product));
+    }
+    else if (S.sort === "marca") {
+        entries.sort((left, right) => brandName(left.product).localeCompare(brandName(right.product), "es", { sensitivity: "base" }) ||
+            productTie(left.product, right.product));
+    }
+    else if (S.sort === "nombre") {
+        entries.sort((left, right) => productTie(left.product, right.product));
+    }
+    else {
+        entries.sort((left, right) => compareRelevance(left.relevance, right.relevance) ||
+            (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
+            (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
+            productTie(left.product, right.product));
+    }
+    return entries.map((entry) => entry.product);
+}
+function writeUrl(mode = "replace") {
+    const params = new URLSearchParams();
+    if (S.scope !== "ofertas")
+        params.set("scope", S.scope);
+    if (S.q)
+        params.set("q", S.q);
+    if (S.brand !== "Todas")
+        params.set("marca", S.brand);
+    if (S.need !== "Todas")
+        params.set("need", S.need);
+    if (S.view !== "Todas")
+        params.set("view", S.view);
+    if (S.sort !== DEFAULT_SORT)
+        params.set("orden", S.sort);
+    if (S.limit > PAGE)
+        params.set("pagina", String(Math.ceil(S.limit / PAGE)));
+    const next = `${url(ROUTE)}${params.toString() ? `?${params}` : ""}`;
+    const method = mode === "push" && `${location.pathname}${location.search}` !== next ? "pushState" : "replaceState";
+    history[method]({ fg69: true }, "", next);
+}
+function scrollProducts() {
+    var _a;
+    (_a = $("#productos-v69")) === null || _a === void 0 ? void 0 : _a.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+let floatingCtaObserver = null;
+function refreshFloatingWhatsapp() {
+    const floating = $(".float");
+    if (!floating)
+        return;
+    floatingCtaObserver === null || floatingCtaObserver === void 0 ? void 0 : floatingCtaObserver.disconnect();
+    floatingCtaObserver = null;
+    floating.classList.remove("is-cta-visible");
+    if (!window.matchMedia("(max-width: 760px)").matches || !("IntersectionObserver" in window))
+        return;
+    const visible = new Set();
+    floatingCtaObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (entry.isIntersecting && entry.intersectionRatio > 0)
+                visible.add(entry.target);
+            else
+                visible.delete(entry.target);
+        }
+        floating.classList.toggle("is-cta-visible", visible.size > 0);
+    }, { threshold: 0.15 });
+    $$(".v66-ask, .cta")
+        .filter((element) => !element.closest(".float"))
+        .forEach((element) => floatingCtaObserver.observe(element));
+}
+function catalogCopy() {
+    var _a, _b;
+    if (S.q) {
+        const exactCategoryPath = /^\d+$/.test(S.q.trim()) ? (_a = BOOT.magentoCategoryPaths) === null || _a === void 0 ? void 0 : _a[S.q.trim()] : null;
+        return {
+            mode: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? "" : "Resultados",
+            title: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? exactCategoryPath.join(" › ") : `Resultados para “${S.q.trim()}”`,
+            context: "Coincidencias por producto, marca o necesidad.",
+            nav: "buscar",
+        };
+    }
+    if (S.brand !== "Todas")
+        return { mode: "Marca", title: S.brand, context: `Productos disponibles de ${S.brand}.`, nav: "marcas" };
+    if (S.need !== "Todas") {
+        const label = NEED_LABELS[S.need] || S.need;
+        return { mode: "Necesidad", title: label, context: `Selección para ${String(label).toLowerCase()}.`, nav: "buscar" };
+    }
+    if (S.view !== "Todas") {
+        const view = (((_b = BOOT.navigation) === null || _b === void 0 ? void 0 : _b.brands) || []).find((entry) => entry.kind === "collection" && entry.slug === S.view) ||
+            S.all.flatMap((product) => product.catalogViews || []).find((entry) => entry.slug === S.view);
+        const label = (view === null || view === void 0 ? void 0 : view.name) || S.view;
+        return { mode: "Marca", title: label, context: `Selección paraguas de ${label}.`, nav: "marcas" };
+    }
+    if (S.sort === "sin-stock")
+        return { mode: "Revisión", title: "Sin stock", context: "Productos para consultar y revisar como posibles discontinuados.", nav: "productos" };
+    if (S.scope === "todo")
+        return { mode: "Catálogo", title: "Todos los productos", context: "Explorá el catálogo completo.", nav: "productos" };
+    return { mode: "Ofertas", title: "Oportunidades de hoy", context: "Los mejores descuentos disponibles primero.", nav: "ofertas" };
+}
+function render(historyMode = "replace") {
+    const searchIds = new Set(filterProductsBySearch(S.all, S.q).map((product) => product.publicId));
+    const hasQuery = Boolean(norm(S.q));
+    const items = sorted(S.all.filter((product) => matches(product, searchIds, hasQuery)));
+    const shown = Math.min(S.limit, items.length);
+    $("#gridV69").innerHTML = items.length
+        ? items.slice(0, shown).map((product, index) => card(product, index === 0)).join("")
+        : `<div class="v66-empty"><strong>No encontramos coincidencias.</strong><span>Probá otra palabra o limpiá los filtros.</span></div>`;
+    $("#countV69").textContent = items.length ? `${shown} de ${items.length}` : "Sin resultados";
+    const availability = items.reduce((counts, product) => {
+        if ((product === null || product === void 0 ? void 0 : product.availability) === "available_reference")
+            counts.available += 1;
+        if ((product === null || product === void 0 ? void 0 : product.availability) === "unavailable_reference")
+            counts.unavailable += 1;
+        if ((product === null || product === void 0 ? void 0 : product.availability) === "unverified")
+            counts.unverified += 1;
+        return counts;
+    }, { available: 0, unavailable: 0, unverified: 0 });
+    const availabilitySummary = $("#availabilityV69");
+    if (availabilitySummary) {
+        const total = availability.available + availability.unavailable + availability.unverified;
+        availabilitySummary.hidden = true;
+        availabilitySummary.innerHTML = total
+            ? `<span><b>${availability.available}</b> disponibles</span><span><b>${availability.unavailable}</b> no disponibles</span><span><b>${availability.unverified}</b> no verificados</span>`
+            : "";
+        if (BOOT.availabilityReferenceAt) {
+            availabilitySummary.title = `Referencia: ${new Date(BOOT.availabilityReferenceAt).toLocaleString("es-AR")}`;
+        }
+    }
+    const copy = catalogCopy();
+    const mode = $("#modeV69");
+    mode.textContent = copy.mode;
+    mode.hidden = !copy.mode;
+    const catalogTitle = $("#catalogTitleV69");
+    catalogTitle.textContent = copy.title;
+    catalogTitle.classList.toggle("v69-title-all", copy.title === "Todos los productos");
+    catalogTitle.classList.toggle("v69-title-compact", copy.title === "Oportunidades de hoy");
+    $("#countV69").hidden = copy.nav !== "productos";
+    $("#contextV69").textContent = copy.context;
+    $$("[data-nav]").forEach((link) => link.classList.toggle("is-active", link.dataset.nav === copy.nav));
+    const more = $("#loadMoreV69");
+    const left = Math.max(items.length - shown, 0);
+    more.hidden = left === 0;
+    more.textContent = "Cargar más productos";
+    more.setAttribute("aria-label", `Cargar más productos. Quedan ${left}.`);
+    $("#showAllV69").hidden = copy.nav === "productos";
+    sync("[data-brand]", "brand", S.brand);
+    sync("[data-need]", "need", S.need);
+    $$('[data-view]').forEach((link) => link.classList.toggle("is-active", link.dataset.view === S.view));
+    syncFilterMenuSummaries(items.length);
+    writeUrl(historyMode);
+    refreshFloatingWhatsapp();
+}
+function showAll() {
+    closeFilterMenus();
+    S.q = "";
+    S.brand = "Todas";
+    S.need = "Todas";
+    S.view = "Todas";
+    S.scope = "todo";
+    S.limit = PAGE;
+    $("#searchV69").value = "";
+    render("push");
+    scrollProducts();
+}
+function reset() {
+    closeFilterMenus();
+    S.q = "";
+    S.brand = "Todas";
+    S.need = "Todas";
+    S.view = "Todas";
+    S.scope = "ofertas";
+    S.sort = DEFAULT_SORT;
+    S.limit = PAGE;
+    $("#searchV69").value = "";
+    if ($("#sortV69"))
+        $("#sortV69").value = S.sort;
+    render("push");
+}
+function applyParams(params) {
+    var _a, _b;
+    const requestedBrand = params.get("marca") === "Aveeno" ? "Aveno" : params.get("marca") || "Todas";
+    const navigationBrands = ((_a = BOOT.navigation) === null || _a === void 0 ? void 0 : _a.brands) || [];
+    const validBrands = new Set(["Todas", ...navigationBrands.filter((entry) => entry.kind === "brand").map((entry) => entry.name)]);
+    const fallbackQuery = requestedBrand !== "Todas" && !validBrands.has(requestedBrand) ? requestedBrand : "";
+    const requestedQuery = params.get("q") || fallbackQuery;
+    S.q = searchQueryReady(requestedQuery) ? requestedQuery : "";
+    S.brand = requestedBrand;
+    S.need = params.get("need") || "Todas";
+    S.view = params.get("view") || "Todas";
+    S.sort = SORT_VALUES.has(params.get("orden")) ? params.get("orden") : DEFAULT_SORT;
+    const validNeeds = new Set(["Todas", ...(((_b = BOOT.navigation) === null || _b === void 0 ? void 0 : _b.needs) || Object.keys(NEED_LABELS))]);
+    const validViews = new Set(["Todas", ...navigationBrands.filter((entry) => entry.kind === "collection").map((entry) => entry.slug)]);
+    if (!validBrands.has(S.brand))
+        S.brand = "Todas";
+    if (!validNeeds.has(S.need))
+        S.need = "Todas";
+    if (!validViews.has(S.view))
+        S.view = "Todas";
+    if (S.q) {
+        S.brand = "Todas";
+        S.need = "Todas";
+    }
+    else if (S.view !== "Todas") {
+        S.brand = "Todas";
+        S.need = "Todas";
+    }
+    else if (S.brand !== "Todas" && S.need !== "Todas") {
+        S.need = "Todas";
+    }
+    S.scope =
+        S.sort === "sin-stock" || S.q || S.brand !== "Todas" || S.need !== "Todas" || S.view !== "Todas"
+            ? "todo"
+            : params.get("scope") === "todo"
+                ? "todo"
+                : "ofertas";
+    const totalPages = Math.max(1, Math.ceil((S.all.length || TOTAL_PRODUCTS) / PAGE));
+    const page = Math.max(1, Math.min(totalPages, Number.parseInt(params.get("pagina") || "1", 10) || 1));
+    S.limit = page * PAGE;
+}
+function openCatalogFromHome({ q = "", brand = "Todas", need = "Todas", view = "Todas", sort = DEFAULT_SORT } = {}) {
+    const params = new URLSearchParams({ scope: "todo" });
+    if (q.trim())
+        params.set("q", q.trim());
+    if (brand !== "Todas")
+        params.set("marca", brand);
+    if (need !== "Todas")
+        params.set("need", need);
+    if (view !== "Todas")
+        params.set("view", view);
+    if (SORT_VALUES.has(sort) && sort !== DEFAULT_SORT)
+        params.set("orden", sort);
+    location.assign(`${url(ROUTE)}?${params.toString()}#productos-v69`);
+}
+function bootHomeDiscovery() {
+    var _a, _b, _c;
+    if (!document.body.classList.contains("v69-home") || !$("#buscar-v69"))
+        return false;
+    wireFilterMenus();
+    (_a = $(".v66-search")) === null || _a === void 0 ? void 0 : _a.addEventListener("submit", (event) => {
+        var _a;
+        event.preventDefault();
+        const query = ((_a = $("#searchV69")) === null || _a === void 0 ? void 0 : _a.value) || "";
+        if (query.trim() && !searchQueryReady(query))
+            return;
+        openCatalogFromHome({ q: query });
+    });
+    (_b = $("#clearFiltersV69")) === null || _b === void 0 ? void 0 : _b.addEventListener("click", () => {
+        closeFilterMenus();
+        if ($("#searchV69"))
+            $("#searchV69").value = "";
+        if ($("#sortV69"))
+            $("#sortV69").value = DEFAULT_SORT;
+        $("#needSummaryV69").textContent = "Todas";
+        $("#brandSummaryV69").textContent = "Todas";
+    });
+    (_c = $("#sortV69")) === null || _c === void 0 ? void 0 : _c.addEventListener("change", (event) => {
+        trackFilterSelect("order", event.target.value);
+        openCatalogFromHome({ sort: event.target.value });
+    });
+    $$('[data-brand]').forEach((button) => button.addEventListener("click", () => {
+        const brand = button.dataset.brand || "Todas";
+        trackFilterSelect("brand", brand);
+        openCatalogFromHome({ brand });
+    }));
+    $$('[data-need]').forEach((button) => button.addEventListener("click", () => {
+        const need = button.dataset.need || "Todas";
+        trackFilterSelect("need", need);
+        openCatalogFromHome({ need });
+    }));
+    $$('[data-view]').forEach((button) => button.addEventListener("click", () => {
+        const view = button.dataset.view || "Todas";
+        trackFilterSelect("brand", button.dataset.viewName || view);
+        openCatalogFromHome({ view });
+    }));
+    return true;
+}
+async function loadCatalogProducts() {
+    if (S.all.length)
+        return true;
+    if (!BOOT.dataEndpoint)
+        return false;
+    const response = await fetch(url(BOOT.dataEndpoint), {
+        headers: { accept: "application/json" },
+    });
+    if (!response.ok)
+        throw new Error(`No se pudo cargar el catálogo (${response.status}).`);
+    const payload = await response.json();
+    if (!Array.isArray(payload.products) || !payload.products.length) {
+        throw new Error("El catálogo público llegó vacío.");
+    }
+    S.all = payload.products;
+    BOOT.magentoCategoryPaths = payload.magentoCategoryPaths || BOOT.magentoCategoryPaths || {};
+    BOOT.commerceSyncedAt = payload.commerceSyncedAt || BOOT.commerceSyncedAt;
+    BOOT.availabilityReferenceAt = payload.availabilityReferenceAt || BOOT.availabilityReferenceAt;
+    BOOT.navigation = payload.navigation || BOOT.navigation || {};
+    return true;
+}
+async function ensureCatalogReady() {
+    if (S.all.length)
+        return true;
+    if (!BOOT.dataEndpoint)
+        return false;
+    if (catalogLoadPromise)
+        return catalogLoadPromise;
+    const discovery = $("#buscar-v69");
+    discovery === null || discovery === void 0 ? void 0 : discovery.setAttribute("aria-busy", "true");
+    document.body.dataset.v69CatalogLoaded = "loading";
+    catalogLoadPromise = loadCatalogProducts()
+        .then(() => {
+        discovery === null || discovery === void 0 ? void 0 : discovery.removeAttribute("aria-busy");
+        document.body.dataset.v69CatalogLoaded = "true";
+        return true;
+    })
+        .catch((error) => {
+        console.error(error);
+        discovery === null || discovery === void 0 ? void 0 : discovery.removeAttribute("aria-busy");
+        document.body.dataset.v69CatalogLoaded = "error";
+        catalogLoadPromise = null;
+        return false;
+    });
+    return catalogLoadPromise;
+}
+function syncInitialCatalogUi() {
+    const copy = catalogCopy();
+    const resultCount = Number(BOOT.initialResultCount || 0);
+    $$('[data-nav]').forEach((link) => link.classList.toggle("is-active", link.dataset.nav === copy.nav));
+    const count = $("#countV69");
+    if (count)
+        count.hidden = copy.nav !== "productos";
+    const showAllButton = $("#showAllV69");
+    if (showAllButton)
+        showAllButton.hidden = copy.nav === "productos";
+    const more = $("#loadMoreV69");
+    if (more) {
+        const left = Math.max(resultCount - PAGE, 0);
+        more.hidden = left === 0;
+        more.setAttribute("aria-label", `Cargar más productos. Quedan ${left}.`);
+    }
+    sync("[data-brand]", "brand", S.brand);
+    sync("[data-need]", "need", S.need);
+    $$('[data-view]').forEach((link) => link.classList.toggle("is-active", link.dataset.view === S.view));
+    syncFilterMenuSummaries(resultCount);
+    writeUrl("replace");
+}
+async function boot() {
+    var _a, _b, _c, _d, _e, _f;
+    if (!$("#gridV69")) {
+        bootHomeDiscovery();
+        return;
+    }
+    const params = new URLSearchParams(location.search);
+    applyParams(params);
+    $("#searchV69").value = S.q;
+    if ($("#sortV69"))
+        $("#sortV69").value = S.sort;
+    if (S.q)
+        trackSearch(S.q);
+    document.body.dataset.v69CatalogState = "ready";
+    document.body.dataset.v69CatalogLoaded = S.all.length ? "true" : "false";
+    (_a = $(".v66-search")) === null || _a === void 0 ? void 0 : _a.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        closeFilterMenus();
+        const query = $("#searchV69").value;
+        if (query.trim() && !searchQueryReady(query))
+            return;
+        if (!(await ensureCatalogReady()) || $("#searchV69").value !== query)
+            return;
+        S.q = query;
+        S.brand = "Todas";
+        S.need = "Todas";
+        S.scope = "todo";
+        S.limit = PAGE;
+        render("push");
+        trackSearch(query);
+        scrollProducts();
+    });
+    (_b = $("#searchV69")) === null || _b === void 0 ? void 0 : _b.addEventListener("input", async (event) => {
+        closeFilterMenus();
+        const query = event.target.value;
+        scheduleSearchTracking(query);
+        if (!query.trim()) {
+            if (!(await ensureCatalogReady()) || event.target.value !== query)
+                return;
+            reset();
+            return;
+        }
+        if (!searchQueryReady(query)) {
+            if (S.q) {
+                if (!(await ensureCatalogReady()) || event.target.value !== query)
+                    return;
+                S.q = "";
+                S.brand = "Todas";
+                S.need = "Todas";
+                S.scope = "todo";
+                S.limit = PAGE;
+                render();
+            }
+            return;
+        }
+        if (!(await ensureCatalogReady()) || event.target.value !== query)
+            return;
+        S.q = query;
+        S.brand = "Todas";
+        S.need = "Todas";
+        S.scope = "todo";
+        S.limit = PAGE;
+        render();
+    });
+    (_c = $("#showAllV69")) === null || _c === void 0 ? void 0 : _c.addEventListener("click", async () => {
+        if (await ensureCatalogReady())
+            showAll();
+    });
+    (_d = $("#clearFiltersV69")) === null || _d === void 0 ? void 0 : _d.addEventListener("click", async () => {
+        if (await ensureCatalogReady())
+            reset();
+    });
+    (_e = $("#loadMoreV69")) === null || _e === void 0 ? void 0 : _e.addEventListener("click", async () => {
+        if (!(await ensureCatalogReady()))
+            return;
+        S.limit += PAGE;
+        render("push");
+    });
+    (_f = $("#sortV69")) === null || _f === void 0 ? void 0 : _f.addEventListener("change", async (event) => {
+        if (!(await ensureCatalogReady()))
+            return;
+        S.sort = SORT_VALUES.has(event.target.value) ? event.target.value : DEFAULT_SORT;
+        if (S.sort === "sin-stock")
+            S.scope = "todo";
+        trackFilterSelect("order", S.sort);
+        S.limit = PAGE;
+        render("push");
+    });
+    $$("[data-nav]").forEach((link) => link.addEventListener("click", async (event) => {
+        var _a, _b;
+        const target = link.dataset.nav;
+        if (target === "ofertas") {
+            event.preventDefault();
+            if (!(await ensureCatalogReady()))
+                return;
+            reset();
+            scrollProducts();
+        }
+        else if (target === "productos") {
+            event.preventDefault();
+            if (!(await ensureCatalogReady()))
+                return;
+            showAll();
+        }
+        else if (target === "buscar") {
+            event.preventDefault();
+            (_a = $("#buscar-v69")) === null || _a === void 0 ? void 0 : _a.scrollIntoView({ behavior: "smooth", block: "start" });
+            window.setTimeout(() => { var _a; return (_a = $("#searchV69")) === null || _a === void 0 ? void 0 : _a.focus(); }, 350);
+        }
+        else if (target === "marcas") {
+            event.preventDefault();
+            (_b = $("#buscar-v69")) === null || _b === void 0 ? void 0 : _b.scrollIntoView({ behavior: "smooth", block: "start" });
+            window.setTimeout(() => openFilterMenu("brand"), 240);
+        }
+    }));
+    $$("[data-brand]").forEach((button) => button.addEventListener("click", async () => {
+        if (!(await ensureCatalogReady()))
+            return;
+        S.q = "";
+        S.brand = button.dataset.brand || "Todas";
+        trackFilterSelect("brand", S.brand);
+        if (S.brand !== "Todas") {
+            S.need = "Todas";
+            S.view = "Todas";
+        }
+        S.scope = "todo";
+        S.limit = PAGE;
+        $("#searchV69").value = "";
+        closeFilterMenus();
+        render("push");
+        scrollProducts();
+    }));
+    $$("[data-need]").forEach((button) => button.addEventListener("click", async () => {
+        if (!(await ensureCatalogReady()))
+            return;
+        S.q = "";
+        S.need = button.dataset.need || "Todas";
+        trackFilterSelect("need", S.need);
+        if (S.need !== "Todas") {
+            S.brand = "Todas";
+            S.view = "Todas";
+        }
+        S.scope = "todo";
+        S.limit = PAGE;
+        $("#searchV69").value = "";
+        closeFilterMenus();
+        render("push");
+        scrollProducts();
+    }));
+    $$('[data-view]').forEach((link) => link.addEventListener("click", async (event) => {
+        event.preventDefault();
+        if (!(await ensureCatalogReady()))
+            return;
+        S.q = "";
+        S.brand = "Todas";
+        S.need = "Todas";
+        S.view = link.dataset.view || "Todas";
+        trackFilterSelect("brand", link.dataset.viewName || S.view);
+        S.scope = "todo";
+        S.limit = PAGE;
+        $("#searchV69").value = "";
+        render("push");
+        scrollProducts();
+    }));
+    wireFilterMenus();
+    syncInitialCatalogUi();
+    if ((Number.parseInt(params.get("pagina") || "1", 10) || 1) > 1) {
+        void ensureCatalogReady().then((ready) => {
+            if (ready)
+                render();
+        });
+    }
+    window.addEventListener("popstate", async () => {
+        if (!(await ensureCatalogReady()))
+            return;
+        applyParams(new URLSearchParams(location.search));
+        $("#searchV69").value = S.q;
+        if ($("#sortV69"))
+            $("#sortV69").value = S.sort;
+        closeFilterMenus();
+        render();
+    });
+}
+function wireHistoryBack() {
+    $$('[data-history-back]').forEach((link) => link.addEventListener('click', (event) => {
+        event.preventDefault();
+        history.back();
+    }));
+}
+wireImageFallbacks();
+wireHistoryBack();
+wireConversionTracking();
+void boot();
+refreshFloatingWhatsapp();
+const mobileCatalogQueryV69 = window.matchMedia("(max-width: 760px)");
+if (typeof mobileCatalogQueryV69.addEventListener === "function") {
+    mobileCatalogQueryV69.addEventListener("change", refreshFloatingWhatsapp);
+}
+else if (typeof mobileCatalogQueryV69.addListener === "function") {
+    mobileCatalogQueryV69.addListener(refreshFloatingWhatsapp);
+}

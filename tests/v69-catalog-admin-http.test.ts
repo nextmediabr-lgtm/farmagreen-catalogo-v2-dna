@@ -54,6 +54,8 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
     assert.equal(state.catalog.navigationBrands.length, 16);
     assert.equal(state.catalog.navigationBrands.at(-1).name, "Productos Saludables");
     assert.doesNotMatch(JSON.stringify(state), /"sku"|"source"|gpsfarma/i);
+    const publicHtmlBefore = await fetch(`${origin}/`).then((response) => response.text());
+    assert.match(publicHtmlBefore, /data-brand="Aveno"/);
     const publicBefore = await fetch(`${origin}/api/catalog-v6-9`).then((response) => response.json());
     const productToExclude = publicBefore.products.find((product: { barcode?: string }) => /^\d{8,14}$/.test(product.barcode || ""));
     const eanToExclude = productToExclude?.barcode;
@@ -79,6 +81,7 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
     const publicAfter = await fetch(`${origin}/api/catalog-v6-9`).then((response) => response.json());
     assert.equal(publicAfter.totalProducts, publicBefore.totalProducts - 1);
     assert.equal(publicAfter.products.some((product: { barcode: string }) => product.barcode === eanToExclude), false);
+    assert.doesNotMatch(await fetch(`${origin}/`).then((response) => response.text()), /data-brand="Aveno"/);
     assert.equal((await fetch(`${origin}/p/${productToExclude.publicId}`)).status, 404);
     assert.doesNotMatch(await fetch(`${origin}/sitemap.xml`).then((response) => response.text()), new RegExp(`/p/${productToExclude.publicId}<`));
 

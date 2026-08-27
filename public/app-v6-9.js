@@ -25,6 +25,7 @@ const S = {
   limit: PAGE,
 };
 const TOTAL_PRODUCTS = Number(BOOT.totalProducts || S.all.length || 0);
+let catalogLoadPromise = null;
 
 const NEED_LABELS = {
   manchas: "Manchas",
@@ -112,7 +113,12 @@ function trackMeta(eventName, parameters = {}, options = {}) {
 }
 
 function trackGa(eventName, parameters = {}) {
-  window.fgTrackGaV69?.(eventName, parameters);
+  if (typeof window.fgTrackGaV69 === "function") {
+    window.fgTrackGaV69(eventName, parameters);
+    return;
+  }
+  window.__FG_GA_QUEUE = window.__FG_GA_QUEUE || [];
+  window.__FG_GA_QUEUE.push([eventName, parameters]);
 }
 
 function metaProductParameters(product, includeValue = false) {
@@ -253,7 +259,8 @@ function productImageMarkup(product, priority = false) {
   const sizes = "(max-width: 760px) calc((100vw - 52px) / 2), (max-width: 980px) calc((100vw - 72px) / 3), calc((100vw - 112px) / 5)";
   const avif = responsiveVariants(product, "avif");
   const webp = responsiveVariants(product, "webp");
-  const sources = `${avif ? `<source type="image/avif" srcset="${avif}" sizes="${sizes}">` : ""}${webp ? `<source type="image/webp" srcset="${webp}" sizes="${sizes}">` : ""}`;
+  const jpeg = responsiveVariants(product, "jpeg");
+  const sources = `${avif ? `<source type="image/avif" srcset="${avif}" sizes="${sizes}">` : ""}${webp ? `<source type="image/webp" srcset="${webp}" sizes="${sizes}">` : ""}${jpeg ? `<source type="image/jpeg" srcset="${jpeg}" sizes="${sizes}">` : ""}`;
   return `<div class="v66-media"><picture>${sources}<img src="${esc(image)}" alt="${esc(name)}" width="${width}" height="${height}" decoding="async"${priority ? ' loading="eager" fetchpriority="high"' : ' loading="lazy"'}></picture></div>`;
 }
 
@@ -694,8 +701,11 @@ function card(product, priority = false) {
 }
 
 function presentation(product) {
-  const matches = [...String(product.name || "").matchAll(/\b(\d+(?:[.,]\d+)?)\s*(ml|cc|cm3|g|gr|grs|kg|cápsulas?|caps?\.?|comprimidos?|tabletas?|sobres?|ampollas?|unidades?)\b/gi)];
-  const match = matches.at(-1);
+  const expression = /\b(\d+(?:[.,]\d+)?)\s*(ml|cc|cm3|g|gr|grs|kg|cápsulas?|caps?\.?|comprimidos?|tabletas?|sobres?|ampollas?|unidades?)\b/gi;
+  const name = String(product.name || "");
+  let match = null;
+  let candidate;
+  while ((candidate = expression.exec(name)) !== null) match = candidate;
   if (match) return `${match[1]} ${unit(match[2])}`;
   if (/\bx\s*ud\b/i.test(product.name || "")) return "1 unidad";
   if (/\bkit\b/i.test(product.name || "")) return "Kit";
@@ -747,7 +757,10 @@ function setFilterMenuOpen(menu, open, restoreFocus = false) {
   menu.classList.toggle("is-open", open);
   trigger?.setAttribute("aria-expanded", open ? "true" : "false");
   popover?.setAttribute("aria-hidden", open ? "false" : "true");
-  popover?.toggleAttribute("inert", !open);
+  if (popover) {
+    if (open) popover.removeAttribute("inert");
+    else popover.setAttribute("inert", "");
+  }
   if (restoreFocus) trigger?.focus();
 }
 
@@ -1078,7 +1091,7 @@ function applyParams(params) {
       : params.get("scope") === "todo"
         ? "todo"
         : "ofertas";
-  const totalPages = Math.max(1, Math.ceil(S.all.length / PAGE));
+  const totalPages = Math.max(1, Math.ceil((S.all.length || TOTAL_PRODUCTS) / PAGE));
   const page = Math.max(1, Math.min(totalPages, Number.parseInt(params.get("pagina") || "1", 10) || 1));
   S.limit = page * PAGE;
 }
@@ -1139,7 +1152,8 @@ function bootHomeDiscovery() {
 }
 
 async function loadCatalogProducts() {
-  if (S.all.length || !BOOT.dataEndpoint) return;
+  if (S.all.length) return true;
+  if (!BOOT.dataEndpoint) return false;
   const response = await fetch(url(BOOT.dataEndpoint), {
     headers: { accept: "application/json" },
   });
@@ -1153,6 +1167,51 @@ async function loadCatalogProducts() {
   BOOT.commerceSyncedAt = payload.commerceSyncedAt || BOOT.commerceSyncedAt;
   BOOT.availabilityReferenceAt = payload.availabilityReferenceAt || BOOT.availabilityReferenceAt;
   BOOT.navigation = payload.navigation || BOOT.navigation || {};
+  return true;
+}
+
+async function ensureCatalogReady() {
+  if (S.all.length) return true;
+  if (!BOOT.dataEndpoint) return false;
+  if (catalogLoadPromise) return catalogLoadPromise;
+  const discovery = $("#buscar-v69");
+  discovery?.setAttribute("aria-busy", "true");
+  document.body.dataset.v69CatalogLoaded = "loading";
+  catalogLoadPromise = loadCatalogProducts()
+    .then(() => {
+      discovery?.removeAttribute("aria-busy");
+      document.body.dataset.v69CatalogLoaded = "true";
+      return true;
+    })
+    .catch((error) => {
+      console.error(error);
+      discovery?.removeAttribute("aria-busy");
+      document.body.dataset.v69CatalogLoaded = "error";
+      catalogLoadPromise = null;
+      return false;
+    });
+  return catalogLoadPromise;
+}
+
+function syncInitialCatalogUi() {
+  const copy = catalogCopy();
+  const resultCount = Number(BOOT.initialResultCount || 0);
+  $$('[data-nav]').forEach((link) => link.classList.toggle("is-active", link.dataset.nav === copy.nav));
+  const count = $("#countV69");
+  if (count) count.hidden = copy.nav !== "productos";
+  const showAllButton = $("#showAllV69");
+  if (showAllButton) showAllButton.hidden = copy.nav === "productos";
+  const more = $("#loadMoreV69");
+  if (more) {
+    const left = Math.max(resultCount - PAGE, 0);
+    more.hidden = left === 0;
+    more.setAttribute("aria-label", `Cargar más productos. Quedan ${left}.`);
+  }
+  sync("[data-brand]", "brand", S.brand);
+  sync("[data-need]", "need", S.need);
+  $$('[data-view]').forEach((link) => link.classList.toggle("is-active", link.dataset.view === S.view));
+  syncFilterMenuSummaries(resultCount);
+  writeUrl("replace");
 }
 
 async function boot() {
@@ -1160,29 +1219,20 @@ async function boot() {
     bootHomeDiscovery();
     return;
   }
-  document.body.dataset.v69CatalogState = "loading";
-  const discovery = $("#buscar-v69");
-  discovery?.setAttribute("aria-busy", "true");
-  try {
-    await loadCatalogProducts();
-  } catch (error) {
-    console.error(error);
-    discovery?.removeAttribute("aria-busy");
-    document.body.dataset.v69CatalogState = "error";
-    return;
-  }
-  discovery?.removeAttribute("aria-busy");
   const params = new URLSearchParams(location.search);
   applyParams(params);
   $("#searchV69").value = S.q;
   if ($("#sortV69")) $("#sortV69").value = S.sort;
   if (S.q) trackSearch(S.q);
+  document.body.dataset.v69CatalogState = "ready";
+  document.body.dataset.v69CatalogLoaded = S.all.length ? "true" : "false";
 
-  $(".v66-search")?.addEventListener("submit", (event) => {
+  $(".v66-search")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     closeFilterMenus();
     const query = $("#searchV69").value;
     if (query.trim() && !searchQueryReady(query)) return;
+    if (!(await ensureCatalogReady()) || $("#searchV69").value !== query) return;
     S.q = query;
     S.brand = "Todas";
     S.need = "Todas";
@@ -1193,16 +1243,18 @@ async function boot() {
     scrollProducts();
   });
 
-  $("#searchV69")?.addEventListener("input", (event) => {
+  $("#searchV69")?.addEventListener("input", async (event) => {
     closeFilterMenus();
     const query = event.target.value;
     scheduleSearchTracking(query);
     if (!query.trim()) {
+      if (!(await ensureCatalogReady()) || event.target.value !== query) return;
       reset();
       return;
     }
     if (!searchQueryReady(query)) {
       if (S.q) {
+        if (!(await ensureCatalogReady()) || event.target.value !== query) return;
         S.q = "";
         S.brand = "Todas";
         S.need = "Todas";
@@ -1212,6 +1264,7 @@ async function boot() {
       }
       return;
     }
+    if (!(await ensureCatalogReady()) || event.target.value !== query) return;
     S.q = query;
     S.brand = "Todas";
     S.need = "Todas";
@@ -1220,13 +1273,19 @@ async function boot() {
     render();
   });
 
-  $("#showAllV69")?.addEventListener("click", showAll);
-  $("#clearFiltersV69")?.addEventListener("click", reset);
-  $("#loadMoreV69")?.addEventListener("click", () => {
+  $("#showAllV69")?.addEventListener("click", async () => {
+    if (await ensureCatalogReady()) showAll();
+  });
+  $("#clearFiltersV69")?.addEventListener("click", async () => {
+    if (await ensureCatalogReady()) reset();
+  });
+  $("#loadMoreV69")?.addEventListener("click", async () => {
+    if (!(await ensureCatalogReady())) return;
     S.limit += PAGE;
     render("push");
   });
-  $("#sortV69")?.addEventListener("change", (event) => {
+  $("#sortV69")?.addEventListener("change", async (event) => {
+    if (!(await ensureCatalogReady())) return;
     S.sort = SORT_VALUES.has(event.target.value) ? event.target.value : DEFAULT_SORT;
     if (S.sort === "sin-stock") S.scope = "todo";
     trackFilterSelect("order", S.sort);
@@ -1235,14 +1294,16 @@ async function boot() {
   });
 
   $$("[data-nav]").forEach((link) =>
-    link.addEventListener("click", (event) => {
+    link.addEventListener("click", async (event) => {
       const target = link.dataset.nav;
       if (target === "ofertas") {
         event.preventDefault();
+        if (!(await ensureCatalogReady())) return;
         reset();
         scrollProducts();
       } else if (target === "productos") {
         event.preventDefault();
+        if (!(await ensureCatalogReady())) return;
         showAll();
       } else if (target === "buscar") {
         event.preventDefault();
@@ -1257,7 +1318,8 @@ async function boot() {
   );
 
   $$("[data-brand]").forEach((button) =>
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      if (!(await ensureCatalogReady())) return;
       S.q = "";
       S.brand = button.dataset.brand || "Todas";
       trackFilterSelect("brand", S.brand);
@@ -1275,7 +1337,8 @@ async function boot() {
   );
 
   $$("[data-need]").forEach((button) =>
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      if (!(await ensureCatalogReady())) return;
       S.q = "";
       S.need = button.dataset.need || "Todas";
       trackFilterSelect("need", S.need);
@@ -1293,8 +1356,9 @@ async function boot() {
   );
 
   $$('[data-view]').forEach((link) =>
-    link.addEventListener("click", (event) => {
+    link.addEventListener("click", async (event) => {
       event.preventDefault();
+      if (!(await ensureCatalogReady())) return;
       S.q = "";
       S.brand = "Todas";
       S.need = "Todas";
@@ -1309,9 +1373,14 @@ async function boot() {
   );
 
   wireFilterMenus();
-  render();
-  document.body.dataset.v69CatalogState = "ready";
-  window.addEventListener("popstate", () => {
+  syncInitialCatalogUi();
+  if ((Number.parseInt(params.get("pagina") || "1", 10) || 1) > 1) {
+    void ensureCatalogReady().then((ready) => {
+      if (ready) render();
+    });
+  }
+  window.addEventListener("popstate", async () => {
+    if (!(await ensureCatalogReady())) return;
     applyParams(new URLSearchParams(location.search));
     $("#searchV69").value = S.q;
     if ($("#sortV69")) $("#sortV69").value = S.sort;
@@ -1334,4 +1403,9 @@ wireHistoryBack();
 wireConversionTracking();
 void boot();
 refreshFloatingWhatsapp();
-window.matchMedia("(max-width: 760px)").addEventListener?.("change", refreshFloatingWhatsapp);
+const mobileCatalogQueryV69 = window.matchMedia("(max-width: 760px)");
+if (typeof mobileCatalogQueryV69.addEventListener === "function") {
+  mobileCatalogQueryV69.addEventListener("change", refreshFloatingWhatsapp);
+} else if (typeof mobileCatalogQueryV69.addListener === "function") {
+  mobileCatalogQueryV69.addListener(refreshFloatingWhatsapp);
+}

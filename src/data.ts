@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
-export type ResponsiveImageSet={width:number;height:number;avif?:Record<string,string>;webp?:Record<string,string>};
+export type ResponsiveImageSet={width:number;height:number;avif?:Record<string,string>;webp?:Record<string,string>;jpeg?:Record<string,string>};
 export type ProductImages={card:string;detail:string;original?:string;responsive?:{card?:ResponsiveImageSet;detail?:ResponsiveImageSet}};
 export type Product={publicId:string;slug:string;name:string;brand:{id:string;slug:string;name:string;aliases?:string[]};line:string;primaryCategory:string;categorySlugs:string[];needs:string[];aliases:string[];description:string;listPrice:number;offerPrice:number;savingAmount:number;discountPercent:number;images:ProductImages};
 export type Catalog={version:number;syncedAt:string;totalProducts:number;products:Product[]};
