@@ -2,7 +2,7 @@
 
 Creado: 13 de agosto de 2026
 Última actualización: 27 de agosto de 2026
-Estado: V6.9 desplegada y saludable; release de performance activo y verificado en producción.
+Estado: V6.9 desplegada y saludable; performance y backfill JPEG activos y verificados en producción.
 Propósito: punto único de continuidad para código, datos, GCP, búsqueda, taxonomía, exclusiones, navegación, imágenes y analítica.
 
 Este documento describe estado; no amplía autorizaciones. Commit, push, deploy,
@@ -15,13 +15,13 @@ explícita en el turno correspondiente.
 | --- | --- |
 | Worktree dueño | `/Users/danielbernardes/Documents/New project/.worktrees/eucerin-catalogo-v69-local` |
 | Rama | `codex/v69-stock-ordering` |
-| Último commit técnico/test | `482890a` — `perf(v69): defer catalog and cache public responses` |
+| Último commit técnico/test | `2b1cea5` — `feat(v69): add reproducible JPEG backfill` |
 | Remoto | `origin/codex/v69-stock-ordering` |
 | Producción | <https://farmagreenrosario.web.app/> |
 | Proyecto GCP | `project-e2a7bc6d-e741-4d4e-85d` |
 | Servicio Cloud Run | `farmagreen-v69-preprod` |
 | Región | `southamerica-east1` |
-| Revisión activa | `farmagreen-v69-preprod-perf-20260827`, 100% |
+| Revisión activa | `farmagreen-v69-preprod-jpeg-20260827`, 100% |
 | Imagen activa | build `7d6820e6-20ce-46b4-aa1e-3999e9112068`; digest `sha256:abf05ecf223a3fee69b0b4e548fc2cf56ef5524c045bd1f05a2c6f511a49b133` |
 | Refresh comercial | `fg-v69-preprod-sync-0700-art` |
 | Discovery semanal | Job `farmagreen-v69-weekly-discovery`; Scheduler `fg-v69-weekly-discovery` |
@@ -306,11 +306,18 @@ No copiar sus SKU/URLs a issues, commits, handoffs o logs públicos.
 
 - originales y derivados AVIF/WebP de 320, 640 y 1000 px viven en GCS;
 - el pipeline y `<picture>` admiten JPEG responsive 320/640 para Safari antiguo;
-  el backfill de las 2.366 variantes card/detail existentes sigue pendiente;
+- backfill completo: 2.918 sets canónicos, 2.366 públicos y 2.918 objetos JPEG;
+- peso agregado: 50.062.526 bytes; p50 13,5 KB, p95 38,8 KB, máximo 75,9 KB;
+- primera muestra de nueve tarjetas: 84% menos bytes a 320 px y 55% menos a
+  640 px frente al JPEG original;
 - tarjeta y PDP usan `picture`, dimensiones intrínsecas y `object-fit: contain`;
 - ninguna ficha productiva queda sin card/detail responsiva;
 - el Job sólo puede crear objetos; un asset existente se reutiliza;
 - el snapshot no se guarda hasta terminar imágenes y taxonomía.
+- producción exige `V691_REQUIRE_JPEG_RESPONSIVE_IMAGES=1` y falla cerrada si
+  card/detail pierden su mapa JPEG;
+- snapshot activo GCS: generación `1787874318013439`, 10.109.928 bytes;
+- rollback de datos: `preprod/v6-9/backups/catalog-v69-before-jpeg-20260827T234156Z-gen1787850067239094.json`.
 
 Los assets inmutables vigentes son `app-v6-9-12.js`,
 `styles-v6-9-3.css`, `measurement-loader-v69-1.js`, `analytics-v69-4.js`,
@@ -359,7 +366,7 @@ versión anterior.
 - no edita precios, stock, colores, código, analítica o usuarios y no despliega;
 - Codex Agent Manager registró el recibo post-deploy `482890a`, build
   `7d6820e6-20ce-46b4-aa1e-3999e9112068`, revisión
-  `farmagreen-v69-preprod-perf-20260827`, `healthy=true`, 1.183 productos.
+  `farmagreen-v69-preprod-jpeg-20260827`, `healthy=true`, 1.183 productos.
 
 El zócalo comercial fijo para PDP móvil sigue siendo un concepto pendiente. No
 se implementó. Conserva como referencia dos líneas azules `#1557FF` de 6 px,
@@ -423,8 +430,10 @@ vinculación externa GA4–Maps hayan quedado guardados. Tratarlos como pendient
 | `8c14622` | Agrega exclusión y rehabilitación reversible de marcas completas. |
 | `c0855f2` | Permite notas EAN vacías y evita revisiones sin cambios. |
 | `482890a` | Difiere catálogo/medición, agrega compatibilidad Safari, caché de respuestas, compresión y JPEG responsive. |
+| `2b1cea5` | Agrega backfill JPEG reproducible, idempotente y con validación de identidad/dimensiones. |
 
-El release activo se construyó desde `482890a`.
+La imagen runtime activa se construyó desde `482890a`; el tooling operativo del
+backfill quedó registrado localmente en `2b1cea5` y no requiere otra imagen.
 
 ## 13. Verificación contemporánea
 
@@ -438,9 +447,9 @@ Resultado:
 
 - build TypeScript/CSS: aprobado;
 - lógica/contratos: 106/106;
-- sync/GCP/post-deploy: 42/42;
+- sync/GCP/post-deploy: 45/45;
 - E2E: 3/3;
-- total: 151/151, 0 fallas;
+- total: 154/154, 0 fallas;
 - `git diff --check`: limpio;
 - TruffleHog: limpio;
 - autoreview: sin hallazgos aceptados/accionables.
@@ -454,7 +463,7 @@ Verificación remota:
   robots y sitemap: HTTP 200;
 - asset público nuevo con hash idéntico al local;
 - servicio web: 1 CPU, 512 MiB, timeout 900 s;
-- revisión `farmagreen-v69-preprod-perf-20260827` al 100% y la anterior
+- revisión `farmagreen-v69-preprod-jpeg-20260827` al 100% y la anterior
   disponible para rollback por etiqueta;
 - hashes remotos de app, CSS y loader idénticos a los artefactos locales;
 - benchmark Android 2017 sintético: FCP/LCP 0,78 s, 642 KB, 0 requests iniciales al DTO;
@@ -529,8 +538,8 @@ gcloud scheduler jobs describe fg-v69-weekly-discovery \
 2. Verificar en las interfaces externas la vinculación GA4–Google Ads/Maps y el
    estado de Linktree/Google Maps antes de documentarlos como completados.
 3. Evaluar el zócalo móvil conceptual sólo con nueva autorización.
-4. Ejecutar un backfill controlado de JPEG 320/640 en GCS y activar el gate
-   `V691_REQUIRE_JPEG_RESPONSIVE_IMAGES=1` sólo después de validar el snapshot.
+4. Observar el próximo refresh comercial 07:00/14:00 y confirmar que conserva
+   2.918 sets JPEG; existe una regresión automatizada que prueba esa preservación.
 5. Cuando termine la revisión manual de discontinuados, desmarcar `Mostrar “Sin
    stock” en Ordenar` en `/admin-v6-9` y usar `Guardar y publicar`. No requiere
    commit ni deploy y no altera por sí mismo las exclusiones EAN.
@@ -559,8 +568,8 @@ paquete de performance:
 - el pipeline genera JPEG responsive 320/640 además de AVIF/WebP y el `<picture>`
   lo usa como fallback para Safari sin formatos modernos.
 
-Prueba local completa: `npm run verify:v69`, 106 lógica + 42 sync/GCP + 3 E2E,
-151/151 verdes. La prueba de red asegura 0 requests al DTO en la entrada, 0
+Prueba local completa: `npm run verify:v69`, 106 lógica + 45 sync/GCP + 3 E2E,
+154/154 verdes. La prueba de red asegura 0 requests al DTO en la entrada, 0
 terceros antes de idle/interacción y exactamente 1 request al DTO en la primera
 búsqueda. La revisión pre-commit estructurada no reportó bloqueantes.
 
@@ -570,22 +579,25 @@ a ~0,5 ms. Con CPU/red sintéticos y terceros retenidos hasta idle, Android 2017
 marcó FCP 0,82 s, LCP 1,43 s y 535 KB; iPhone 6 sintético marcó FCP 1,11 s,
 LCP 1,39 s y 325 KB. En ambos casos hubo 48 fichas, 0 carga del DTO y TBT 0.
 
-Pendientes posteriores al release:
+Pendiente posterior al release:
 
-1. generar y subir el backfill JPEG de las fichas existentes junto con el
-   snapshot que referencia esos objetos;
-2. validar un Android físico viejo y Safari real en iPhone, o BrowserStack con
+1. validar un Android físico viejo y Safari real en iPhone, o BrowserStack con
    una cuenta aprobada. Chromium con viewport/CPU/red de iPhone no prueba WebKit.
 
 Release verificado:
 
-- commit y remoto alineados en `482890a`;
+- runtime y remoto alineados en `482890a`; tooling backfill local en `2b1cea5`;
 - build `7d6820e6-20ce-46b4-aa1e-3999e9112068`, digest `sha256:abf05ecf...49b133`;
 - candidata `farmagreen-v69-preprod-perf-20260827` validada con 0% de tráfico;
 - promoción a 100%, health `ready/current` y E2E público 2/2 verde;
-- recibo post-deploy persistido en GCS el `2026-08-27T22:52:50.453Z`;
+- último recibo post-deploy persistido en GCS el `2026-08-27T23:50:02.744Z`;
 - sin errores de revisión en Cloud Logging durante la validación;
-- no se ejecutó el backfill JPEG GCS.
+- 2.918 JPEG subidos create-only, 0 sobrescritos y snapshot activado con
+  precondición de generación;
+- revisión `farmagreen-v69-preprod-jpeg-20260827` validada a 0% y promovida al
+  100% con gate JPEG obligatorio;
+- operación repetida sobre producción: 0 descargas, 0 archivos nuevos y JSON
+  idéntico, confirmando idempotencia.
 
 ## 18. Cierre
 
@@ -596,6 +608,6 @@ consultar y 0 sin verificar. `Productos Saludables` tiene 664 membresías base y
 140 marcas reales. El scan semanal del lunes 04:00 ART reconstruye altas, bajas,
 búsqueda, necesidades, Magento e imágenes; el refresh 07:00/14:00 mantiene el
 estado comercial Rosario/STOM. Cloud Run sirve
-`farmagreen-v69-preprod-perf-20260827` al 100%; la imagen del servicio
+`farmagreen-v69-preprod-jpeg-20260827` al 100%; la imagen del servicio
 corresponde al build `7d6820e6-20ce-46b4-aa1e-3999e9112068` y los gates
-locales quedaron 151/151, con E2E candidata y pública verdes.
+locales quedaron 154/154, con E2E candidata y pública verdes.

@@ -70,6 +70,10 @@ Google/Meta se inician después de `load` en idle o con la primera interacción.
 JS/CSS se sirven versionados con Brotli/gzip y Cloud Run reutiliza HTML/DTO
 codificados por snapshot y revisión de política.
 
+El snapshot canónico tiene 2.918 sets JPEG 320/640 y la política pública expone
+2.366. En la primera muestra de nueve tarjetas, Safari antiguo reduce 84% la
+transferencia a 320 px y 55% a 640 px frente a los originales.
+
 Las notas EAN son opcionales. Guardar una política idéntica no crea una revisión
 ni memoria falsa.
 
@@ -86,6 +90,14 @@ pública expone 356; ya no incluye dermocosmética por herencia del paraguas.
 ```bash
 npm run scan:data:v69       # auditoría local, no escribe
 npm run scan:data:v69:apply # aplica localmente; requiere autorización y entorno GCP
+```
+
+Backfill JPEG reproducible, sólo local y sin publicación automática:
+
+```bash
+npm run backfill:jpeg:v69 -- \
+  --input=<snapshot.json> --output=<candidate.json> --store-dir=<jpeg-dir> \
+  --image-bucket=<bucket> --image-prefix=v69/catalog-images
 ```
 
 El estado operativo, contratos, cuentas correctas, cambios, verificación y límites
