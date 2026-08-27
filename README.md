@@ -19,7 +19,7 @@ npm run verify:v69
 npm run dev:v69
 ```
 
-Vista local: <http://127.0.0.1:8099/>.
+Vista local: <http://127.0.0.1:8109/>.
 
 ## Administración V6.9
 
@@ -60,9 +60,15 @@ V69_AGENT_MANAGER_TOKEN=... npm run record:deploy:v69 -- \
 ## Estado y continuidad
 
 El snapshot productivo conserva 1.459 fichas canónicas. La política dinámica
-vigente publica 1.285: 1.097 disponibles, 188 para consultar y 0 sin verificar,
+vigente publica 1.183: 1.012 disponibles, 171 para consultar y 0 sin verificar,
 después de exclusiones reversibles por marca y EAN. Meta Pixel/CAPI, GA4 y la
 etiqueta Google Ads correcta `AW-18405204387` están desplegados.
+
+La entrada pública conserva 48 fichas SSR sin descargar el DTO completo. El
+catálogo se hidrata una sola vez al buscar, filtrar, ordenar o cargar más;
+Google/Meta se inician después de `load` en idle o con la primera interacción.
+JS/CSS se sirven versionados con Brotli/gzip y Cloud Run reutiliza HTML/DTO
+codificados por snapshot y revisión de política.
 
 Las notas EAN son opcionales. Guardar una política idéntica no crea una revisión
 ni memoria falsa.
@@ -74,8 +80,8 @@ un snapshot completo. `Productos Saludables` es una vista transversal de 664
 productos, no una marca.
 
 El reindexado vivo descarta aliases taxonómicos históricos antes de reconstruir
-necesidades. En el snapshot vigente, `Nutrición` contiene 569 productos y ya no
-incluye dermocosmética por herencia del paraguas.
+necesidades. El snapshot vigente contiene 569 fichas de Nutrición y la política
+pública expone 356; ya no incluye dermocosmética por herencia del paraguas.
 
 ```bash
 npm run scan:data:v69       # auditoría local, no escribe

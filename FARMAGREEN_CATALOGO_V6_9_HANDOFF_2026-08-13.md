@@ -2,7 +2,7 @@
 
 Creado: 13 de agosto de 2026
 Última actualización: 27 de agosto de 2026
-Estado: V6.9 desplegada y saludable; mejora de performance verificada localmente y todavía no desplegada.
+Estado: V6.9 desplegada y saludable; release de performance activo y verificado en producción.
 Propósito: punto único de continuidad para código, datos, GCP, búsqueda, taxonomía, exclusiones, navegación, imágenes y analítica.
 
 Este documento describe estado; no amplía autorizaciones. Commit, push, deploy,
@@ -15,14 +15,14 @@ explícita en el turno correspondiente.
 | --- | --- |
 | Worktree dueño | `/Users/danielbernardes/Documents/New project/.worktrees/eucerin-catalogo-v69-local` |
 | Rama | `codex/v69-stock-ordering` |
-| Último commit técnico/test | `c0855f2` — `fix(v69): allow empty EAN notes` |
+| Último commit técnico/test | `482890a` — `perf(v69): defer catalog and cache public responses` |
 | Remoto | `origin/codex/v69-stock-ordering` |
 | Producción | <https://farmagreenrosario.web.app/> |
 | Proyecto GCP | `project-e2a7bc6d-e741-4d4e-85d` |
 | Servicio Cloud Run | `farmagreen-v69-preprod` |
 | Región | `southamerica-east1` |
-| Revisión activa | `farmagreen-v69-preprod-eanfix-20260826`, 100% |
-| Imagen activa | build `b8ed7a8f-2a58-413f-91c2-eecb83899df3` |
+| Revisión activa | `farmagreen-v69-preprod-perf-20260827`, 100% |
+| Imagen activa | build `7d6820e6-20ce-46b4-aa1e-3999e9112068`; digest `sha256:abf05ecf223a3fee69b0b4e548fc2cf56ef5524c045bd1f05a2c6f511a49b133` |
 | Refresh comercial | `fg-v69-preprod-sync-0700-art` |
 | Discovery semanal | Job `farmagreen-v69-weekly-discovery`; Scheduler `fg-v69-weekly-discovery` |
 
@@ -31,18 +31,18 @@ arquitectura de 11 fuentes y estado Git no representan producción actual.
 
 ## 2. Estado público confirmado
 
-Lectura directa del health/API el 26/8/2026 después del release final:
+Lectura directa del health/API el 27/8/2026 después del release de performance:
 
 ```json
 {
   "version": 6.9,
   "status": "ready",
   "reason": "current",
-  "commerceSyncedAt": "2026-08-26T04:00:06.651Z",
-  "totalProducts": 1285,
+  "commerceSyncedAt": "2026-08-27T17:01:00.287Z",
+  "totalProducts": 1183,
   "availabilitySummary": {
-    "available": 1097,
-    "unavailable": 188,
+    "available": 1012,
+    "unavailable": 171,
     "unverified": 0
   },
   "analytics": {
@@ -57,13 +57,13 @@ Lectura directa del health/API el 26/8/2026 después del release final:
 Controles adicionales:
 
 - 1.459 fichas canónicas en el snapshot base;
-- 1.285 DTO y `publicId` públicos después de la política dinámica vigente;
+- 1.183 DTO y `publicId` públicos después de la política dinámica vigente;
 - 140 marcas reales;
-- 664 productos en la vista transversal `Productos Saludables`;
+- 664 membresías base y 388 productos públicos en la vista transversal `Productos Saludables`;
 - 685 rutas Magento públicas;
 - 0 productos sin necesidades;
 - 0 campos públicos `sku`, `source` o proveedor;
-- sitemap con 1.461 URLs: home, catálogo y 1.459 PDP;
+- sitemap con 1.185 URLs: home, catálogo y 1.183 PDP;
 - barcode `3337875694469` presente exactamente una vez como Retinol B3 de
   La Roche Posay, disponible y con necesidad `antiedad`;
 - las seis exclusiones solicitadas el 25/8 están ausentes.
@@ -257,9 +257,10 @@ fichas sin necesidad.
 El scan del 26/8 eliminó aliases taxonómicos históricos del conjunto de
 evidencia antes de inferir necesidades. Eran términos genéricos heredados de
 `Productos Saludables` (`vitaminas`, `suplementos`, etc.) y hacían que algunas
-fichas dermocosméticas entraran en `Nutrición`. Resultado remoto verificado:
+fichas dermocosméticas entraran en `Nutrición`. Resultado remoto verificado
+antes y después de la política pública:
 
-- `Nutrición`: 606 -> 569 fichas;
+- `Nutrición`: 606 -> 569 fichas en snapshot; 356 visibles con la política vigente;
 - el sérum Eucerin Vitamin C señalado quedó `rostro`, con `hidratacion` y
   `antiedad`;
 - el protector Dermaglós FPS50 señalado quedó `solares`;
@@ -304,13 +305,17 @@ No copiar sus SKU/URLs a issues, commits, handoffs o logs públicos.
 ## 9. Imágenes y assets inmutables
 
 - originales y derivados AVIF/WebP de 320, 640 y 1000 px viven en GCS;
+- el pipeline y `<picture>` admiten JPEG responsive 320/640 para Safari antiguo;
+  el backfill de las 2.366 variantes card/detail existentes sigue pendiente;
 - tarjeta y PDP usan `picture`, dimensiones intrínsecas y `object-fit: contain`;
 - ninguna ficha productiva queda sin card/detail responsiva;
 - el Job sólo puede crear objetos; un asset existente se reutiliza;
 - el snapshot no se guarda hasta terminar imágenes y taxonomía.
 
-Los assets inmutables vigentes son `app-v6-9-11.js?v=20260826-2`,
-`styles-v6-9-2.css?v=20260826-1` y `admin-v69-3.js?v=20260826-3`. Cada cambio de
+Los assets inmutables vigentes son `app-v6-9-12.js`,
+`styles-v6-9-3.css`, `measurement-loader-v69-1.js`, `analytics-v69-4.js`,
+`meta-pixel-v69-3.js`, `logo_farmagreen-v69-1.png` y
+`admin-v69-3.js?v=20260826-3`. Cada cambio de
 JavaScript usa una URL nueva para impedir que Firebase/Chrome retengan una
 versión anterior.
 
@@ -323,12 +328,12 @@ versión anterior.
 - orden inicial `Relevancia`;
 - opciones: relevancia, marca, disponibilidad, `Sin stock`, descuento, precio
   ascendente, precio descendente y nombre;
-- `Sin stock` filtra sólo los 232 productos para consultar; es temporal, no es
+- `Sin stock` filtra sólo los 171 productos para consultar; es temporal, no es
   el orden inicial y puede ocultarse desde el panel sin deploy;
 - `Marca`, `Necesidad` y `Ordenar por` emiten eventos al abrir/seleccionar;
 - marca, necesidad, búsqueda y vista transversal se normalizan de forma
   mutuamente consistente;
-- la URL `?view=productos-saludables` conserva el parámetro, muestra 48 de 664 y
+- la URL `?view=productos-saludables` conserva el parámetro, muestra 48 de 388 y
   sólo renderiza miembros de la colección;
 - el tile del menú muestra `Productos Saludables` y `hasta 50%`, sin cantidad ni
   la palabra `paraguas`;
@@ -352,9 +357,9 @@ versión anterior.
 - guarda configuración, memoria, snapshots y rollback en GCS;
 - puede lanzar refresh comercial o el Job semanal con IAM mínimo;
 - no edita precios, stock, colores, código, analítica o usuarios y no despliega;
-- Codex Agent Manager registró el recibo post-deploy `c0855f2`, build
-  `b8ed7a8f-2a58-413f-91c2-eecb83899df3`, revisión
-  `farmagreen-v69-preprod-eanfix-20260826`, `healthy=true`.
+- Codex Agent Manager registró el recibo post-deploy `482890a`, build
+  `7d6820e6-20ce-46b4-aa1e-3999e9112068`, revisión
+  `farmagreen-v69-preprod-perf-20260827`, `healthy=true`, 1.183 productos.
 
 El zócalo comercial fijo para PDP móvil sigue siendo un concepto pendiente. No
 se implementó. Conserva como referencia dos líneas azules `#1557FF` de 6 px,
@@ -417,8 +422,9 @@ vinculación externa GA4–Maps hayan quedado guardados. Tratarlos como pendient
 | `f2826b7` | Simplifica el tile de Productos Saludables conservando el mejor descuento. |
 | `8c14622` | Agrega exclusión y rehabilitación reversible de marcas completas. |
 | `c0855f2` | Permite notas EAN vacías y evita revisiones sin cambios. |
+| `482890a` | Difiere catálogo/medición, agrega compatibilidad Safari, caché de respuestas, compresión y JPEG responsive. |
 
-El release final se construyó desde `c0855f2`.
+El release activo se construyó desde `482890a`.
 
 ## 13. Verificación contemporánea
 
@@ -431,10 +437,10 @@ npm run verify:v69
 Resultado:
 
 - build TypeScript/CSS: aprobado;
-- lógica/contratos: 104/104;
+- lógica/contratos: 106/106;
 - sync/GCP/post-deploy: 42/42;
-- E2E: 2/2;
-- total: 148/148, 0 fallas;
+- E2E: 3/3;
+- total: 151/151, 0 fallas;
 - `git diff --check`: limpio;
 - TruffleHog: limpio;
 - autoreview: sin hallazgos aceptados/accionables.
@@ -448,7 +454,11 @@ Verificación remota:
   robots y sitemap: HTTP 200;
 - asset público nuevo con hash idéntico al local;
 - servicio web: 1 CPU, 512 MiB, timeout 900 s;
-- revisión final al 100% y revisiones fallidas/intermedias al 0%.
+- revisión `farmagreen-v69-preprod-perf-20260827` al 100% y la anterior
+  disponible para rollback por etiqueta;
+- hashes remotos de app, CSS y loader idénticos a los artefactos locales;
+- benchmark Android 2017 sintético: FCP/LCP 0,78 s, 642 KB, 0 requests iniciales al DTO;
+- benchmark iPhone 6 sintético: FCP/LCP 1,08 s, 642 KB, 0 requests iniciales al DTO;
 - autenticación Google real comprobada con la cuenta permitida;
 - recibo post-deploy persistido en GCS y visible en Memoria operativa después
   del TTL de lectura de 30 segundos;
@@ -519,17 +529,18 @@ gcloud scheduler jobs describe fg-v69-weekly-discovery \
 2. Verificar en las interfaces externas la vinculación GA4–Google Ads/Maps y el
    estado de Linktree/Google Maps antes de documentarlos como completados.
 3. Evaluar el zócalo móvil conceptual sólo con nueva autorización.
-4. Observar la primera ejecución automática del lunes a las 04:00 ART. El Job
-   directo y su IAM ya fueron validados; el Scheduler aún no tiene intento
-   histórico y muestra su próxima ejecución correctamente.
+4. Ejecutar un backfill controlado de JPEG 320/640 en GCS y activar el gate
+   `V691_REQUIRE_JPEG_RESPONSIVE_IMAGES=1` sólo después de validar el snapshot.
 5. Cuando termine la revisión manual de discontinuados, desmarcar `Mostrar “Sin
    stock” en Ordenar` en `/admin-v6-9` y usar `Guardar y publicar`. No requiere
    commit ni deploy y no altera por sí mismo las exclusiones EAN.
+6. Validar un Android físico viejo y Safari real en iPhone, o BrowserStack con
+   una cuenta aprobada; Chromium sintético no prueba WebKit.
 
-## 17. Performance y compatibilidad — cambio local pendiente de release
+## 17. Performance y compatibilidad — release activo
 
-El 27/8 se implementó y verificó localmente un paquete de performance que aún
-no forma parte de producción:
+El 27/8 se implementó, validó en candidata a 0% y promovió a producción el
+paquete de performance:
 
 - build público ES2017 generado por `scripts/build-v69-client.mjs`; el cliente
   resultante no contiene optional chaining, nullish coalescing, `Array.at` ni
@@ -559,26 +570,32 @@ a ~0,5 ms. Con CPU/red sintéticos y terceros retenidos hasta idle, Android 2017
 marcó FCP 0,82 s, LCP 1,43 s y 535 KB; iPhone 6 sintético marcó FCP 1,11 s,
 LCP 1,39 s y 325 KB. En ambos casos hubo 48 fichas, 0 carga del DTO y TBT 0.
 
-Gates pendientes antes del release:
+Pendientes posteriores al release:
 
 1. generar y subir el backfill JPEG de las fichas existentes junto con el
    snapshot que referencia esos objetos;
-2. desplegar una revisión candidata sin tráfico y repetir health, API, E2E y
-   benchmark contra su URL;
-3. validar un Android físico viejo y Safari real en iPhone, o BrowserStack con
+2. validar un Android físico viejo y Safari real en iPhone, o BrowserStack con
    una cuenta aprobada. Chromium con viewport/CPU/red de iPhone no prueba WebKit.
 
-No se hizo push, deploy, backfill GCS ni cambio de Cloud Run en esta etapa.
+Release verificado:
+
+- commit y remoto alineados en `482890a`;
+- build `7d6820e6-20ce-46b4-aa1e-3999e9112068`, digest `sha256:abf05ecf...49b133`;
+- candidata `farmagreen-v69-preprod-perf-20260827` validada con 0% de tráfico;
+- promoción a 100%, health `ready/current` y E2E público 2/2 verde;
+- recibo post-deploy persistido en GCS el `2026-08-27T22:52:50.453Z`;
+- sin errores de revisión en Cloud Logging durante la validación;
+- no se ejecutó el backfill JPEG GCS.
 
 ## 18. Cierre
 
 V6.9 ya no depende de una foto fija. El snapshot conserva 1.459 fichas; la
-política dinámica vigente publica 1.285, con 1.097 disponibles, 188 para
+política dinámica vigente publica 1.183, con 1.012 disponibles, 171 para
 consultar y 0 sin verificar. `Productos Saludables` tiene 664 membresías base y
-490 visibles después de exclusiones; el catálogo conserva SKU canónico único y
+388 visibles después de exclusiones; el catálogo conserva SKU canónico único y
 140 marcas reales. El scan semanal del lunes 04:00 ART reconstruye altas, bajas,
 búsqueda, necesidades, Magento e imágenes; el refresh 07:00/14:00 mantiene el
 estado comercial Rosario/STOM. Cloud Run sirve
-`farmagreen-v69-preprod-eanfix-20260826` al 100%; la imagen del servicio y el
-Job semanal corresponde al build `b8ed7a8f-2a58-413f-91c2-eecb83899df3`, y los
-gates local/remoto quedaron verdes (148/148).
+`farmagreen-v69-preprod-perf-20260827` al 100%; la imagen del servicio
+corresponde al build `7d6820e6-20ce-46b4-aa1e-3999e9112068` y los gates
+locales quedaron 151/151, con E2E candidata y pública verdes.
