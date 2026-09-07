@@ -1,8 +1,8 @@
 # FarmaGreen Catálogo V6.9 — handoff canónico de producción
 
 Creado: 13 de agosto de 2026
-Última actualización: 27 de agosto de 2026
-Estado: V6.9 desplegada y saludable; performance y backfill JPEG activos y verificados en producción.
+Última actualización: 7 de septiembre de 2026
+Estado: V6.9 desplegada y saludable; cron semanal reparado, servicio y Job alineados en una única imagen.
 Propósito: punto único de continuidad para código, datos, GCP, búsqueda, taxonomía, exclusiones, navegación, imágenes y analítica.
 
 Este documento describe estado; no amplía autorizaciones. Commit, push, deploy,
@@ -15,14 +15,14 @@ explícita en el turno correspondiente.
 | --- | --- |
 | Worktree dueño | `/Users/danielbernardes/Documents/New project/.worktrees/eucerin-catalogo-v69-local` |
 | Rama | `codex/v69-stock-ordering` |
-| Último commit técnico/test | `2b1cea5` — `feat(v69): add reproducible JPEG backfill` |
+| Último commit técnico/test | `d1248df` — `fix(v69): gate weekly snapshots on JPEG assets` |
 | Remoto | `origin/codex/v69-stock-ordering` |
 | Producción | <https://farmagreenrosario.web.app/> |
 | Proyecto GCP | `project-e2a7bc6d-e741-4d4e-85d` |
 | Servicio Cloud Run | `farmagreen-v69-preprod` |
 | Región | `southamerica-east1` |
-| Revisión activa | `farmagreen-v69-preprod-jpeg-20260827`, 100% |
-| Imagen activa | build `7d6820e6-20ce-46b4-aa1e-3999e9112068`; digest `sha256:abf05ecf223a3fee69b0b4e548fc2cf56ef5524c045bd1f05a2c6f511a49b133` |
+| Revisión activa | `farmagreen-v69-preprod-weeklyfix-20260907`, 100% |
+| Imagen activa | build `439f6d22-1924-4cdd-b8bd-b196e3fb0c2d`; digest `sha256:e5d2d808c9ab73d5300b0c05b9324d623169f99067f4b00cfe8d1fcd93270177` |
 | Refresh comercial | `fg-v69-preprod-sync-0700-art` |
 | Discovery semanal | Job `farmagreen-v69-weekly-discovery`; Scheduler `fg-v69-weekly-discovery` |
 
@@ -31,18 +31,19 @@ arquitectura de 11 fuentes y estado Git no representan producción actual.
 
 ## 2. Estado público confirmado
 
-Lectura directa del health/API el 27/8/2026 después del release de performance:
+Lectura directa del health/API el 7/9/2026 después de reparar el primer scan
+semanal con altas bajo el gate JPEG:
 
 ```json
 {
   "version": 6.9,
   "status": "ready",
   "reason": "current",
-  "commerceSyncedAt": "2026-08-27T17:01:00.287Z",
-  "totalProducts": 1183,
+  "commerceSyncedAt": "2026-09-07T17:00:59.865Z",
+  "totalProducts": 1193,
   "availabilitySummary": {
-    "available": 1012,
-    "unavailable": 171,
+    "available": 986,
+    "unavailable": 207,
     "unverified": 0
   },
   "analytics": {
@@ -56,14 +57,15 @@ Lectura directa del health/API el 27/8/2026 después del release de performance:
 
 Controles adicionales:
 
-- 1.459 fichas canónicas en el snapshot base;
-- 1.183 DTO y `publicId` públicos después de la política dinámica vigente;
+- 1.463 fichas canónicas en el snapshot base;
+- 1.193 DTO y `publicId` públicos después de la política dinámica vigente;
 - 140 marcas reales;
-- 664 membresías base y 388 productos públicos en la vista transversal `Productos Saludables`;
-- 685 rutas Magento públicas;
+- 663 membresías base y 393 productos públicos en la vista transversal `Productos Saludables`;
+- 686 rutas Magento embebidas;
+- 2.926 sets JPEG card/detail y 0 faltantes;
 - 0 productos sin necesidades;
 - 0 campos públicos `sku`, `source` o proveedor;
-- sitemap con 1.185 URLs: home, catálogo y 1.183 PDP;
+- sitemap con 1.195 URLs: home, catálogo y 1.193 PDP;
 - barcode `3337875694469` presente exactamente una vez como Retinol B3 de
   La Roche Posay, disponible y con necesidad `antiedad`;
 - las seis exclusiones solicitadas el 25/8 están ausentes.
@@ -601,13 +603,50 @@ Release verificado:
 
 ## 18. Cierre
 
-V6.9 ya no depende de una foto fija. El snapshot conserva 1.459 fichas; la
-política dinámica vigente publica 1.183, con 1.012 disponibles, 171 para
-consultar y 0 sin verificar. `Productos Saludables` tiene 664 membresías base y
-388 visibles después de exclusiones; el catálogo conserva SKU canónico único y
+V6.9 ya no depende de una foto fija. El snapshot conserva 1.463 fichas; la
+política dinámica vigente publica 1.193, con 986 disponibles, 207 para
+consultar y 0 sin verificar. `Productos Saludables` tiene 663 membresías base y
+393 visibles después de exclusiones; el catálogo conserva SKU canónico único y
 140 marcas reales. El scan semanal del lunes 04:00 ART reconstruye altas, bajas,
 búsqueda, necesidades, Magento e imágenes; el refresh 07:00/14:00 mantiene el
 estado comercial Rosario/STOM. Cloud Run sirve
-`farmagreen-v69-preprod-jpeg-20260827` al 100%; la imagen del servicio
-corresponde al build `7d6820e6-20ce-46b4-aa1e-3999e9112068` y los gates
-locales quedaron 154/154, con E2E candidata y pública verdes.
+`farmagreen-v69-preprod-weeklyfix-20260907` al 100%; servicio y Job semanal
+comparten el build `439f6d22-1924-4cdd-b8bd-b196e3fb0c2d` y los gates locales
+quedaron 155/155, con E2E candidata y pública verdes.
+
+## 19. Incidente y reparación del cron semanal — 7/9/2026
+
+La ejecución automática `farmagreen-v69-weekly-discovery-pgrdj` comenzó a las
+04:00 ART, detectó 10 altas y terminó con `exit(0)`. Las 10 fichas obtuvieron
+WebP/AVIF pero no JPEG porque el Job seguía usando una imagen del 26/8, anterior
+al cambio de performance del 27/8. El finalizador semanal tampoco exigía JPEG,
+por lo que publicó `activationReady: true`; el servicio público sí lo exigía y
+respondió 503 para home, health y API.
+
+Reparación de datos:
+
+- snapshot previo respaldado en
+  `preprod/v6-9/backups/catalog-v69-before-weekly-jpeg-repair-20260907T1835Z-gen1788800466503796.json`;
+- 20 JPEG nuevos, dos por cada imagen única, subidos create-only;
+- snapshot reemplazado con precondición sobre la generación
+  `1788800466503796`; generación reparada `1788806345418166`;
+- comparación estructural confirmó que sólo cambiaron los mapas JPEG: mismos
+  1.463 `publicId`, marcas, productos, índices, disponibilidad y política;
+- las exclusiones/inclusiones administrativas no se escribieron ni alteraron.
+
+Reparación permanente:
+
+- `scripts/scan-catalog-v69.mjs` rechaza ahora cualquier card/detail sin JPEG
+  antes de guardar un candidato semanal;
+- prueba de regresión específica en `tests/v69-commerce-sync.test.mjs`;
+- build local y 155/155 pruebas verdes: 106 lógica, 46 sync/GCP y 3 E2E;
+- autoreview P0 y TruffleHog limpios;
+- commit `d1248df` alineado con `origin/codex/v69-stock-ordering`;
+- build `439f6d22-1924-4cdd-b8bd-b196e3fb0c2d`, digest
+  `sha256:e5d2d808c9ab73d5300b0c05b9324d623169f99067f4b00cfe8d1fcd93270177`;
+- servicio y Job semanal usan exactamente ese digest;
+- Scheduler conserva `0 4 * * 1`, zona `America/Argentina/Buenos_Aires`;
+- candidata con 0% validada mediante health/API y E2E remoto 2/2;
+- revisión `farmagreen-v69-preprod-weeklyfix-20260907` promovida al 100%;
+- dominio público, health y API HTTP 200; E2E público final 2/2;
+- recibo saludable registrado en la memoria del panel administrativo.
