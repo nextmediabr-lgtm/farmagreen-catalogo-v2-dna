@@ -544,6 +544,19 @@ test("el candidato semanal sólo queda activable después de imágenes GCS y tax
   assertRuntimeAssetsV69(result.catalog.products);
 });
 
+test("el candidato semanal no puede activarse sin JPEG responsive", () => {
+  const images = responsiveGcsImages("weekly-missing-jpeg");
+  delete images.responsive.card.jpeg;
+  assert.throws(
+    () => assertRuntimeAssetsV69([{
+      publicId: "p-weekly-missing-jpeg",
+      magentoTaxonomyAttached: true,
+      images,
+    }]),
+    /Faltan imágenes JPEG responsivas para p-weekly-missing-jpeg/,
+  );
+});
+
 test("el candidato semanal aborta si conserva cambios pendientes", async () => {
   const completedAt = "2026-08-25T12:00:00.000Z";
   const base = discoveryBaseCatalog([
@@ -1326,6 +1339,7 @@ function responsiveGcsImages(slug) {
     height: 1000,
     webp: { "320": "https://storage.googleapis.com/test-images/v69/" + slug + "-320.webp" },
     avif: { "320": "https://storage.googleapis.com/test-images/v69/" + slug + "-320.avif" },
+    jpeg: { "320": "https://storage.googleapis.com/test-images/v69/" + slug + "-320.jpg" },
   };
   return {
     card: original,

@@ -433,6 +433,9 @@ export function assertRuntimeAssetsV69(products) {
       if (!responsive?.width || !responsive?.height || !Object.keys(responsive.webp || {}).length || !Object.keys(responsive.avif || {}).length) {
         throw new Error("Faltan imágenes responsivas para " + product.publicId + ".");
       }
+      if (!Object.keys(responsive.jpeg || {}).length) {
+        throw new Error("Faltan imágenes JPEG responsivas para " + product.publicId + ".");
+      }
     }
   }
 }
