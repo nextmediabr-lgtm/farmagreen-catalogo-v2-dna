@@ -980,6 +980,7 @@ test("sincroniza URL primero, título confiable después y no autoagrega candida
     catalogProducts: 4,
     listedProducts: 3,
     matchedByUrl: 1,
+    matchedByDirect: 0,
     matchedByImage: 0,
     matchedByTitle: 1,
     matched: 2,
@@ -1036,6 +1037,117 @@ test("una ausencia del listado no se publica como sin stock", () => {
   assert.equal(result.products[0].availability, "unknown");
   assert.equal(result.products[0].availabilityCheckedAt, null);
   assert.equal(result.commerceSync.metrics.unavailable, 0);
+});
+
+test("el refresh comercial verifica por ficha directa un producto conocido ausente del listado", async () => {
+  const completedAt = "2026-09-15T19:31:23.190Z";
+  const sourceUrl = "https://gpsfarma.com/producto-con-fallback-directo.html";
+  const requested = [];
+  const directHtml = `
+    <table>
+      <tr><th>SKU</th><td>DIRECT-1</td></tr>
+      <tr><th>Código de barras</th><td>7798120266750</td></tr>
+    </table>
+    <span data-price-type="oldPrice" data-price-amount="1000"></span>
+    <span data-price-type="finalPrice" data-price-amount="800"></span>
+    <form data-product-sku="DIRECT-1" data-role="tocart-form" action="/checkout/cart/add/"></form>
+  `;
+  const result = await runCommercialSync({
+    providedBaseCatalog: {
+      version: 6.9,
+      products: [
+        product("p-direct", "Producto conocido fuera del listado x 30 ml", {
+          sku: "DIRECT-1",
+          barcode: "7798120266750",
+          source: { url: sourceUrl },
+        }),
+      ],
+    },
+    sources: [EUCERIN],
+    fetchHtml: async (url) => {
+      requested.push(url);
+      return normalizeGpsProductUrl(url) === normalizeGpsProductUrl(sourceUrl)
+        ? directHtml
+        : PAGE_2;
+    },
+    now: () => new Date(completedAt),
+    minCoverage: 1,
+    minPriceCoverage: 1,
+    onProgress: () => {},
+  });
+
+  assert.ok(requested.some((url) => normalizeGpsProductUrl(url) === normalizeGpsProductUrl(sourceUrl)));
+  assert.equal(result.catalog.products[0].availability, "limited");
+  assert.equal(result.catalog.products[0].availabilityCheckedAt, completedAt);
+  assert.equal(result.catalog.products[0].offerPrice, 800);
+  assert.equal(result.commerceSync.metrics.matchedByDirect, 1);
+  assert.equal(result.commerceSync.metrics.unverified, 0);
+  assert.equal(result.commerceSync.metrics.availabilityCoverage, 1);
+});
+
+test("el refresh comercial rechaza una ficha directa con un SKU contradictorio", async () => {
+  const sourceUrl = "https://gpsfarma.com/producto-con-identidad-contradictoria.html";
+  const directHtml = `
+    <table>
+      <tr><th>SKU</th><td>OTRO-SKU</td></tr>
+      <tr><th>Código de barras</th><td>7798120266750</td></tr>
+    </table>
+    <span data-price-type="finalPrice" data-price-amount="800"></span>
+    <form data-product-sku="OTRO-SKU" data-role="tocart-form" action="/checkout/cart/add/"></form>
+  `;
+
+  await assert.rejects(
+    runCommercialSync({
+      providedBaseCatalog: {
+        version: 6.9,
+        products: [
+          product("p-direct-bad", "Producto con identidad conocida x 30 ml", {
+            sku: "DIRECT-1",
+            barcode: "7798120266750",
+            source: { url: sourceUrl },
+          }),
+        ],
+      },
+      sources: [EUCERIN],
+      fetchHtml: async (url) =>
+        normalizeGpsProductUrl(url) === normalizeGpsProductUrl(sourceUrl) ? directHtml : PAGE_2,
+      minCoverage: 1,
+      minPriceCoverage: 1,
+      onProgress: () => {},
+    }),
+    /no corresponde al SKU esperado DIRECT-1/,
+  );
+});
+
+test("el refresh comercial exige que la ficha directa confirme el EAN conocido", async () => {
+  const sourceUrl = "https://gpsfarma.com/producto-sin-ean.html";
+  const directHtml = `
+    <table><tr><th>SKU</th><td>DIRECT-1</td></tr></table>
+    <span data-price-type="finalPrice" data-price-amount="800"></span>
+    <form data-product-sku="DIRECT-1" data-role="tocart-form" action="/checkout/cart/add/"></form>
+  `;
+
+  await assert.rejects(
+    runCommercialSync({
+      providedBaseCatalog: {
+        version: 6.9,
+        products: [
+          product("p-direct-no-ean", "Producto con EAN conocido x 30 ml", {
+            sku: "DIRECT-1",
+            barcode: "7798120266750",
+            source: { url: sourceUrl },
+          }),
+        ],
+      },
+      sources: [EUCERIN],
+      fetchHtml: async (url) =>
+        normalizeGpsProductUrl(url) === normalizeGpsProductUrl(sourceUrl) ? directHtml : PAGE_2,
+      minCoverage: 1,
+      minPriceCoverage: 1,
+      onProgress: () => {},
+    }),
+    /no confirmó el código de barra del SKU DIRECT-1/,
+  );
 });
 
 test("un marcador explícito de sin stock se conserva", () => {

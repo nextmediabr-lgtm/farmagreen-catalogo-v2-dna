@@ -603,9 +603,10 @@ export function synchronizeCatalog(
         name: source.catalogBrandName,
         status: source.status,
         pages: source.pages.length,
-        listed: source.products.length,
+        listed: source.products.filter((candidate) => !candidate.sourceFallbackDirect).length,
         catalogProducts: productCountBySource.get(source.id) || 0,
         matchedByUrl: 0,
+        matchedByDirect: 0,
         matchedByImage: 0,
         matchedByTitle: 0,
         available: 0,
@@ -622,6 +623,7 @@ export function synchronizeCatalog(
       .filter(Boolean),
   );
   let matchedByUrl = 0;
+  let matchedByDirect = 0;
   let matchedByImage = 0;
   let matchedByTitle = 0;
   let available = 0;
@@ -656,8 +658,13 @@ export function synchronizeCatalog(
     const knownUrl = normalizeGpsProductUrl(product?.source?.url);
     const exact = knownUrl ? candidatesByUrl.get(knownUrl) : null;
     if (exact && !usedCandidateUrls.has(normalizeGpsProductUrl(exact.sourceUrl))) {
-      matchedByUrl += 1;
-      metric.matchedByUrl += 1;
+      if (exact.sourceFallbackDirect) {
+        matchedByDirect += 1;
+        metric.matchedByDirect += 1;
+      } else {
+        matchedByUrl += 1;
+        metric.matchedByUrl += 1;
+      }
       if (validPricing(exact)) {
         pricesUpdated += 1;
         metric.pricesUpdated += 1;
@@ -711,7 +718,7 @@ export function synchronizeCatalog(
     return trackAvailability(unverifiedProduct(product), metric);
   });
 
-  const matched = matchedByUrl + matchedByImage + matchedByTitle;
+  const matched = matchedByUrl + matchedByDirect + matchedByImage + matchedByTitle;
   const verified = available + unavailable;
   const coverage = Number((matched / products.length).toFixed(4));
   const priceCoverage = matched ? Number((pricesUpdated / matched).toFixed(4)) : 0;
@@ -723,12 +730,18 @@ export function synchronizeCatalog(
     throw new Error(`Cobertura de precios insuficiente: ${(priceCoverage * 100).toFixed(1)}%.`);
   }
 
-  const listedProducts = sourceResults.reduce((sum, source) => sum + source.products.length, 0);
+  const listedProducts = sourceResults.reduce(
+    (sum, source) =>
+      sum + source.products.filter((candidate) => !candidate.sourceFallbackDirect).length,
+    0,
+  );
   const newCandidates = sourceResults.reduce(
     (sum, source) =>
       sum +
       source.products.filter(
-        (candidate) => !usedCandidateUrls.has(normalizeGpsProductUrl(candidate.sourceUrl)),
+        (candidate) =>
+          !candidate.sourceFallbackDirect &&
+          !usedCandidateUrls.has(normalizeGpsProductUrl(candidate.sourceUrl)),
       ).length,
     0,
   );
@@ -736,6 +749,7 @@ export function synchronizeCatalog(
     catalogProducts: products.length,
     listedProducts,
     matchedByUrl,
+    matchedByDirect,
     matchedByImage,
     matchedByTitle,
     matched,
@@ -767,6 +781,83 @@ export function synchronizeCatalog(
   };
 }
 
+async function addDirectProductFallbacksV69(
+  baseCatalog,
+  sourceResults,
+  {
+    completedAt,
+    expectedSourceIds,
+    inventoryScope,
+    fetchHtml,
+    concurrency = 3,
+  },
+) {
+  const preliminary = synchronizeCatalog(baseCatalog, sourceResults, {
+    completedAt,
+    minCoverage: 0,
+    minPriceCoverage: 0,
+    expectedSourceIds,
+    inventoryScope,
+  });
+  const resultsByBrandId = new Map(
+    sourceResults.map((source) => [String(source.catalogBrandId || source.id), source]),
+  );
+  const resultsBySourceId = new Map(
+    sourceResults.map((source) => [String(source.id), source]),
+  );
+  const targets = baseCatalog.products
+    .map((product, index) => ({ product, refreshed: preliminary.products[index] }))
+    .filter(({ refreshed }) => refreshed?.availability === "unknown")
+    .map(({ product }) => ({
+      product,
+      source: sourceForProduct(product, resultsByBrandId, resultsBySourceId),
+    }))
+    .filter(({ source }) => Boolean(source));
+  if (!targets.length) return sourceResults;
+
+  const { parseProductPageCommerceV7Beta } = await import("./build-local-v7-beta.mjs");
+  const additions = await mapLimit(targets, concurrency, async ({ product, source }) => {
+    const sourceUrl = trustedGpsUrl(product?.source?.url);
+    const html = await fetchHtml(sourceUrl);
+    const pageIdentity = parseProductIdentityV69(html);
+    const expectedBarcode = String(product?.barcode || "").replace(/\D/g, "");
+    if (expectedBarcode && pageIdentity.barcode !== expectedBarcode) {
+      throw new Error(
+        `La ficha directa no confirmó el código de barra del SKU ${String(product?.sku || "").trim()}.`,
+      );
+    }
+    const commerce = parseProductPageCommerceV7Beta(html, product);
+    return {
+      sourceId: String(source.id),
+      catalogBrandId: String(source.catalogBrandId || source.id),
+      catalogBrandName: source.catalogBrandName,
+      sourceFallbackDirect: true,
+      sourceUrl,
+      sourceName: product.name,
+      sourceBrand: product.brand?.name || source.catalogBrandName,
+      imageUrl: product.images?.original || product.images?.detail || product.images?.card || "",
+      sku: commerce.sku,
+      barcode: commerce.barcode,
+      availability: commerce.availability,
+      listPrice: commerce.listPrice,
+      offerPrice: commerce.offerPrice,
+      savingAmount: commerce.savingAmount,
+      discountPercent: commerce.discountPercent,
+    };
+  });
+  const additionsBySourceId = new Map();
+  for (const addition of additions) {
+    const sourceId = String(addition.sourceId);
+    const existing = additionsBySourceId.get(sourceId) || [];
+    existing.push(addition);
+    additionsBySourceId.set(sourceId, existing);
+  }
+  return sourceResults.map((source) => ({
+    ...source,
+    products: [...source.products, ...(additionsBySourceId.get(String(source.id)) || [])],
+  }));
+}
+
 export async function runCommercialSync({
   rootDir = ROOT,
   apply = false,
@@ -796,11 +887,23 @@ export async function runCommercialSync({
       inventoryScope,
     }));
   const sourceResults = await crawlAllSources(sources, { fetchHtml: scopedFetchHtml, onProgress });
-  const catalog = synchronizeCatalog(baseCatalog, sourceResults, {
-    completedAt: now().toISOString(),
+  const completedAt = now().toISOString();
+  const expectedSourceIds = sources.map((source) => String(source.id));
+  const sourceResultsWithFallbacks = await addDirectProductFallbacksV69(
+    baseCatalog,
+    sourceResults,
+    {
+      completedAt,
+      expectedSourceIds,
+      inventoryScope,
+      fetchHtml: scopedFetchHtml,
+    },
+  );
+  const catalog = synchronizeCatalog(baseCatalog, sourceResultsWithFallbacks, {
+    completedAt,
     minCoverage,
     minPriceCoverage,
-    expectedSourceIds: sources.map((source) => String(source.id)),
+    expectedSourceIds,
     inventoryScope,
   });
   if (apply) await writeCatalog(outputPath, catalog);
