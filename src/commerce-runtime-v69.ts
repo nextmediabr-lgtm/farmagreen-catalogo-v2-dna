@@ -205,31 +205,33 @@ export class CommerceRuntimeV69 {
   }
 
   async #initializeOnce() {
+    if (this.#dependencies.snapshotStore) {
+      try {
+        const stored = await this.#dependencies.snapshotStore.load();
+        if (stored) {
+          const snapshot = this.#validate(stored);
+          await this.#dependencies.activateCatalog(snapshot);
+          this.#activeCatalog = snapshot;
+          this.#lastSuccessAt = snapshot.commerceSync.completedAt;
+          this.#lastDiscoveryAt = validTimestamp(snapshot.discoverySync?.completedAt)
+            ? new Date(snapshot.discoverySync.completedAt).toISOString()
+            : null;
+          this.#state = this.syncConfigured ? "ready" : "degraded";
+          this.#dependencies.log?.("info", "V6.9 inicializada desde el último snapshot sano.");
+          return;
+        }
+      } catch {
+        this.#lastFailureAt = (this.#dependencies.now?.() || new Date()).toISOString();
+        this.#dependencies.log?.(
+          "warn",
+          "No se pudo activar el snapshot remoto; V6.9 usa el catálogo base.",
+        );
+      }
+    }
+
     const baseCatalog = await this.#dependencies.loadBaseCatalog();
     this.#activeCatalog = baseCatalog;
     await this.#dependencies.activateCatalog(baseCatalog);
-
-    if (!this.#dependencies.snapshotStore) return;
-
-    try {
-      const stored = await this.#dependencies.snapshotStore.load();
-      if (!stored) return;
-      const snapshot = this.#validate(stored);
-      await this.#dependencies.activateCatalog(snapshot);
-      this.#activeCatalog = snapshot;
-      this.#lastSuccessAt = snapshot.commerceSync.completedAt;
-      this.#lastDiscoveryAt = validTimestamp(snapshot.discoverySync?.completedAt)
-        ? new Date(snapshot.discoverySync.completedAt).toISOString()
-        : null;
-      this.#state = this.syncConfigured ? "ready" : "degraded";
-      this.#dependencies.log?.("info", "V6.9 inicializada desde el último snapshot sano.");
-    } catch {
-      this.#lastFailureAt = (this.#dependencies.now?.() || new Date()).toISOString();
-      this.#dependencies.log?.(
-        "warn",
-        "No se pudo activar el snapshot remoto; V6.9 conserva el catálogo base.",
-      );
-    }
   }
 
   async #performRefresh(

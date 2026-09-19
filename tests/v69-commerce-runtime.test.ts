@@ -26,8 +26,12 @@ test("V6.9 inicia desde el último snapshot verificado", async () => {
   const base = baseCatalog();
   const snapshot = syncedCatalog("2026-08-03T10:00:00.000Z");
   const activated: unknown[] = [];
+  let baseLoads = 0;
   const runtime = new CommerceRuntimeV69(ENVIRONMENT, {
-    loadBaseCatalog: async () => base,
+    loadBaseCatalog: async () => {
+      baseLoads += 1;
+      return base;
+    },
     activateCatalog: async (catalog) => activated.push(catalog),
     runSync: async () => {
       throw new Error("no debe sincronizar al iniciar");
@@ -38,7 +42,8 @@ test("V6.9 inicia desde el último snapshot verificado", async () => {
 
   await runtime.initialize();
 
-  assert.deepEqual(activated, [base, snapshot]);
+  assert.equal(baseLoads, 0);
+  assert.deepEqual(activated, [snapshot]);
   assert.deepEqual(runtime.health(), {
     status: "ready",
     catalogVersion: 6.9,
@@ -50,6 +55,30 @@ test("V6.9 inicia desde el último snapshot verificado", async () => {
     discoveryConfigured: false,
     lastDiscoveryAt: null,
   });
+});
+
+test("V6.9 usa el catálogo base sólo si el snapshot remoto no está disponible", async () => {
+  const base = baseCatalog();
+  const activated: unknown[] = [];
+  const runtime = new CommerceRuntimeV69(ENVIRONMENT, {
+    loadBaseCatalog: async () => base,
+    activateCatalog: async (catalog) => activated.push(catalog),
+    runSync: async () => syncedCatalog("2026-08-04T10:00:00.000Z"),
+    snapshotStore: {
+      load: async () => {
+        throw new Error("GCS temporalmente no disponible");
+      },
+      save: async () => {},
+    },
+    verifyOidcToken: async () => {},
+    now: () => new Date("2026-08-03T11:00:00.000Z"),
+  });
+
+  await runtime.initialize();
+
+  assert.deepEqual(activated, [base]);
+  assert.equal(runtime.health().status, "degraded");
+  assert.equal(runtime.health().lastFailureAt, "2026-08-03T11:00:00.000Z");
 });
 
 test("V6.9 rechaza snapshots con disponibilidad pendiente", () => {
