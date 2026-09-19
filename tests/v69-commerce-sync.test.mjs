@@ -611,6 +611,44 @@ test("parser acepta precio regular y detecta el enlace siguiente", () => {
   assert.equal(parseNextPageUrl(PAGE_2), null);
 });
 
+test("parser reconstruye el precio de lista desde la etiqueta explícita de promoción", () => {
+  const [product] = parseListingProducts(
+    `
+      <li class="item product product-item">
+        <a class="product photo product-item-photo" href="/promo.html">
+          <div class="top_left category"><img src="/media/smile_productlabel/imagelabel/50__56x40.png" alt="Promo 50% Off" title="Promo 50% Off"></div>
+          <img class="product-image-photo" src="https://gpsfarma.com/media/catalog/product/promo.jpg">
+        </a>
+        <a class="product-item-link" href="/promo.html">Producto en promoción</a>
+        <span data-price-type="finalPrice" data-price-amount="5000" id="product-price-1">$ 5.000</span>
+        <form data-role="tocart-form" data-product-sku="PROMO-1" action="/checkout/cart/add/"></form>
+      </li>
+    `,
+    EUCERIN,
+  );
+  assert.equal(product.listPrice, 10000);
+  assert.equal(product.offerPrice, 5000);
+  assert.equal(product.savingAmount, 5000);
+  assert.equal(product.discountPercent, 50);
+});
+
+test("parser prioriza el precio anterior explícito sobre la etiqueta promocional", () => {
+  const [product] = parseListingProducts(
+    `
+      <li class="item product product-item">
+        <a class="product-item-link" href="/promo-con-precio-anterior.html">Promoción con precio anterior</a>
+        <img alt="Promo 50% Off" title="Promo 50% Off">
+        <span data-price-type="oldPrice" data-price-amount="8000" id="old-price-2">$ 8.000</span>
+        <span data-price-type="finalPrice" data-price-amount="6000" id="product-price-2">$ 6.000</span>
+      </li>
+    `,
+    EUCERIN,
+  );
+  assert.equal(product.listPrice, 8000);
+  assert.equal(product.offerPrice, 6000);
+  assert.equal(product.discountPercent, 25);
+});
+
 test("el parser usa sólo los marcadores explícitos del listado para disponibilidad", () => {
   const products = parseListingProducts(
     `

@@ -228,6 +228,17 @@ function productBlocks(html) {
   });
 }
 
+function promotionDiscountPercent(block) {
+  for (const image of String(block || "").matchAll(/<img\b([^>]*)>/gi)) {
+    const label = `${htmlAttribute(image[1], "alt")} ${htmlAttribute(image[1], "title")}`;
+    const match = label.match(/\bpromo\s+(\d{1,2}(?:[.,]\d+)?)\s*%\s*off\b/i);
+    if (!match) continue;
+    const discount = Number.parseFloat(match[1].replace(",", "."));
+    if (Number.isFinite(discount) && discount > 0 && discount < 100) return discount;
+  }
+  return 0;
+}
+
 function priceAmounts(block) {
   let oldPrice = 0;
   let finalPrice = 0;
@@ -244,6 +255,13 @@ function priceAmounts(block) {
       (id.includes("product-price") && !id.includes("old-price") && !id.includes("excluding-tax"))
     ) {
       finalPrice ||= amount;
+    }
+  }
+  if (!oldPrice && finalPrice) {
+    const promotionDiscount = promotionDiscountPercent(block);
+    if (promotionDiscount) {
+      const listPrice = finalPrice / (1 - promotionDiscount / 100);
+      return computePricing(listPrice, finalPrice);
     }
   }
   return computePricing(oldPrice || finalPrice, finalPrice || oldPrice);
