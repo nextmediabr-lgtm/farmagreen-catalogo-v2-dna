@@ -1,9 +1,13 @@
-import { GoogleAuth, OAuth2Client } from "google-auth-library";
+import crypto from "node:crypto";
+import { OAuth2Client } from "google-auth-library";
 import {
-  catalogV69Data,
-  setCatalogV69Data,
+  loadBaseCatalogV69,
+  prepareCatalogV69Data,
+  activatePreparedCatalogV69,
   type CatalogV69,
 } from "./data-v69.js";
+import { gcsSnapshotStoreV69, SnapshotConflictV69, SnapshotWriteUncertainV69 } from "./catalog-snapshot-store-v69.js";
+import { preparePublicationV69, assertCatalogTransitionV69 } from "./catalog-validation-v69.js";
 
 export type RuntimeEnvironmentV69 = Readonly<Record<string, string | undefined>>;
 
@@ -37,12 +41,17 @@ export type SyncedCatalogV69 = CatalogV69 & {
 
 export type SnapshotStoreV69 = {
   load(): Promise<unknown | null>;
-  save(catalog: SyncedCatalogV69): Promise<void>;
+  save(catalog: SyncedCatalogV69, expectedGeneration?: string, idempotencyKey?: string): Promise<string | void>;
+  loadVersioned?(): Promise<{ catalog: unknown | null; generation: string }>;
+  generation?(): Promise<string>;
+  loadPrevious?(catalog: unknown): Promise<unknown | null>;
+  wasRejected?(key: string): Promise<boolean>;
+  recordRejection?(key: string, failure: unknown, candidate?: unknown): Promise<void>;
 };
 
 export type RuntimeDependenciesV69 = {
   loadBaseCatalog: () => Promise<unknown>;
-  activateCatalog: (catalog: unknown) => void | Promise<void>;
+  prepareCatalog: (catalog: unknown) => Promise<() => void>;
   runSync: (baseCatalog: unknown) => Promise<unknown>;
   runDiscovery?: (baseCatalog: unknown) => Promise<unknown>;
   snapshotStore: SnapshotStoreV69 | null;
@@ -61,6 +70,9 @@ export type RuntimeHealthV69 = {
   syncConfigured: boolean;
   discoveryConfigured: boolean;
   lastDiscoveryAt: string | null;
+  snapshotGeneration: string | null;
+  codeRevision: string;
+  lastFailure: Omit<ReturnType<typeof syncFailureV69>, "causes"> | null;
 };
 
 export type RefreshResultV69 = {
@@ -75,8 +87,6 @@ const EXPECTED_SOURCE_COUNT = 16;
 const DEFAULT_MIN_COVERAGE = 0.95;
 const DEFAULT_MIN_PRICE_COVERAGE = 0.95;
 const DEFAULT_MIN_AVAILABILITY_COVERAGE = 1;
-const MAX_SNAPSHOT_BYTES = 20_000_000;
-const GCS_SCOPE = "https://www.googleapis.com/auth/devstorage.read_write";
 
 export class CommerceRuntimeV69 {
   readonly #environment: RuntimeEnvironmentV69;
@@ -92,6 +102,12 @@ export class CommerceRuntimeV69 {
   #lastFailureAt: string | null = null;
   #lastDiscoveryAt: string | null = null;
   #lastIdempotencyKey: string | null = null;
+  #generation: string | undefined;
+  #checkedAt = 0;
+  #checkPromise: Promise<void> | null = null;
+  #retryInitializeAt = 0;
+  #lastRejectedKey: string | null = null;
+  #lastFailure: ReturnType<typeof syncFailureV69> | null = null;
 
   constructor(
     environment: RuntimeEnvironmentV69,
@@ -132,8 +148,30 @@ export class CommerceRuntimeV69 {
   }
 
   async initialize() {
-    if (!this.#initializePromise) this.#initializePromise = this.#initializeOnce();
+    if (!this.#initializePromise) {
+      if (this.#nowMs() < this.#retryInitializeAt) throw new RuntimeHttpErrorV69(503, "Reintentando inicialización.");
+      this.#initializePromise = this.#initializeOnce().catch((error) => {
+        this.#initializePromise = null;
+        this.#retryInitializeAt = this.#nowMs() + 5_000;
+        this.#logFailure(error, "initialize", crypto.randomUUID());
+        throw error;
+      });
+    }
     await this.#initializePromise;
+  }
+
+  #nowMs() { return (this.#dependencies.now?.() || new Date()).getTime(); }
+
+  async ensureCurrent() {
+    await this.initialize();
+    if (!this.#dependencies.snapshotStore || this.#refreshPromise || this.#nowMs() - this.#checkedAt < 30_000) return;
+    if (!this.#checkPromise) {
+      this.#checkedAt = this.#nowMs();
+      this.#checkPromise = this.#adoptStoredSnapshotIfNewer().catch((error) => {
+        this.#logFailure(error, "reload", crypto.randomUUID());
+      }).finally(() => { this.#checkPromise = null; });
+    }
+    await this.#checkPromise;
   }
 
   async authorizeSchedulerRequest(authorizationHeader: string | undefined) {
@@ -171,6 +209,10 @@ export class CommerceRuntimeV69 {
       return { ...result, reused: true };
     }
 
+    if (normalizedKey && this.#lastRejectedKey === normalizedKey) {
+      throw new RuntimeHttpErrorV69(422, "Ejecución ya rechazada; requiere revisión de datos.");
+    }
+
     const operation = this.#performRefresh(normalizedKey, mode);
     this.#refreshPromise = operation;
     try {
@@ -192,6 +234,13 @@ export class CommerceRuntimeV69 {
       syncConfigured: this.syncConfigured,
       discoveryConfigured: this.discoveryConfigured,
       lastDiscoveryAt: this.#lastDiscoveryAt,
+      snapshotGeneration: this.#generation || null,
+      codeRevision: this.#environment.V69_CODE_REVISION || "unknown",
+      lastFailure: this.#lastFailure ? {
+        event: this.#lastFailure.event, severity: this.#lastFailure.severity,
+        phase: this.#lastFailure.phase, runId: this.#lastFailure.runId,
+        codeRevision: this.#lastFailure.codeRevision, retryable: this.#lastFailure.retryable,
+      } : null,
     };
   }
 
@@ -206,32 +255,64 @@ export class CommerceRuntimeV69 {
 
   async #initializeOnce() {
     if (this.#dependencies.snapshotStore) {
+      let stored: unknown;
       try {
-        const stored = await this.#dependencies.snapshotStore.load();
+        stored = await this.#loadStored();
         if (stored) {
           const snapshot = this.#validate(stored);
-          await this.#dependencies.activateCatalog(snapshot);
+          (await this.#dependencies.prepareCatalog(snapshot))();
           this.#activeCatalog = snapshot;
           this.#lastSuccessAt = snapshot.commerceSync.completedAt;
           this.#lastDiscoveryAt = validTimestamp(snapshot.discoverySync?.completedAt)
             ? new Date(snapshot.discoverySync.completedAt).toISOString()
             : null;
           this.#state = this.syncConfigured ? "ready" : "degraded";
+          this.#checkedAt = this.#nowMs();
           this.#dependencies.log?.("info", "V6.9 inicializada desde el último snapshot sano.");
           return;
         }
-      } catch {
+      } catch (error) {
+        this.#generation = undefined;
+        this.#logFailure(error, "load_snapshot", crypto.randomUUID());
         this.#lastFailureAt = (this.#dependencies.now?.() || new Date()).toISOString();
         this.#dependencies.log?.(
           "warn",
           "No se pudo activar el snapshot remoto; V6.9 usa el catálogo base.",
         );
+        try {
+          const previous = await this.#dependencies.snapshotStore.loadPrevious?.(stored);
+          if (previous) {
+            const snapshot = this.#validate(previous);
+            (await this.#dependencies.prepareCatalog(snapshot))();
+            this.#activeCatalog = snapshot;
+            this.#lastSuccessAt = snapshot.commerceSync.completedAt;
+            this.#checkedAt = this.#nowMs();
+            return;
+          }
+        } catch (previousError) { this.#logFailure(previousError, "load_previous", crypto.randomUUID()); }
       }
     }
 
     const baseCatalog = await this.#dependencies.loadBaseCatalog();
+    (await this.#dependencies.prepareCatalog(baseCatalog))();
     this.#activeCatalog = baseCatalog;
-    await this.#dependencies.activateCatalog(baseCatalog);
+    this.#checkedAt = this.#nowMs();
+  }
+
+  async #loadStored() {
+    const store = this.#dependencies.snapshotStore!;
+    if (!store.loadVersioned) return store.load();
+    const loaded = await store.loadVersioned();
+    this.#generation = loaded.generation;
+    return loaded.catalog;
+  }
+
+  #logFailure(error: unknown, phase: string, runId: string) {
+    this.#lastFailureAt = new Date(this.#nowMs()).toISOString();
+    this.#state = "degraded";
+    this.#lastFailure = syncFailureV69(error, phase, runId, this.#environment.V69_CODE_REVISION);
+    this.#dependencies.log?.("error", JSON.stringify(this.#lastFailure));
+    return this.#lastFailure;
   }
 
   async #performRefresh(
@@ -239,56 +320,99 @@ export class CommerceRuntimeV69 {
     mode: "commerce" | "discovery",
   ): Promise<RefreshResultV69> {
     let previousCatalog = this.#activeCatalog;
+    const runId = crypto.randomUUID();
+    let phase = "adopt";
+    let candidate: unknown;
     try {
+      if (this.#checkPromise) await this.#checkPromise;
       await this.#adoptStoredSnapshotIfNewer();
       previousCatalog = this.#activeCatalog;
-      const candidate =
+      if (alreadyPublishedV69(previousCatalog, idempotencyKey)) {
+        return refreshSummary(this.#validate(previousCatalog), "already_processed", false, mode);
+      }
+      phase = "receipt";
+      if (idempotencyKey && await this.#dependencies.snapshotStore!.wasRejected?.(idempotencyKey)) {
+        throw new Error("Ejecución ya rechazada; requiere revisión de datos.");
+      }
+      const expectedGeneration = this.#generation;
+      phase = "crawl";
+      candidate =
         mode === "discovery"
           ? await this.#dependencies.runDiscovery!(previousCatalog)
           : await this.#dependencies.runSync(previousCatalog);
+      phase = "validate";
       const snapshot = this.#validate(candidate);
-      await this.#dependencies.snapshotStore!.save(snapshot);
-      await this.#dependencies.activateCatalog(snapshot);
+      assertCatalogTransitionV69(previousCatalog, snapshot);
+      const activate = await this.#dependencies.prepareCatalog(snapshot);
+      phase = "publish";
+      const generation = await this.#dependencies.snapshotStore!.save(snapshot, expectedGeneration, idempotencyKey);
+      // The prepared commit is a synchronous assignment; no I/O or validation
+      // remains after the durable conditional publication succeeds.
+      activate();
+      if (generation) this.#generation = generation;
       this.#activeCatalog = snapshot;
       this.#lastSuccessAt = snapshot.commerceSync.completedAt;
       this.#lastFailureAt = null;
+      this.#lastFailure = null;
+      this.#checkedAt = this.#nowMs();
       if (mode === "discovery") this.#lastDiscoveryAt = snapshot.discoverySync!.completedAt;
       this.#lastIdempotencyKey = idempotencyKey || null;
       this.#state = "ready";
-      this.#dependencies.log?.(
-        "info",
-        mode === "discovery"
-          ? "Snapshot semanal V6.9 publicado y activado."
-          : "Snapshot comercial V6.9 publicado y activado.",
-      );
+      this.#dependencies.log?.("info", JSON.stringify({ event: "catalog_sync_completed", severity: "INFO",
+        phase: "activate", runId, mode, codeRevision: this.#environment.V69_CODE_REVISION || "unknown",
+        generation: this.#generation || null, products: snapshot.products.length,
+        commerceSyncedAt: snapshot.commerceSync.completedAt }));
       return refreshSummary(snapshot, "updated", false, mode);
     } catch (error) {
       this.#activeCatalog = previousCatalog;
-      this.#lastFailureAt = (this.#dependencies.now?.() || new Date()).toISOString();
-      this.#state = "degraded";
-      this.#dependencies.log?.(
-        "error",
-        `Falló la actualización V6.9; se conserva last-known-good: ${safeErrorName(error)}.`,
-      );
-      throw new RuntimeHttpErrorV69(502, "La actualización no superó la verificación.");
+      const failure = this.#logFailure(error, phase, runId);
+      if (idempotencyKey && !failure.retryable) {
+        this.#lastRejectedKey = idempotencyKey;
+        await this.#dependencies.snapshotStore?.recordRejection?.(idempotencyKey, failure, candidate).catch((recordError) => {
+          this.#dependencies.log?.("error", JSON.stringify(syncFailureV69(recordError, "record_failure", runId)));
+        });
+      }
+      const detail = phase === "receipt" && !failure.retryable ? "Ejecución ya rechazada; " : "";
+      throw new RuntimeHttpErrorV69(failure.retryable ? 503 : 422, `${detail}actualización rechazada (${runId}); se conserva el catálogo anterior.`);
     }
   }
 
   async #adoptStoredSnapshotIfNewer() {
     if (!this.#dependencies.snapshotStore) return;
-    const stored = await this.#dependencies.snapshotStore.load();
+    if (this.#dependencies.snapshotStore.generation && this.#generation &&
+        await this.#dependencies.snapshotStore.generation() === this.#generation) {
+      if (this.#lastFailure?.phase === "reload") {
+        this.#state = this.syncConfigured ? "ready" : "degraded";
+        this.#lastFailureAt = null;
+        this.#lastFailure = null;
+      }
+      return;
+    }
+    const previousGeneration = this.#generation;
+    const stored = await this.#loadStored();
     if (!stored) return;
-    const snapshot = this.#validate(stored);
+    let snapshot: SyncedCatalogV69;
+    let activate: () => void;
+    try {
+      snapshot = this.#validate(stored);
+      activate = await this.#dependencies.prepareCatalog(snapshot);
+    } catch (error) {
+      this.#generation = previousGeneration;
+      throw error;
+    }
     const activeTimestamp = catalogSummary(this.#activeCatalog).commerceSyncedAt;
     if (
-      activeTimestamp &&
+      previousGeneration === this.#generation && activeTimestamp &&
       new Date(snapshot.commerceSync.completedAt).getTime() <= new Date(activeTimestamp).getTime()
     ) {
       return;
     }
-    await this.#dependencies.activateCatalog(snapshot);
+    activate();
     this.#activeCatalog = snapshot;
     this.#lastSuccessAt = snapshot.commerceSync.completedAt;
+    this.#state = this.syncConfigured ? "ready" : "degraded";
+    this.#lastFailureAt = null;
+    this.#lastFailure = null;
     if (snapshot.discoverySync) this.#lastDiscoveryAt = snapshot.discoverySync.completedAt;
     this.#dependencies.log?.("info", "V6.9 adoptó un snapshot GCS más reciente antes del refresh.");
   }
@@ -319,12 +443,13 @@ export function createCommerceRuntimeV69(
       ? createGcsSnapshotStoreV69(environment)
       : overrides.snapshotStore;
   return new CommerceRuntimeV69(environment, {
-    loadBaseCatalog: overrides.loadBaseCatalog || (() => catalogV69Data(environment as NodeJS.ProcessEnv)),
-    activateCatalog:
-      overrides.activateCatalog ||
-      (async (catalog) => {
-        await setCatalogV69Data(catalog, environment as NodeJS.ProcessEnv);
-      }),
+    loadBaseCatalog: overrides.loadBaseCatalog || (() => loadBaseCatalogV69(environment as NodeJS.ProcessEnv)),
+    prepareCatalog: overrides.prepareCatalog || (async (catalog) => {
+      const prepared = environment.NODE_ENV === "production"
+        ? await preparePublicationV69(catalog, environment)
+        : await prepareCatalogV69Data(catalog, environment as NodeJS.ProcessEnv);
+      return () => { activatePreparedCatalogV69(prepared); };
+    }),
     runSync: overrides.runSync || defaultRunSyncV69,
     runDiscovery:
       overrides.runDiscovery ||
@@ -336,7 +461,7 @@ export function createCommerceRuntimeV69(
       overrides.log ||
       ((level, message) => {
         const logger = level === "error" ? console.error : level === "warn" ? console.warn : console.info;
-        logger(`[v69-commerce] ${message}`);
+        logger(message.startsWith("{") ? message : `[v69-commerce] ${message}`);
       }),
   });
 }
@@ -402,69 +527,11 @@ export function validateSyncedCatalogV69(
   return candidate as SyncedCatalogV69;
 }
 
-export function createGcsSnapshotStoreV69(
-  environment: RuntimeEnvironmentV69,
-): SnapshotStoreV69 | null {
-  const bucketName = environment.V69_SYNC_GCS_BUCKET?.trim();
-  const objectName = environment.V69_SYNC_GCS_OBJECT?.trim();
-  if (!bucketName && !objectName) return null;
-  if (
-    !bucketName ||
-    !objectName ||
-    !/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/i.test(bucketName) ||
-    objectName.startsWith("/") ||
-    objectName.includes("..") ||
-    /[\u0000-\u001f\u007f]/.test(objectName)
-  ) {
-    throw new Error("Configuración GCS V6.9 inválida.");
-  }
-  const auth = new GoogleAuth({ scopes: [GCS_SCOPE] });
-  const objectKey = encodeURIComponent(objectName);
-  const bucketKey = encodeURIComponent(bucketName);
-  const mediaUrl = `https://storage.googleapis.com/storage/v1/b/${bucketKey}/o/${objectKey}?alt=media`;
-  const uploadUrl =
-    `https://storage.googleapis.com/upload/storage/v1/b/${bucketKey}/o` +
-    `?uploadType=media&name=${objectKey}`;
+export const createGcsSnapshotStoreV69 = gcsSnapshotStoreV69;
 
-  async function authorizationHeader() {
-    const token = await auth.getAccessToken();
-    if (!token) throw new Error("GCS no entregó credenciales de aplicación.");
-    return `Bearer ${token}`;
-  }
-
-  return {
-    async load() {
-      const response = await fetch(mediaUrl, {
-        redirect: "error",
-        signal: AbortSignal.timeout(20_000),
-        headers: { authorization: await authorizationHeader() },
-      });
-      if (response.status === 404) return null;
-      if (!response.ok) throw new Error(`GCS snapshot HTTP ${response.status}.`);
-      const declaredSize = Number(response.headers.get("content-length") || 0);
-      if (declaredSize > MAX_SNAPSHOT_BYTES) throw new Error("Snapshot GCS demasiado grande.");
-      const body = Buffer.from(await response.arrayBuffer());
-      if (body.length > MAX_SNAPSHOT_BYTES) throw new Error("Snapshot GCS demasiado grande.");
-      return JSON.parse(body.toString("utf8"));
-    },
-    async save(catalog) {
-      const body = `${JSON.stringify(catalog)}\n`;
-      if (Buffer.byteLength(body) > MAX_SNAPSHOT_BYTES) {
-        throw new Error("Snapshot V6.9 demasiado grande.");
-      }
-      const response = await fetch(uploadUrl, {
-        method: "POST",
-        redirect: "error",
-        signal: AbortSignal.timeout(30_000),
-        headers: {
-          authorization: await authorizationHeader(),
-          "content-type": "application/json; charset=utf-8",
-        },
-        body,
-      });
-      if (!response.ok) throw new Error(`GCS upload HTTP ${response.status}.`);
-    },
-  };
+export function alreadyPublishedV69(catalog: unknown, key: string) {
+  const hash = (catalog as { publicationV69?: { idempotencyKeyHash?: string } })?.publicationV69?.idempotencyKeyHash;
+  return Boolean(key && hash && hash === crypto.createHash("sha256").update(key).digest("hex"));
 }
 
 async function defaultRunSyncV69(baseCatalog: unknown) {
@@ -552,6 +619,19 @@ function validTimestamp(value: unknown): value is string {
   );
 }
 
-function safeErrorName(error: unknown) {
-  return error instanceof Error && error.name ? error.name : "Error";
+export function syncFailureV69(error: unknown, phase: string, runId: string, codeRevision = "unknown") {
+  const causes: Array<{ name: string; message: string }> = [];
+  let current = error;
+  let retryable = error instanceof SnapshotConflictV69 || error instanceof SnapshotWriteUncertainV69;
+  for (let depth = 0; current && depth < 4; depth++) {
+    const name = current instanceof Error ? current.name : "Error";
+    const raw = current instanceof Error ? current.message : String(current);
+    if (/TimeoutError|AbortError/.test(name) || /(?:HTTP\s*|^)(?:408|429|500|502|503|504)\b|fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN/.test(raw)) retryable = true;
+    const message = raw.replace(/https?:\/\/\S+/gi, "[url]")
+      .replace(/Bearer\s+\S+|(?:token|secret|password|cookie|authorization)\s*[:=]\s*\S+/gi, "[redacted]")
+      .replace(/\b\d{8,}\b/g, "[id]").replace(/\bSKU\s+[^\s.,]+/gi, "SKU [id]").slice(0, 500);
+    causes.push({ name, message });
+    current = current instanceof Error ? current.cause : null;
+  }
+  return { event: "catalog_sync_failed", severity: "ERROR", phase, runId, codeRevision, retryable, causes };
 }

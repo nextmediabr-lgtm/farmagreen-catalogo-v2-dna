@@ -6,7 +6,7 @@ const BOOT = (() => {
   }
 })();
 const BASE = (BOOT.base || "").replace(/\/$/, "");
-const PUBLIC_ORIGIN = BOOT.origin || window.location.origin;
+const PUBLIC_SITE_ORIGIN = BOOT.shareOrigin || "https://farmagreenrosario.web.app";
 const PAGE = 48;
 const ROUTE = BOOT.catalogRoute || "/catalogo";
 const PDP = "/p/";
@@ -90,7 +90,7 @@ const norm = (value) =>
 const ars = (value) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value || 0);
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
 const url = (path) => `${BASE}${path}`;
-const absoluteUrl = (path) => new URL(url(path), PUBLIC_ORIGIN).href;
+const absoluteUrl = (path) => new URL(url(path), PUBLIC_SITE_ORIGIN).href;
 const wa = (product) =>
   `https://wa.me/5493417234000?text=${encodeURIComponent(
     `Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product?.name || "Producto Farmagreen"}. Link: ${absoluteUrl(`${PDP}${product?.publicId || ""}`)}`,
@@ -600,7 +600,7 @@ function filterProductsBySearch(products, query) {
 }
 
 function matches(product, searchIds, hasQuery) {
-  if (S.scope === "ofertas" && !(product.discountPercent > 0)) return false;
+  if (S.scope === "ofertas" && !isOffer(product)) return false;
   if (S.sort === "sin-stock" && product?.availability !== "unavailable_reference") return false;
   if (S.brand !== "Todas" && brandName(product) !== S.brand) return false;
   if (S.need !== "Todas" && !(product.needs || []).includes(S.need)) return false;
@@ -684,7 +684,6 @@ function availabilityMeta(product) {
 }
 
 function card(product, priority = false) {
-  const discount = Math.round(product.discountPercent || 0);
   const name = product?.name || "Producto Farmagreen";
   const availability = availabilityMeta(product);
   const media = productImageMarkup(product, priority);
@@ -697,7 +696,21 @@ function card(product, priority = false) {
       : product?.availability === "unverified"
         ? " v69-card-unverified"
         : "";
-  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${url(`${PDP}${esc(product?.publicId || "")}`)}" aria-label="Ver ${esc(name)}"></a><div class="v66-card-top"><p class="v66-brand">${esc(brandName(product))}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${media}<div class="v66-card-body"><h3>${esc(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${esc(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${esc(usage(product))}</dd></div></dl>${stock}<div class="v66-price">${product.discountPercent > 0 ? `<s>${ars(product.listPrice)}</s>` : ""}<strong>${ars(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${ars(product.savingAmount)}</small>` : ""}</div><a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(product)}">${cta}</a></div></article>`;
+  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${url(`${PDP}${esc(product?.publicId || "")}`)}" aria-label="Ver ${esc(name)}"></a><div class="v66-card-top"><p class="v66-brand">${esc(brandName(product))}</p>${promotionBadge(product)}</div>${media}<div class="v66-card-body"><h3>${esc(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${esc(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${esc(usage(product))}</dd></div></dl>${stock}${priceMarkup(product)}<a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(product)}">${cta}</a></div></article>`;
+}
+
+function promotionBadge(product) {
+  if (product?.promotion?.type === "two_for_one") return '<span class="v66-discount">2×1</span>';
+  const discount = Math.round(product?.discountPercent || 0);
+  return discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : "";
+}
+
+function priceMarkup(product) {
+  if (product?.promotion?.type === "two_for_one") {
+    const effectiveUnitPrice = product.promotion.bundlePrice / product.promotion.buyQuantity;
+    return `<div class="v66-price"><small>Precio habitual por unidad ${ars(product.promotion.unitPrice)}</small><strong>2 por ${ars(product.promotion.bundlePrice)}</strong><small>${ars(effectiveUnitPrice)} c/u · sólo llevando 2</small><small class="v66-saving">Ahorrás ${ars(product.promotion.bundleSaving)} (1 producto)</small></div>`;
+  }
+  return `<div class="v66-price">${product.discountPercent > 0 ? `<s>${ars(product.listPrice)}</s>` : ""}<strong>${ars(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${ars(product.savingAmount)}</small>` : ""}</div>`;
 }
 
 function presentation(product) {
@@ -848,6 +861,20 @@ function currentPrice(product) {
   return Math.round(Number(product?.offerPrice || product?.listPrice || 0));
 }
 
+function isOffer(product) {
+  return Number(product?.discountPercent || 0) > 0 || Boolean(product?.promotion);
+}
+
+function offerRank(product) {
+  return product?.promotion?.type === "two_for_one" ? 50 : Number(product?.discountPercent || 0);
+}
+
+function offerSaving(product) {
+  return product?.promotion?.type === "two_for_one"
+    ? Number(product.promotion.bundleSaving || 0)
+    : Number(product?.savingAmount || 0);
+}
+
 function productTie(left, right) {
   return (
     String(left?.name || "").localeCompare(String(right?.name || ""), "es", { sensitivity: "base", numeric: true }) ||
@@ -868,8 +895,8 @@ function sorted(products) {
     entries.sort(
       (left, right) =>
         availabilityRank(left.product) - availabilityRank(right.product) ||
-        (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
-        (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
+        offerRank(right.product) - offerRank(left.product) ||
+        offerSaving(right.product) - offerSaving(left.product) ||
         productTie(left.product, right.product),
     );
   } else if (S.sort === "sin-stock") {
@@ -877,8 +904,8 @@ function sorted(products) {
   } else if (S.sort === "descuento") {
     entries.sort(
       (left, right) =>
-        (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
-        (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
+        offerRank(right.product) - offerRank(left.product) ||
+        offerSaving(right.product) - offerSaving(left.product) ||
         productTie(left.product, right.product),
     );
   } else if (S.sort === "precio-asc") {
@@ -901,8 +928,8 @@ function sorted(products) {
     entries.sort(
       (left, right) =>
         compareRelevance(left.relevance, right.relevance) ||
-        (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
-        (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
+        offerRank(right.product) - offerRank(left.product) ||
+        offerSaving(right.product) - offerSaving(left.product) ||
         productTie(left.product, right.product),
     );
   }
@@ -980,6 +1007,10 @@ function catalogCopy() {
 }
 
 function render(historyMode = "replace") {
+  const hasOffers = S.all.some(isOffer);
+  if (S.scope === "ofertas" && !hasOffers) S.scope = "todo";
+  const offersEmpty = $("#offersEmptyV69");
+  if (offersEmpty) offersEmpty.hidden = hasOffers;
   const searchIds = new Set(filterProductsBySearch(S.all, S.q).map((product) => product.publicId));
   const hasQuery = Boolean(norm(S.q));
   const items = sorted(S.all.filter((product) => matches(product, searchIds, hasQuery)));

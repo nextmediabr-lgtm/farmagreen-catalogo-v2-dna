@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+node_modules
+dist
+.gcp-v69
+.gstack
+.codex-artifacts
+.vercel
+*.log
+.DS_Store

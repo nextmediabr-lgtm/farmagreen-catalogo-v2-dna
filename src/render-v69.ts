@@ -3,6 +3,7 @@ import {
   publicAvailabilityV69,
   type CatalogV69,
   type ProductV69,
+  type PromotionV69,
   type PublicAvailabilityV69,
 } from "./data-v69.js";
 import type { ResponsiveImageSet } from "./data.js";
@@ -17,6 +18,7 @@ import {
 
 const BASE = (process.env.PUBLIC_BASE_PATH || "").replace(/\/$/, "");
 const W = "5493417234000";
+const PUBLIC_SITE_ORIGIN = "https://farmagreenrosario.web.app";
 const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/farmagreen-social-preview-v69-social-2.png";
 const SOCIAL_DESCRIPTION = "Farmacia y Dermocosmetica, Catalogo de Precios y Promociones";
 const HOME_ROUTE = "/";
@@ -102,6 +104,7 @@ export type PublicProductV69 = {
   offerPrice: number;
   savingAmount: number;
   discountPercent: number;
+  promotion?: PromotionV69;
   availability: PublicAvailabilityV69;
   availabilityCheckedAt: string | null;
   images: {
@@ -181,7 +184,7 @@ export async function similarV69(product: ProductV69) {
         (brandSlug(candidate) === brandSlug(product) ? 5 : 0) +
         safeList(candidate.categorySlugs).filter((category) => safeList(product.categorySlugs).includes(category)).length * 3 +
         safeList(candidate.needs).filter((need) => safeList(product.needs).includes(need)).length * 2 +
-        (candidate.discountPercent || 0) / 100,
+        offerRankV69(candidate) / 100,
     }))
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score)
@@ -285,13 +288,15 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
       <button class="v65-link-button" type="button" id="showAllV69">Ver todo el catálogo</button>
     </div>
   </div>
-  <section class="v65-grid" id="gridV69">${initial.slice(0, 48).map((product, index) => cardV69(product, origin, index === 0)).join("")}</section>
+  <p id="offersEmptyV69"${presented.products.some(isOfferV69) ? " hidden" : ""}>No hay ofertas verificadas en este momento. Podés explorar todos los productos.</p>
+  <section class="v65-grid" id="gridV69">${initial.length ? initial.slice(0, 48).map((product, index) => cardV69(product, origin, index === 0)).join("") : '<div class="v66-empty"><strong>No encontramos coincidencias.</strong><span>Probá otra palabra o limpiá los filtros.</span></div>'}</section>
   <div class="morebox"><button id="loadMoreV69" type="button" aria-label="Cargar más productos">Cargar más productos</button></div>
 </section>
 
 <script type="application/json" id="fg69-data">${json({
       base: BASE,
       origin,
+      shareOrigin: PUBLIC_SITE_ORIGIN,
       catalogRoute: route,
       commerceSyncedAt: presented.commerceSyncedAt,
       availabilityReferenceAt: presented.availabilityReferenceAt,
@@ -460,6 +465,7 @@ export function homePageV69(
     <script type="application/json" id="fg69-data">${json({
       base: BASE,
       origin,
+      shareOrigin: PUBLIC_SITE_ORIGIN,
       page: "home",
       totalProducts: presented.totalProducts,
       navigation: {
@@ -499,10 +505,10 @@ export function productPageV69(
 ) {
   product = applyProductPolicyV69(product, policy);
   related = related.map((entry) => applyProductPolicyV69(entry, policy));
-  const discount = Math.round(product.discountPercent || 0);
   const needsAvailabilityConsult = product.availability !== "limited";
   const productPath = publicProductPathV69(product);
   const productUrl = absolute(origin, productPath);
+  const sharedProductUrl = absolute(PUBLIC_SITE_ORIGIN, productPath);
   return shell69(
     `${product.name} | Farmagreen Rosario`,
     product.description.slice(0, 155),
@@ -515,7 +521,7 @@ export function productPageV69(
 <article class="pdp v65-pdp v66-pdp">
   <div class="v66-card-top v67-pdp-card-top">
     <p class="v66-brand">${e(brandName(product))}</p>
-    ${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}
+    ${promotionBadgeV69(product)}
   </div>
   ${productImage(product, "detail", "photo v65-photo", true)}
   <div class="buybox v65-buybox">
@@ -528,7 +534,7 @@ export function productPageV69(
     </dl>
     ${product.barcode ? `<p class="v69-barcode"><span>Código de barras</span><strong>${e(product.barcode)}</strong></p>` : ""}
     ${priceDetail(product)}
-    <a class="cta${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product.name}. Link: ${productUrl}`)}">${product.availability === "limited" ? "Consultar este producto por WhatsApp" : "Consultar"}</a>
+    <a class="cta${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${product.name}. Link: ${sharedProductUrl}`)}">${product.availability === "limited" ? "Consultar este producto por WhatsApp" : "Consultar"}</a>
     <ul class="v65-service-list">
       <li>Consulta Personalizada por WhatsApp.</li>
       <li>Coordinamos Retiro o Envío, Consultar formas de Pago.</li>
@@ -544,6 +550,7 @@ export function productPageV69(
 <script type="application/json" id="fg69-data">${json({
       base: BASE,
       origin,
+      shareOrigin: PUBLIC_SITE_ORIGIN,
       page: "product",
       product: {
         publicId: product.publicId,
@@ -552,6 +559,7 @@ export function productPageV69(
         primaryCategory: product.primaryCategory,
         listPrice: product.listPrice,
         offerPrice: product.offerPrice,
+        ...(product.promotion ? { promotion: product.promotion } : {}),
       },
     })}</script>`,
     {
@@ -735,7 +743,7 @@ function pageContext(
   const sortAllowed = SORTS_V69.includes(requestedSort as SortV69) &&
     (requestedSort !== "sin-stock" || policy.navigation.showOutOfStockSort);
   const sort: SortV69 = sortAllowed ? (requestedSort as SortV69) : defaultSort;
-  const scope: "ofertas" | "todo" = query.get("scope") === "todo" || sort === "sin-stock" || q || brand !== "Todas" || need !== "Todas" || view !== "Todas" ? "todo" : "ofertas";
+  const scope: "ofertas" | "todo" = query.get("scope") === "todo" || sort === "sin-stock" || q || brand !== "Todas" || need !== "Todas" || view !== "Todas" || !catalog.products.some(isOfferV69) ? "todo" : "ofertas";
   const state = { q, brand, need, view, scope, sort };
   let mode = "Ofertas";
   let title = "Oportunidades de hoy";
@@ -1099,7 +1107,7 @@ function filteredProducts(products: ProductV69[], state: QueryState) {
   const searchIds = new Set(filterProductsBySearchV69(products, state.q).map((product) => product.publicId));
   const hasQuery = Boolean(normalize(state.q));
   const filtered = products
-    .filter((product) => state.scope !== "ofertas" || product.discountPercent > 0)
+    .filter((product) => state.scope !== "ofertas" || isOfferV69(product))
     .filter((product) => state.brand === "Todas" || brandName(product) === state.brand)
     .filter((product) => state.need === "Todas" || safeList(product.needs).includes(state.need))
     .filter((product) => state.view === "Todas" || (product.catalogFacets || []).some((view) => view.kind === "collection" && view.slug === state.view))
@@ -1173,8 +1181,8 @@ export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "
     return copy.sort(
       (left, right) =>
         availabilityRank(left) - availabilityRank(right) ||
-        (right.discountPercent || 0) - (left.discountPercent || 0) ||
-        (right.savingAmount || 0) - (left.savingAmount || 0) ||
+        offerRankV69(right) - offerRankV69(left) ||
+        offerSavingV69(right) - offerSavingV69(left) ||
         tie(left, right),
     );
   }
@@ -1182,8 +1190,8 @@ export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "
   if (sort === "descuento") {
     return copy.sort(
       (left, right) =>
-        (right.discountPercent || 0) - (left.discountPercent || 0) ||
-        (right.savingAmount || 0) - (left.savingAmount || 0) ||
+        offerRankV69(right) - offerRankV69(left) ||
+        offerSavingV69(right) - offerSavingV69(left) ||
         tie(left, right),
     );
   }
@@ -1206,8 +1214,8 @@ export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "
   entries.sort(
     (left, right) =>
       compareRelevanceV69(left.relevance, right.relevance) ||
-      (right.product.discountPercent || 0) - (left.product.discountPercent || 0) ||
-      (right.product.savingAmount || 0) - (left.product.savingAmount || 0) ||
+      offerRankV69(right.product) - offerRankV69(left.product) ||
+      offerSavingV69(right.product) - offerSavingV69(left.product) ||
       tie(left.product, right.product),
   );
   return entries.map((entry) => entry.product);
@@ -1215,6 +1223,20 @@ export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "
 
 function currentPriceV69(product: ProductV69) {
   return Math.round(Number(product.offerPrice || product.listPrice || 0));
+}
+
+function isOfferV69(product: Pick<ProductV69, "discountPercent" | "promotion">) {
+  return Number(product.discountPercent || 0) > 0 || Boolean(product.promotion);
+}
+
+function offerRankV69(product: Pick<ProductV69, "discountPercent" | "promotion">) {
+  return product.promotion?.type === "two_for_one" ? 50 : Number(product.discountPercent || 0);
+}
+
+function offerSavingV69(product: Pick<ProductV69, "savingAmount" | "promotion">) {
+  return product.promotion?.type === "two_for_one"
+    ? Number(product.promotion.bundleSaving || 0)
+    : Number(product.savingAmount || 0);
 }
 
 type ShellLink = { href: string; label: string; nav?: string; historyBack?: boolean; active?: boolean };
@@ -1242,11 +1264,10 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-3.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-12.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-3.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-13.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
 }
 
-function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority = false) {
-  const discount = Math.round(product.discountPercent || 0);
+function cardV69(product: ProductV69, _origin = "http://127.0.0.1:8109", priority = false) {
   const productPath = publicProductPathV69(product);
   const name = String(product.name || "Producto Farmagreen");
   const brand = brandName(product);
@@ -1254,7 +1275,7 @@ function cardV69(product: ProductV69, origin = "http://127.0.0.1:8109", priority
   const unverified = product.availability === "unknown";
   const needsAvailabilityConsult = unavailable || unverified;
   const statusClass = unavailable ? " v69-card-unavailable" : unverified ? " v69-card-unverified" : "";
-  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : ""}</div>${productImage(product, "card", "v66-media", priority)}<div class="v66-card-body"><h3>${e(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${stockBadgeV69(product)}${priceCard(product)}<a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(origin, productPath)}`)}">Consultar</a></div></article>`;
+  return `<article class="v66-card${statusClass}"><a class="v65-hit" href="${u(productPath)}" aria-label="Ver ${e(name)}"></a><div class="v66-card-top"><p class="v66-brand">${e(brand)}</p>${promotionBadgeV69(product)}</div>${productImage(product, "card", "v66-media", priority)}<div class="v66-card-body"><h3>${e(name)}</h3><dl class="v66-facts"><div><dt>Presentación</dt><dd>${e(presentation(product))}</dd></div><div><dt>Uso</dt><dd>${e(usage(product))}</dd></div></dl>${stockBadgeV69(product)}${priceCard(product)}<a class="ask v66-ask${needsAvailabilityConsult ? " v69-ask-unavailable" : ""}" href="${wa(`Hola Farmagreen Rosario, quiero consultar por ${brand} - ${name}. Link: ${absolute(PUBLIC_SITE_ORIGIN, productPath)}`)}">Consultar</a></div></article>`;
 }
 
 function publicProductPathV69(product: ProductV69) {
@@ -1298,11 +1319,25 @@ function dealProducts(products: ProductV69[]) {
 }
 
 function priceCard(product: ProductV69) {
+  if (product.promotion?.type === "two_for_one") {
+    const effectiveUnitPrice = product.promotion.bundlePrice / product.promotion.buyQuantity;
+    return `<div class="v66-price"><small>Precio habitual por unidad ${money.format(product.promotion.unitPrice)}</small><strong>2 por ${money.format(product.promotion.bundlePrice)}</strong><small>${money.format(effectiveUnitPrice)} c/u · sólo llevando 2</small><small class="v66-saving">Ahorrás ${money.format(product.promotion.bundleSaving)} (1 producto)</small></div>`;
+  }
   return `<div class="v66-price">${product.discountPercent > 0 ? `<s>${money.format(product.listPrice)}</s>` : ""}<strong>${money.format(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${money.format(product.savingAmount)}</small>` : ""}</div>`;
 }
 
 function priceDetail(product: ProductV69) {
-  return `<div class="price v66-detail-price">${product.discountPercent > 0 ? `<b>-${Math.round(product.discountPercent)}%</b><s>${money.format(product.listPrice)}</s>` : ""}<strong>${money.format(product.offerPrice || product.listPrice)}</strong></div>`;
+  if (product.promotion?.type === "two_for_one") {
+    const effectiveUnitPrice = product.promotion.bundlePrice / product.promotion.buyQuantity;
+    return `<div class="price v66-detail-price"><b>2×1</b><small>Precio habitual por unidad ${money.format(product.promotion.unitPrice)}</small><strong>2 por ${money.format(product.promotion.bundlePrice)}</strong><small>${money.format(effectiveUnitPrice)} c/u · sólo llevando 2</small><small class="v66-saving">Ahorrás ${money.format(product.promotion.bundleSaving)} (1 producto)</small></div>`;
+  }
+  return `<div class="price v66-detail-price">${product.discountPercent > 0 ? `<b>-${Math.round(product.discountPercent)}%</b><s>${money.format(product.listPrice)}</s>` : ""}<strong>${money.format(product.offerPrice || product.listPrice)}</strong>${product.savingAmount > 0 ? `<small class="v66-saving">Ahorrás ${money.format(product.savingAmount)}</small>` : ""}</div>`;
+}
+
+function promotionBadgeV69(product: Pick<ProductV69, "discountPercent" | "promotion">) {
+  if (product.promotion?.type === "two_for_one") return '<span class="v66-discount">2×1</span>';
+  const discount = Math.round(product.discountPercent || 0);
+  return discount > 0 ? `<span class="v66-discount">-${discount}%</span>` : "";
 }
 
 function presentation(product: ProductV69) {
@@ -1407,6 +1442,7 @@ function publicProductV69(product: ProductV69): PublicProductV69 {
     offerPrice: product.offerPrice,
     savingAmount: product.savingAmount,
     discountPercent: product.discountPercent,
+    ...(product.promotion ? { promotion: { ...product.promotion } } : {}),
     availability: publicAvailabilityV69(product),
     availabilityCheckedAt: product.availabilityCheckedAt,
     images: {

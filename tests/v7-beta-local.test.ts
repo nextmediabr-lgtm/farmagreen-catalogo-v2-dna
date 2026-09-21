@@ -80,6 +80,29 @@ test("la ficha directa sólo completa base con precio y disponibilidad STOM expl
   assert.equal(parsed.listPrice, 1000);
   assert.equal(parsed.discountPercent, 25);
 
+  const twoForOneHtml = productPageCommerceHtml({
+    sku: "BASE-1",
+    finalPrice: 17_950.01,
+    oldPrice: 0,
+    available: true,
+  }).replace(
+    "<body>",
+    '<body><img src="/media/smile_productlabel/imagelabel/2x1.png" alt="2 x 1" title="2 x 1">',
+  );
+  const twoForOne = parseProductPageCommerceV7Beta(twoForOneHtml, { sku: "BASE-1" });
+  assert.equal(twoForOne.listPrice, 35_900.02);
+  assert.equal(twoForOne.offerPrice, 35_900.02);
+  assert.equal(twoForOne.discountPercent, 0);
+  assert.deepEqual(twoForOne.promotion, {
+    type: "two_for_one",
+    label: "2×1",
+    buyQuantity: 2,
+    payQuantity: 1,
+    unitPrice: 35_900.02,
+    bundlePrice: 35_900.02,
+    bundleSaving: 35_900.02,
+  });
+
   const unavailable = parseProductPageCommerceV7Beta(
     productPageCommerceHtml({ sku: "BASE-1", finalPrice: 750, oldPrice: 1000, available: false }),
     { sku: "BASE-1" },

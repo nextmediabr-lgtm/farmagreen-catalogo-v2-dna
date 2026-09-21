@@ -147,6 +147,23 @@ test("obtiene url_key tanto de URL canónica como de ruta interna Magento", () =
   assert.equal(urlKeyFromProductUrlV69("https://gpsfarma.com/catalog/product/view/id/19691/s/gel-crema-ureadin-contorno-de-ojos-x-15-ml/category/7160/"), "gel-crema-ureadin-contorno-de-ojos-x-15-ml");
 });
 
+test("la ruta interna Magento y la canónica son equivalentes sólo con identidad y slug exactos", () => {
+  const product = fixtureProduct("visible", "SKU-1", "7790000000001", "https://gpsfarma.com/categorias/producto.html") as ProductV69;
+  const taxonomy = validateMagentoTaxonomyV69({
+    schemaVersion: 1,
+    source: { platform: "Magento 2", endpoint: "https://gpsfarma.com/graphql", extractedAt: "2026-09-19T20:00:00Z", maxNormalizedLevel: 7 },
+    catalog: { version: 6.9, sourceProducts: 1, visibleProducts: 1 }, categories: [],
+    products: [{ publicId: "visible", sku: "SKU-1", barcode: "7790000000001", productUrl: "https://gpsfarma.com/catalog/product/view/id/123/s/producto/category/6314/", urlKey: "producto", magentoProductId: 123, categoryIds: [] }],
+  });
+  assert.equal(applyMagentoTaxonomyV69([product], taxonomy, true)[0].magentoTaxonomyAttached, true);
+  for (const changed of [
+    { ...product, sku: "SKU-2" },
+    { ...product, barcode: "7790000000002" },
+    { ...product, source: { url: "https://gpsfarma.com/otro-producto.html" } },
+    { ...product, source: { url: "https://other.example/producto.html" } },
+  ]) assert.throws(() => applyMagentoTaxonomyV69([changed], taxonomy, true), /identidad Magento no coincide/);
+});
+
 test("el artefacto vigente cubre todas las fichas públicas después de las exclusiones", async () => {
   const root = path.resolve(import.meta.dirname, "..");
   resetCatalogV69CacheForTests();

@@ -559,6 +559,7 @@ export async function reconcileCatalogChangesV69({
         offerPrice: commerce.offerPrice,
         savingAmount: commerce.savingAmount,
         discountPercent: commerce.discountPercent,
+        promotion: commerce.promotion,
         availability: commerce.availability === "available" ? "limited" : "out_of_stock",
         availabilityCheckedAt: completedAt,
       };

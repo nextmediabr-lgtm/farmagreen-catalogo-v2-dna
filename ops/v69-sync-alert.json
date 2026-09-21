@@ -1,0 +1,13 @@
+{
+  "displayName": "FarmaGreen V6.9 - sincronización rechazada",
+  "combiner": "OR",
+  "conditions": [{
+    "displayName": "Error estructurado de sync diario o semanal",
+    "conditionMatchedLog": {
+      "filter": "((resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"farmagreen-v69-preprod\") OR (resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"farmagreen-v69-weekly-discovery\")) AND jsonPayload.event=\"catalog_sync_failed\""
+    }
+  }],
+  "alertStrategy": { "notificationRateLimit": { "period": "3600s" }, "autoClose": "604800s" },
+  "notificationChannels": ["projects/project-e2a7bc6d-e741-4d4e-85d/notificationChannels/REQUIERE_CANAL_CONFIRMADO"],
+  "enabled": false
+}

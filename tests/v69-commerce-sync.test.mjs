@@ -611,12 +611,12 @@ test("parser acepta precio regular y detecta el enlace siguiente", () => {
   assert.equal(parseNextPageUrl(PAGE_2), null);
 });
 
-test("parser reconstruye el precio de lista desde la etiqueta explícita de promoción", () => {
+test("parser aplica el descuento explícito sobre el precio unitario publicado", () => {
   const [product] = parseListingProducts(
     `
       <li class="item product product-item">
         <a class="product photo product-item-photo" href="/promo.html">
-          <div class="top_left category"><img src="/media/smile_productlabel/imagelabel/50__56x40.png" alt="Promo 50% Off" title="Promo 50% Off"></div>
+          <div class="top_left category"><img src="/media/smile_productlabel/imagelabel/50__56x40.png" alt="Promo 50%" title="Promo 50%"></div>
           <img class="product-image-photo" src="https://gpsfarma.com/media/catalog/product/promo.jpg">
         </a>
         <a class="product-item-link" href="/promo.html">Producto en promoción</a>
@@ -626,10 +626,61 @@ test("parser reconstruye el precio de lista desde la etiqueta explícita de prom
     `,
     EUCERIN,
   );
-  assert.equal(product.listPrice, 10000);
-  assert.equal(product.offerPrice, 5000);
-  assert.equal(product.savingAmount, 5000);
+  assert.equal(product.listPrice, 5000);
+  assert.equal(product.offerPrice, 2500);
+  assert.equal(product.savingAmount, 2500);
   assert.equal(product.discountPercent, 50);
+  assert.deepEqual(product.promotion, { type: "percentage", label: "-50%", percent: 50 });
+});
+
+test("parser no confunde un porcentaje del nombre o la imagen con una promoción", () => {
+  const [product] = parseListingProducts(
+    `
+      <li class="item product product-item">
+        <a class="product photo product-item-photo" href="/bagovit-aloe-80.html">
+          <img class="product-image-photo" src="https://gpsfarma.com/media/catalog/product/bagovit.jpg" alt="Bagóvit Post Solar con Aloe Vera al 80% x 200 gr" title="Bagóvit Post Solar con Aloe Vera al 80% x 200 gr">
+        </a>
+        <a class="product-item-link" href="/bagovit-aloe-80.html">Bagóvit Post Solar con Aloe Vera al 80% x 200 gr</a>
+        <span data-price-type="finalPrice" data-price-amount="22780.42" id="product-price-80">$ 22.780,42</span>
+        <form data-role="tocart-form" data-product-sku="ALOE-80" action="/checkout/cart/add/"></form>
+      </li>
+    `,
+    EUCERIN,
+  );
+  assert.equal(product.listPrice, 22780.42);
+  assert.equal(product.offerPrice, 22780.42);
+  assert.equal(product.discountPercent, 0);
+  assert.equal(product.promotion, undefined);
+});
+
+test("parser representa 2×1 como paquete y conserva el precio unitario", () => {
+  const [product] = parseListingProducts(
+    `
+      <li class="item product product-item">
+        <a class="product photo product-item-photo" href="/supradyn.html">
+          <img src="/media/smile_productlabel/imagelabel/2x1.png" alt="2 x 1" title="2 x 1">
+          <img class="product-image-photo" src="https://gpsfarma.com/media/catalog/product/supradyn.jpg">
+        </a>
+        <a class="product-item-link" href="/supradyn.html">Supradyn x 30 comprimidos</a>
+        <span data-price-type="finalPrice" data-price-amount="17950.01" id="product-price-253252">$ 17.950,01</span>
+        <form data-role="tocart-form" data-product-sku="253252" action="/checkout/cart/add/"></form>
+      </li>
+    `,
+    EUCERIN,
+  );
+  assert.equal(product.listPrice, 35900.02);
+  assert.equal(product.offerPrice, 35900.02);
+  assert.equal(product.savingAmount, 0);
+  assert.equal(product.discountPercent, 0);
+  assert.deepEqual(product.promotion, {
+    type: "two_for_one",
+    label: "2×1",
+    buyQuantity: 2,
+    payQuantity: 1,
+    unitPrice: 35900.02,
+    bundlePrice: 35900.02,
+    bundleSaving: 35900.02,
+  });
 });
 
 test("parser prioriza el precio anterior explícito sobre la etiqueta promocional", () => {
@@ -647,6 +698,7 @@ test("parser prioriza el precio anterior explícito sobre la etiqueta promociona
   assert.equal(product.listPrice, 8000);
   assert.equal(product.offerPrice, 6000);
   assert.equal(product.discountPercent, 25);
+  assert.deepEqual(product.promotion, { type: "percentage", label: "-25%", percent: 25 });
 });
 
 test("el parser usa sólo los marcadores explícitos del listado para disponibilidad", () => {

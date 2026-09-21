@@ -8,6 +8,7 @@ import {
   catalogV69Data,
   isExcludedV69,
   loadExclusionsV69,
+  prepareCatalogV69Data,
   resetCatalogV69CacheForTests,
   type CatalogV69,
   type ProductV69,
@@ -492,7 +493,7 @@ test("SSR V6.9 respeta los órdenes, filtra sin stock y mantiene marca/necesidad
       assert.doesNotMatch(html, /Disponible para Entrega/);
     }
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-12\.js/);
+    assert.match(html, /app-v6-9-13\.js/);
     assert.match(html, /styles-v6-9-3\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -550,6 +551,108 @@ test("Productos Saludables se integra como paraguas y preserva las marcas legacy
   }]);
   assert.equal(api.products[0].brand.name, "Vitamin Way");
   assert.equal(api.navigation.brands.at(-1)?.name, "Productos Saludables");
+});
+
+test("V6.9 presenta 2×1 como paquete sin convertirlo en descuento unitario", async () => {
+  const base = await baseCatalog();
+  const product: ProductV69 = {
+    ...base.products[0],
+    publicId: "promo-two-for-one",
+    slug: "supradyn-2x1",
+    name: "Supradyn x 30 comprimidos",
+    listPrice: 35_900.02,
+    offerPrice: 35_900.02,
+    savingAmount: 0,
+    discountPercent: 0,
+    promotion: {
+      type: "two_for_one",
+      label: "2×1",
+      buyQuantity: 2,
+      payQuantity: 1,
+      unitPrice: 35_900.02,
+      bundlePrice: 35_900.02,
+      bundleSaving: 35_900.02,
+    },
+  };
+  const catalog: CatalogV69 = { ...base, totalProducts: 1, products: [product] };
+  const catalogHtml = catalogPageV69(catalog, new URLSearchParams(), "http://127.0.0.1:8109");
+  const productHtml = productPageV69(product, [], "http://127.0.0.1:8109");
+  const publicProduct = publicCatalogV69(catalog).products[0];
+
+  for (const html of [catalogHtml, productHtml]) {
+    assert.match(html, /class="v66-discount">2×1<\/span>/);
+    assert.match(html, /Precio habitual por unidad \$\s*35\.900/);
+    assert.match(html, /<strong>2 por \$\s*35\.900<\/strong>/);
+    assert.match(html, /\$\s*17\.950 c\/u · sólo llevando 2/);
+    assert.match(html, /Ahorrás \$\s*35\.900 \(1 producto\)/);
+    assert.doesNotMatch(html, /Precio unitario/);
+    assert.doesNotMatch(html, /class="v66-discount">-50%<\/span>/);
+  }
+  assert.deepEqual(publicProduct.promotion, product.promotion);
+  assert.equal(publicProduct.offerPrice, 35_900.02);
+  assert.equal(publicProduct.discountPercent, 0);
+});
+
+test("V6.9 migra el formato 2×1 anterior sin publicar una compra individual a mitad de precio", async () => {
+  const base = await baseCatalog();
+  const legacyProduct: ProductV69 = {
+    ...base.products[0],
+    publicId: "promo-two-for-one-legacy",
+    slug: "supradyn-2x1-legacy",
+    name: "Supradyn x 30 comprimidos",
+    listPrice: 35_900.02,
+    offerPrice: 17_950.01,
+    savingAmount: 17_950.01,
+    discountPercent: 50,
+    promotion: {
+      type: "two_for_one",
+      label: "2×1",
+      buyQuantity: 2,
+      payQuantity: 1,
+      unitPrice: 17_950.01,
+      bundlePrice: 17_950.01,
+      bundleSaving: 17_950.01,
+    },
+  };
+  const migrated = await prepareCatalogV69Data(
+    { ...base, totalProducts: 1, products: [legacyProduct] },
+    {
+      ...process.env,
+      V69_EXCLUSIONS_FILE: path.join(tmpdir(), "farmagreen-v69-no-legacy-promo-exclusions.json"),
+    },
+  );
+  const [product] = migrated.products;
+
+  assert.equal(product.listPrice, 35_900.02);
+  assert.equal(product.offerPrice, 35_900.02);
+  assert.equal(product.savingAmount, 0);
+  assert.equal(product.discountPercent, 0);
+  assert.deepEqual(product.promotion, {
+    type: "two_for_one",
+    label: "2×1",
+    buyQuantity: 2,
+    payQuantity: 1,
+    unitPrice: 35_900.02,
+    bundlePrice: 35_900.02,
+    bundleSaving: 35_900.02,
+  });
+});
+
+test("la ficha V6.9 presenta lista, porcentaje, precio final y ahorro", async () => {
+  const base = await baseCatalog();
+  const product: ProductV69 = {
+    ...base.products[0],
+    publicId: "promo-percentage",
+    slug: "promo-percentage",
+    listPrice: 120_000,
+    offerPrice: 84_000,
+    savingAmount: 36_000,
+    discountPercent: 30,
+    promotion: { type: "percentage", label: "-30%", percent: 30 },
+  };
+  const html = productPageV69(product, [], "http://127.0.0.1:8109");
+
+  assert.match(html, /<b>-30%<\/b><s>[^<]+<\/s><strong>[^<]+<\/strong><small class="v66-saving">Ahorrás [^<]+<\/small>/);
 });
 
 test("la búsqueda por ID de categoría muestra únicamente su ruta jerárquica pura", async () => {
@@ -693,7 +796,7 @@ test("los activos versionados V6.9 usan Brotli y caché inmutable fuera del prev
   const origin = await listen(server);
   try {
     const [appResponse, cssResponse, logoResponse] = await Promise.all([
-      fetch(`${origin}/app-v6-9-12.js`, { headers: { "accept-encoding": "br" } }),
+      fetch(`${origin}/app-v6-9-13.js`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/styles-v6-9-3.css`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/logo_farmagreen-v69-1.png`, { headers: { "accept-encoding": "br" } }),
     ]);
@@ -735,7 +838,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-12.js`),
+      fetch(`${origin}/app-v6-9-13.js`),
       fetch(`${origin}/analytics-v69-4.js`),
       fetch(`${origin}/meta-pixel-v69-3.js`),
       fetch(`${origin}/styles-v6-9-3.css`),
@@ -814,7 +917,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     ];
     assert.ok(
       api.products.every((product) => {
-        assert.deepEqual(Object.keys(product).sort(), productKeys);
+        assert.deepEqual(
+          Object.keys(product).sort(),
+          [...productKeys, ...("promotion" in product ? ["promotion"] : [])].sort(),
+        );
         return !["description", "detail", "source", "provider", "sku", "syncedAt", "taxonomy"].some(
           (key) => key in product,
         );
@@ -837,10 +943,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-3\.css/);
     assert.match(root, /measurement-loader-v69-1\.js/);
-    assert.match(root, /app-v6-9-12\.js/);
+    assert.match(root, /app-v6-9-13\.js/);
     assert.match(root, /data-analytics-src="\/analytics-v69-4\.js"/);
     assert.match(root, /data-meta-src="\/meta-pixel-v69-3\.js"/);
-    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-12.js"));
+    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-13.js"));
     assert.equal((root.match(/logo_farmagreen-v69-1\.png/g) || []).length >= 2, true);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
@@ -928,10 +1034,16 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(pdp, new RegExp(`>${unavailable.brand.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/a>`));
     assert.doesNotMatch(pdp, /gpsfarma|provider|"sku"|"source"/i);
     assert.match(pdp, new RegExp(`${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/p/${unavailable.publicId}`));
+    const whatsappHref = pdp.match(/<a class="cta[^"]*" href="([^"]+)"/)?.[1];
+    assert.ok(whatsappHref);
+    const whatsappText = new URL(whatsappHref).searchParams.get("text") || "";
+    assert.match(whatsappText, new RegExp(`https://farmagreenrosario\\.web\\.app/p/${unavailable.publicId}`));
+    assert.doesNotMatch(whatsappText, /127\.0\.0\.1|localhost/);
     assert.match(pdp, /class="brandmark"/);
     assert.match(pdp, /class="v69-footer"/);
     const pdpBoot = bootPayload(pdp);
     assert.equal(pdpBoot.page, "product");
+    assert.equal(pdpBoot.shareOrigin, "https://farmagreenrosario.web.app");
     assert.deepEqual(Object.keys(pdpBoot.product).sort(), [
       "brand",
       "listPrice",
@@ -1053,11 +1165,11 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
         responsive: {
           card: {
             ...product.images.responsive?.card,
-            jpeg: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/card-320.jpg" },
+            jpeg: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/card-320.jpg", "640": "https://storage.googleapis.com/farmagreen-catalog-images/v69/card-640.jpg" },
           },
           detail: {
             ...product.images.responsive?.detail,
-            jpeg: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/detail-320.jpg" },
+            jpeg: { "320": "https://storage.googleapis.com/farmagreen-catalog-images/v69/detail-320.jpg", "640": "https://storage.googleapis.com/farmagreen-catalog-images/v69/detail-640.jpg" },
           },
         },
       },

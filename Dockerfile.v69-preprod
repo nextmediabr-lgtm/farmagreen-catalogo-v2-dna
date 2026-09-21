@@ -6,10 +6,12 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
-COPY scripts/build-v69-css.mjs ./scripts/build-v69-css.mjs
-COPY scripts/build-v69-client.mjs ./scripts/build-v69-client.mjs
+COPY scripts ./scripts
+COPY tests ./tests
+COPY data ./data
+COPY .gcloudignore ./
 COPY public ./public
-RUN npm run build
+RUN npm run verify:container:v69
 
 FROM node:22-bookworm-slim AS runtime
 
@@ -18,6 +20,9 @@ ENV HOST=0.0.0.0
 ENV PORT=8080
 ENV DEFAULT_ROUTE=/inicio/
 ENV V69_ENABLE_PRODUCTION=1
+ENV V69_FALLBACK_CATALOG_FILE=/app/data/catalog-v69-fallback.json
+ARG V69_CODE_REVISION=local
+ENV V69_CODE_REVISION=${V69_CODE_REVISION}
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -25,7 +30,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/public ./public
-COPY data ./data
+COPY --chown=node:node data ./data
 COPY scripts ./scripts
 
 USER node

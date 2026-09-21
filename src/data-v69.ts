@@ -16,6 +16,21 @@ const DEFAULT_MAGENTO_TAXONOMY = path.join(ROOT, "data", "catalog-taxonomy-v69.l
 
 export type SourceAvailabilityV69 = "limited" | "out_of_stock" | "unknown";
 export type PublicAvailabilityV69 = "available_reference" | "unavailable_reference" | "unverified";
+export type PromotionV69 =
+  | {
+      type: "percentage";
+      label: string;
+      percent: number;
+    }
+  | {
+      type: "two_for_one";
+      label: "2×1";
+      buyQuantity: 2;
+      payQuantity: 1;
+      unitPrice: number;
+      bundlePrice: number;
+      bundleSaving: number;
+    };
 
 export type ProductV69 = Product & {
   availability: SourceAvailabilityV69;
@@ -30,6 +45,7 @@ export type ProductV69 = Product & {
   taxonomy?: Record<string, unknown>;
   magentoCategories?: MagentoCategorySearchV69[];
   magentoTaxonomyAttached?: boolean;
+  promotion?: PromotionV69;
   catalogFacets?: Array<{
     slug: string;
     name: string;
@@ -82,6 +98,13 @@ let cacheKey = "";
 let cache: CatalogV69 | null = null;
 let runtimeCatalog: CatalogV69 | null = null;
 
+// Read the packaged baseline independently of the mutable in-process cache.
+export async function loadBaseCatalogV69(environment: NodeJS.ProcessEnv = process.env): Promise<unknown> {
+  const catalogPath = environment.V69_FALLBACK_CATALOG_FILE?.trim() || environment.V69_CATALOG_FILE?.trim() ||
+    (await exists(SYNCED_CATALOG) ? SYNCED_CATALOG : FALLBACK_CATALOG);
+  return JSON.parse(await fs.readFile(catalogPath, "utf8"));
+}
+
 export async function catalogV69Data(environment: NodeJS.ProcessEnv = process.env): Promise<CatalogV69> {
   if (runtimeCatalog) return runtimeCatalog;
   const catalogPath = environment.V69_CATALOG_FILE?.trim() || (await exists(SYNCED_CATALOG) ? SYNCED_CATALOG : FALLBACK_CATALOG);
@@ -114,6 +137,15 @@ export async function setCatalogV69Data(
   value: unknown,
   environment: NodeJS.ProcessEnv = process.env,
 ) {
+  return activatePreparedCatalogV69(await prepareCatalogV69Data(value, environment));
+}
+
+// Preparation is deliberately side-effect-free: publication must never mutate
+// the in-process catalog before every validation and the GCS CAS succeed.
+export async function prepareCatalogV69Data(
+  value: unknown,
+  environment: NodeJS.ProcessEnv = process.env,
+) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Snapshot V6.9 inválido.");
   }
@@ -124,13 +156,17 @@ export async function setCatalogV69Data(
   );
   const taxonomyPath = environment.V69_MAGENTO_TAXONOMY_FILE?.trim() || DEFAULT_MAGENTO_TAXONOMY;
   const taxonomy = await loadMagentoTaxonomyV69(taxonomyPath, environment.V69_REQUIRE_MAGENTO_TAXONOMY === "1");
-  runtimeCatalog = normalizeCatalogV69(
+  return normalizeCatalogV69(
     value as CatalogV69,
     exclusions,
     taxonomy,
     environment.V69_REQUIRE_MAGENTO_TAXONOMY === "1",
   );
-  cache = runtimeCatalog;
+}
+
+export function activatePreparedCatalogV69(catalog: CatalogV69) {
+  runtimeCatalog = catalog;
+  cache = catalog;
   cacheKey = "runtime";
   return runtimeCatalog;
 }
@@ -304,21 +340,84 @@ export function embeddedMagentoCategoriesV69(product: ProductV69) {
 }
 
 function cleanProductV69(product: ProductV69): ProductV69 {
-  const checkedAt = validTimestamp(product.availabilityCheckedAt);
+  const normalizedProduct = normalizeTwoForOnePricingV69(product);
+  const checkedAt = validTimestamp(normalizedProduct.availabilityCheckedAt);
   const availability: SourceAvailabilityV69 =
-    checkedAt && (product.availability === "out_of_stock" || String(product.availability) === "unavailable_reference")
+    checkedAt && (normalizedProduct.availability === "out_of_stock" || String(normalizedProduct.availability) === "unavailable_reference")
       ? "out_of_stock"
-      : checkedAt && (product.availability === "limited" || String(product.availability) === "available_reference")
+      : checkedAt && (normalizedProduct.availability === "limited" || String(normalizedProduct.availability) === "available_reference")
         ? "limited"
         : "unknown";
-  return reviseFpsPrimaryUseV69({
-    ...product,
+  const cleaned = {
+    ...normalizedProduct,
     availability,
     availabilityCheckedAt: checkedAt,
-    sku: cleanOptional(product.sku),
-    barcode: cleanOptional(product.barcode),
-    source: product.source && typeof product.source === "object" ? { ...product.source, url: cleanOptional(product.source.url) } : undefined,
+    sku: cleanOptional(normalizedProduct.sku),
+    barcode: cleanOptional(normalizedProduct.barcode),
+    source: normalizedProduct.source && typeof normalizedProduct.source === "object" ? { ...normalizedProduct.source, url: cleanOptional(normalizedProduct.source.url) } : undefined,
+  };
+  const promotion = cleanPromotionV69(normalizedProduct.promotion, cleaned);
+  return reviseFpsPrimaryUseV69({
+    ...cleaned,
+    ...(promotion ? { promotion } : { promotion: undefined }),
   });
+}
+
+function normalizeTwoForOnePricingV69(product: ProductV69): ProductV69 {
+  if (product.promotion?.type !== "two_for_one") return product;
+  const habitualPrice = Number(product.listPrice);
+  if (!(habitualPrice > 0)) return product;
+  const price = Number(habitualPrice.toFixed(2));
+  return {
+    ...product,
+    listPrice: price,
+    offerPrice: price,
+    savingAmount: 0,
+    discountPercent: 0,
+    promotion: {
+      type: "two_for_one",
+      label: "2×1",
+      buyQuantity: 2,
+      payQuantity: 1,
+      unitPrice: price,
+      bundlePrice: price,
+      bundleSaving: price,
+    },
+  };
+}
+
+function cleanPromotionV69(value: unknown, product: Pick<ProductV69, "listPrice" | "offerPrice" | "savingAmount" | "discountPercent">): PromotionV69 | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const promotion = value as Record<string, unknown>;
+  if (promotion.type === "percentage") {
+    const percent = Number(promotion.percent);
+    if (!(percent > 0 && percent < 100) || Math.abs(percent - Number(product.discountPercent)) > 1) return undefined;
+    return { type: "percentage", label: `-${Number(percent.toFixed(2))}%`, percent: Number(percent.toFixed(2)) };
+  }
+  if (promotion.type !== "two_for_one") return undefined;
+  const unitPrice = Number(promotion.unitPrice);
+  const bundlePrice = Number(promotion.bundlePrice);
+  const bundleSaving = Number(promotion.bundleSaving);
+  if (
+    promotion.buyQuantity !== 2 ||
+    promotion.payQuantity !== 1 ||
+    !(unitPrice > 0) ||
+    Math.abs(Number(product.listPrice) - unitPrice) > 0.02 ||
+    Math.abs(Number(product.offerPrice) - unitPrice) > 0.02 ||
+    Math.abs(Number(product.savingAmount)) > 0.02 ||
+    Math.abs(Number(product.discountPercent)) > 0.02 ||
+    Math.abs(bundlePrice - unitPrice) > 0.02 ||
+    Math.abs(bundleSaving - unitPrice) > 0.02
+  ) return undefined;
+  return {
+    type: "two_for_one",
+    label: "2×1",
+    buyQuantity: 2,
+    payQuantity: 1,
+    unitPrice,
+    bundlePrice,
+    bundleSaving,
+  };
 }
 
 const EXPLICIT_SOLAR_PRODUCT_V69 =
@@ -445,7 +544,12 @@ function normalizeBarcode(value: string) {
 function normalizeSourceUrl(value: string) {
   try {
     const parsed = new URL(String(value || "").trim());
-    const pathname = parsed.pathname.replace(/^\/categorias\//i, "/").replace(/\/+$/, "") || "/";
+    const internal = parsed.hostname === "gpsfarma.com" && parsed.pathname.match(
+      /^\/catalog\/product\/view\/id\/\d+\/s\/([^/]+)(?:\/category\/\d+)?\/?$/i,
+    );
+    const pathname = internal
+      ? `/${internal[1].replace(/\.html$/i, "")}.html`
+      : parsed.pathname.replace(/^\/categorias\//i, "/").replace(/\/+$/, "") || "/";
     return `${parsed.hostname.toLowerCase()}${pathname.toLowerCase()}`;
   } catch {
     return String(value || "")

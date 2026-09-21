@@ -12,3 +12,4 @@ dist/
 data/catalog-exclusions-v69.local.json
 data/catalog-v69.json
 data/catalog-taxonomy-v69.local.json
+data/catalog-v69-fallback.json

@@ -32,7 +32,7 @@ test("V6.9 inicia desde el último snapshot verificado", async () => {
       baseLoads += 1;
       return base;
     },
-    activateCatalog: async (catalog) => activated.push(catalog),
+    prepareCatalog: async (catalog) => () => { activated.push(catalog); },
     runSync: async () => {
       throw new Error("no debe sincronizar al iniciar");
     },
@@ -54,6 +54,9 @@ test("V6.9 inicia desde el último snapshot verificado", async () => {
     syncConfigured: true,
     discoveryConfigured: false,
     lastDiscoveryAt: null,
+    snapshotGeneration: null,
+    codeRevision: "unknown",
+    lastFailure: null,
   });
 });
 
@@ -62,7 +65,7 @@ test("V6.9 usa el catálogo base sólo si el snapshot remoto no está disponible
   const activated: unknown[] = [];
   const runtime = new CommerceRuntimeV69(ENVIRONMENT, {
     loadBaseCatalog: async () => base,
-    activateCatalog: async (catalog) => activated.push(catalog),
+    prepareCatalog: async (catalog) => () => { activated.push(catalog); },
     runSync: async () => syncedCatalog("2026-08-04T10:00:00.000Z"),
     snapshotStore: {
       load: async () => {
@@ -108,8 +111,9 @@ test("V6.9 publica antes de activar y conserva last-known-good ante fallas", asy
   const events: string[] = [];
   const runtime = new CommerceRuntimeV69(ENVIRONMENT, {
     loadBaseCatalog: async () => baseCatalog(),
-    activateCatalog: async (catalog) => {
-      if (catalog === next) events.push("activate");
+    prepareCatalog: async (catalog) => {
+      if (catalog === next) events.push("prepare");
+      return () => { if (catalog === next) events.push("activate"); };
     },
     runSync: async () => next,
     snapshotStore: {
@@ -121,7 +125,7 @@ test("V6.9 publica antes de activar y conserva last-known-good ante fallas", asy
   await runtime.initialize();
 
   const result = await runtime.refresh("job|2026-08-04T10:00:00Z");
-  assert.deepEqual(events, ["save", "activate"]);
+  assert.deepEqual(events, ["prepare", "save", "activate"]);
   assert.equal(result.status, "updated");
 
   const duplicate = await runtime.refresh("job|2026-08-04T10:00:00Z");
@@ -134,7 +138,7 @@ test("el job semanal ejecuta discovery y el cron diario conserva el sync comerci
   const calls: string[] = [];
   const runtime = new CommerceRuntimeV69(DISCOVERY_ENVIRONMENT, {
     loadBaseCatalog: async () => baseCatalog(),
-    activateCatalog: async () => {},
+    prepareCatalog: async () => () => {},
     runSync: async () => {
       calls.push("commerce");
       return syncedCatalog("2026-08-25T14:00:00.000Z");
@@ -223,7 +227,7 @@ test("el refresh comercial adopta primero el snapshot creado por el Job semanal"
   const activated: unknown[] = [];
   const runtime = new CommerceRuntimeV69(ENVIRONMENT, {
     loadBaseCatalog: async () => baseCatalog(),
-    activateCatalog: async (catalog) => activated.push(catalog),
+    prepareCatalog: async (catalog) => () => { activated.push(catalog); },
     runSync: async (base) => {
       syncBase = base;
       return next;
@@ -250,7 +254,7 @@ test("V6.9 mantiene cerrado el refresh sin OIDC configurado", async () => {
     { ...ENVIRONMENT, V69_SYNC_ENABLED: "0" },
     {
       loadBaseCatalog: async () => baseCatalog(),
-      activateCatalog: async () => {},
+      prepareCatalog: async () => () => {},
       runSync: async () => syncedCatalog("2026-08-04T10:00:00.000Z"),
       snapshotStore: memoryStore(null),
       verifyOidcToken: async () => {},
@@ -266,7 +270,7 @@ test("V6.9 exige service account y audience OIDC exactos", async () => {
   const calls: unknown[][] = [];
   const runtime = new CommerceRuntimeV69(ENVIRONMENT, {
     loadBaseCatalog: async () => baseCatalog(),
-    activateCatalog: async () => {},
+    prepareCatalog: async () => () => {},
     runSync: async () => syncedCatalog("2026-08-04T10:00:00.000Z"),
     snapshotStore: memoryStore(null),
     verifyOidcToken: async (...args) => {

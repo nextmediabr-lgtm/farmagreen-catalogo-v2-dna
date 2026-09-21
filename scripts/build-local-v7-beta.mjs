@@ -16,6 +16,7 @@ import {
   normalizeGpsProductUrl,
   parseListingProducts,
   parseNextPageUrl,
+  parsePromotionPricingV69,
   parseProductIdentityV69,
   trustedGpsUrl,
   writeJsonAtomically,
@@ -84,9 +85,8 @@ export function parseProductPageCommerceV7Beta(html, expectedProduct = {}) {
   }
 
   const finalPrice = priceAmountFromProductPageV7Beta(source, "finalPrice");
-  const oldPrice = priceAmountFromProductPageV7Beta(source, "oldPrice");
   if (!(finalPrice > 0)) throw new Error(`La ficha directa ${expectedSku || pageSku} no informó precio actual.`);
-  const listPrice = oldPrice > 0 ? Math.max(oldPrice, finalPrice) : finalPrice;
+  const pricing = parsePromotionPricingV69(source);
   const formTags = [...source.matchAll(/<form\b[^>]*>/gi)].map((match) => match[0]);
   const hasCartForm = formTags.some((tag) => {
     const formSku = normalizeSku(htmlAttributeV7Beta(tag, "data-product-sku"));
@@ -103,16 +103,12 @@ export function parseProductPageCommerceV7Beta(html, expectedProduct = {}) {
   if (!hasCartForm && !explicitUnavailable) {
     throw new Error(`La ficha directa ${expectedSku || pageSku} no contiene evidencia explícita de disponibilidad.`);
   }
-  const savingAmount = Math.max(0, listPrice - finalPrice);
   return {
     ...detail,
     sku: pageSku,
     barcode: pageBarcode || expectedBarcode,
     availability: hasCartForm ? "available" : "unavailable",
-    listPrice,
-    offerPrice: finalPrice,
-    savingAmount,
-    discountPercent: listPrice > 0 ? Math.round((savingAmount / listPrice) * 100) : 0,
+    ...pricing,
   };
 }
 
@@ -168,6 +164,7 @@ export async function addDirectBaseFallbacksV7Beta(
         offerPrice: commerce.offerPrice,
         savingAmount: commerce.savingAmount,
         discountPercent: commerce.discountPercent,
+        promotion: commerce.promotion,
       }],
       detail: {
         sku: commerce.sku,
@@ -1175,12 +1172,13 @@ function htmlAttributeV7Beta(tag, name) {
 }
 
 function pricingV69(member) {
-  return {
+  const pricing = {
     listPrice: Number(member.listPrice),
     offerPrice: Number(member.offerPrice),
     savingAmount: Number(member.savingAmount || 0),
     discountPercent: Number(member.discountPercent || 0),
   };
+  return member?.promotion ? { ...pricing, promotion: { ...member.promotion } } : pricing;
 }
 
 function validPricingV69(member) {

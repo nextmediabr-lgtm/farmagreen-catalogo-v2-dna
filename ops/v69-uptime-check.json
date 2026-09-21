@@ -1,0 +1,13 @@
+{
+  "displayName": "FarmaGreen V6.9 - catálogo público utilizable",
+  "monitoredResource": {
+    "type": "uptime_url",
+    "labels": { "project_id": "project-e2a7bc6d-e741-4d4e-85d", "host": "farmagreenrosario.web.app" }
+  },
+  "httpCheck": { "requestMethod": "GET", "useSsl": true, "port": 443, "path": "/api/catalog-v6-9/health", "validateSsl": true, "acceptedResponseStatusCodes": [{ "statusValue": 200 }] },
+  "period": "300s",
+  "timeout": "15s",
+  "selectedRegions": ["SOUTH_AMERICA", "USA_IOWA", "EUROPE"],
+  "contentMatchers": [{ "matcher": "CONTAINS_STRING", "content": "\"storefrontUsable\":true" }],
+  "logCheckFailures": true
+}

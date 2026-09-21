@@ -228,18 +228,35 @@ function productBlocks(html) {
   });
 }
 
-function promotionDiscountPercent(block) {
+function promotionEvidence(block) {
+  const labels = [];
   for (const image of String(block || "").matchAll(/<img\b([^>]*)>/gi)) {
-    const label = `${htmlAttribute(image[1], "alt")} ${htmlAttribute(image[1], "title")}`;
-    const match = label.match(/\bpromo\s+(\d{1,2}(?:[.,]\d+)?)\s*%\s*off\b/i);
-    if (!match) continue;
-    const discount = Number.parseFloat(match[1].replace(",", "."));
-    if (Number.isFinite(discount) && discount > 0 && discount < 100) return discount;
+    const attributes = image[1];
+    if (!/(?:smile[_-]?productlabel|imagelabel|product[_-]?label|promo(?:tion)?)/i.test(attributes)) continue;
+    labels.push(htmlAttribute(attributes, "alt"), htmlAttribute(attributes, "title"));
   }
-  return 0;
+  for (const row of String(block || "").matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const label = textFromHtml(row[1].match(/<th\b[^>]*>([\s\S]*?)<\/th>/i)?.[1] || "");
+    if (normalizeProductText(label) !== "promo") continue;
+    labels.push(textFromHtml(row[1].match(/<td\b[^>]*>([\s\S]*?)<\/td>/i)?.[1] || ""));
+  }
+  for (const rawLabel of labels) {
+    const label = String(rawLabel || "").trim();
+    if (!label) continue;
+    if (/\b2\s*[x×]\s*1\b/i.test(label)) {
+      return { type: "two_for_one", label: "2×1", buyQuantity: 2, payQuantity: 1 };
+    }
+    const percentMatch = label.match(/\b(?:promo\s+)?(\d{1,2}(?:[.,]\d+)?)\s*%(?:\s*off\b)?/i);
+    if (!percentMatch) continue;
+    const percent = Number.parseFloat(percentMatch[1].replace(",", "."));
+    if (Number.isFinite(percent) && percent > 0 && percent < 100) {
+      return { type: "percentage", label: `-${Number(percent.toFixed(2))}%`, percent };
+    }
+  }
+  return null;
 }
 
-function priceAmounts(block) {
+export function parsePromotionPricingV69(block) {
   let oldPrice = 0;
   let finalPrice = 0;
   for (const tag of String(block || "").matchAll(/<span\b([^>]*)>/gi)) {
@@ -257,14 +274,29 @@ function priceAmounts(block) {
       finalPrice ||= amount;
     }
   }
-  if (!oldPrice && finalPrice) {
-    const promotionDiscount = promotionDiscountPercent(block);
-    if (promotionDiscount) {
-      const listPrice = finalPrice / (1 - promotionDiscount / 100);
-      return computePricing(listPrice, finalPrice);
-    }
+  const promotion = promotionEvidence(block);
+  if (promotion?.type === "two_for_one" && finalPrice > 0) {
+    const habitualPrice = roundCurrency(finalPrice * 2);
+    const pricing = computePricing(habitualPrice, habitualPrice);
+    return {
+      ...pricing,
+      promotion: {
+        ...promotion,
+        unitPrice: habitualPrice,
+        bundlePrice: habitualPrice,
+        bundleSaving: habitualPrice,
+      },
+    };
   }
-  return computePricing(oldPrice || finalPrice, finalPrice || oldPrice);
+  if (promotion?.type === "percentage" && !oldPrice && finalPrice > 0) {
+    const pricing = computePricing(finalPrice, finalPrice * (1 - promotion.percent / 100));
+    return { ...pricing, promotion: { ...promotion, label: `-${pricing.discountPercent}%`, percent: pricing.discountPercent } };
+  }
+  const pricing = computePricing(oldPrice || finalPrice, finalPrice || oldPrice);
+  if (promotion?.type === "percentage" && pricing.discountPercent > 0) {
+    return { ...pricing, promotion: { ...promotion, label: `-${pricing.discountPercent}%`, percent: pricing.discountPercent } };
+  }
+  return pricing;
 }
 
 function listingAvailability(block) {
@@ -331,7 +363,7 @@ export function parseListingProducts(html, source) {
       continue;
     }
 
-    const pricing = priceAmounts(block);
+    const pricing = parsePromotionPricingV69(block);
     const sourceBrand = source.mode === "brand" ? source.catalogBrandName : listedBrand;
     products.push({
       sourceId: source.id,
@@ -527,6 +559,7 @@ function updatedMatchedProduct(product, candidate, completedAt) {
         offerPrice: candidate.offerPrice,
         savingAmount: candidate.savingAmount,
         discountPercent: candidate.discountPercent,
+        promotion: candidate.promotion,
       }
     : {};
   const availability =
@@ -861,6 +894,7 @@ async function addDirectProductFallbacksV69(
       offerPrice: commerce.offerPrice,
       savingAmount: commerce.savingAmount,
       discountPercent: commerce.discountPercent,
+      promotion: commerce.promotion,
     };
   });
   const additionsBySourceId = new Map();

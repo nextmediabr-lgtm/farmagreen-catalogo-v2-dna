@@ -57,7 +57,99 @@ V69_AGENT_MANAGER_TOKEN=... npm run record:deploy:v69 -- \
   --products=<total> --healthy=true --verified-at=<iso-8601>
 ```
 
-## Estado y continuidad
+## Fiabilidad: candidato local del 19 de septiembre de 2026
+
+Implementación local; esta sección **no acredita un deploy**. No modifica las
+exclusiones, STOM, horarios, CPU, memoria ni mínimo de instancias.
+
+- El sincronizador no deduce precios tachados a partir de un badge promocional.
+  Sólo publica descuentos calculados con precios explícitos de la fuente.
+- Diario y semanal usan el mismo control de publicación: identidad, precios,
+  disponibilidad, exclusiones, taxonomía e imágenes, incluyendo JPEG 320/640
+  (o ancho real si el original es menor; no se amplían imágenes).
+- Preparar/validar no modifica el catálogo activo. GCS archiva la generación
+  anterior en `<objeto>.history/` y publica con `ifGenerationMatch`; recién
+  entonces se activa el candidato en memoria. Un conflicto conserva el activo.
+- Cada instancia comprueba la generación como máximo una vez por 30 segundos,
+  con tráfico entrante; sólo descarga el snapshot si cambió. Un arranque fallido
+  puede reintentarse después de 5 segundos, sin reiniciar el proceso.
+- Al iniciar se intenta snapshot, respaldo anterior y finalmente respaldo
+  empaquetado. Se sigue aplicando la política administrativa vigente: nunca se
+  reemplaza una política inaccesible por una política permisiva de emergencia.
+- Los errores incluyen fase, ejecución, revisión de código y causa saneada en
+  logs JSON privados. Health sólo expone identificación/estado, no la causa.
+  Conflictos/errores transitorios responden 503; rechazo de datos, 422.
+- Un rechazo determinista guarda recibo en `<objeto>.rejected/`, evitando repetir
+  el crawl del mismo horario/ejecución. Si ya existe candidato, queda separado
+  en `<objeto>.candidates/<sha256>.json`, **sin activarlo**. La publicación lleva
+  el hash de ejecución, para reconocer un éxito incluso desde otra instancia.
+- Caída de productos >30%, pérdida >80% de ofertas (desde al menos 20), o saltos
+  de precio >2×/<0,5× en más del 10% (mínimo 6) requieren revisión. La promoción
+  manual sólo admite el digest exacto revisado y la generación base observada;
+  no evita controles estructurales ni permite fechas anteriores. No existe un
+  flag permanente que salte esta revisión para los cron. Un nuevo scan cambia
+  el candidato y requiere revisión nueva.
+- Con cero ofertas verificadas, SSR y cliente muestran el catálogo y un aviso,
+  no una grilla vacía. El cliente usa una URL nueva: `/app-v6-9-13.js`.
+- `/api/catalog-v6-9/health` y `/readyz-v69` responden 503 en producción ante
+  estado degradado, catálogo vacío/no verificado o antigüedad >36 horas. No usar
+  este control de frescura como liveness: reiniciar no repara la fuente.
+
+Verificación local del 19/9: un dry-run real completó las 16 fuentes, los 1.469
+productos y 100% de cobertura de precio/stock, con 0 sin verificar. **No encontró
+ofertas respaldadas por dos precios explícitos**; el control `offer_drop` lo
+detuvo para revisión. No escribió GCS ni modificó los descuentos productivos.
+Antes de publicar esa corrección de datos se debe revisar un candidato reciente
+y autorizar su promoción exacta; no desactivar el control para hacer pasar el cron.
+
+El operador puede descargar el candidato privado y ejecutar
+`npm run review:candidate:v69 -- --input=<candidato.json>` con las variables GCS
+y credenciales de operador configuradas. Es sólo lectura por defecto. Después de
+revisión y autorización explícita, `--apply --approve-sha256=<digest-revisado>
+--expected-generation=<generación-revisada>` publica ese mismo archivo mediante
+CAS y conserva respaldo; no vuelve a recorrer la fuente ni acepta otro candidato.
+
+### Control previo y posterior a un deploy autorizado
+
+```bash
+npm run verify:v69
+npm run verify:fallback:v69 -- --from-gcs=gs://<bucket-v69>/<snapshot-v69>
+docker build -f Dockerfile.v69-preprod --build-arg V69_CODE_REVISION=<sha> -t <imagen-local> .
+```
+
+El segundo comando sólo **lee** GCS y genera `data/catalog-v69-fallback.json`,
+privado e ignorado por Git. La imagen incluye ese respaldo, validado con los
+mismos controles productivos y no mayor a 36 horas al construir. El build
+ejecuta compilación, pruebas unitarias/sync y el control del respaldo; la suite
+completa local agrega navegador real. Cloud Build exige `_CODE_REVISION` con el
+SHA completo. La imagen no incluye credenciales.
+
+Tras autorizar deploy: actualizar servicio y Job al **mismo digest**, mantener
+recursos/horarios, ejecutar un canary acotado diario y uno semanal y comprobar
+su terminación. No basta con que Scheduler acepte el disparo. El control siguiente
+es de sólo lectura y rechaza una ejecución antigua o con otra imagen:
+
+```bash
+npm run verify:release:v69 -- --commit=<sha-completo> --execution=<ejecucion-semanal-terminada>
+```
+
+Verifica revisión con 100% de tráfico, digest web/Job/ejecución, commit observado,
+health, home no vacía, DTO, PDP y revisión administrativa. Sólo después corresponde
+registrar el comprobante con `record:deploy:v69`. No cambia tráfico ni ejecuta Jobs.
+
+Las plantillas `ops/v69-*.json` preparan uptime público, alerta por rechazo de
+sync y alerta por ejecución semanal fallida incluso si no hubo log de aplicación.
+**No están creadas ni activadas en GCP**: necesitan autorización, canal de aviso
+confirmado e ID del uptime check. Los prefijos de historia/candidatos son privados;
+su retención/lifecycle requiere decisión explícita (no se cambió la del bucket).
+Contratos: [escritura condicional GCS](https://docs.cloud.google.com/storage/docs/request-preconditions),
+[uptime](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.uptimeCheckConfigs),
+[políticas de alerta](https://docs.cloud.google.com/monitoring/alerts/policies-in-json).
+
+## Estado y continuidad: referencia histórica de agosto de 2026
+
+Los conteos siguientes documentan aquel despliegue, no el inventario vivo actual;
+consultar `/api/catalog-v6-9/health` para cifras públicas vigentes.
 
 El snapshot productivo conserva 1.459 fichas canónicas. La política dinámica
 vigente publica 1.183: 1.012 disponibles, 171 para consultar y 0 sin verificar,

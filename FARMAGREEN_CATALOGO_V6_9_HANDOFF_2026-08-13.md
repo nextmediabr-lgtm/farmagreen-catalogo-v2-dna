@@ -1,7 +1,7 @@
 # FarmaGreen Catálogo V6.9 — handoff canónico de producción
 
 Creado: 13 de agosto de 2026
-Última actualización: 7 de septiembre de 2026
+Última actualización: 15 de septiembre de 2026
 Estado: V6.9 desplegada y saludable; cron semanal reparado, servicio y Job alineados en una única imagen.
 Propósito: punto único de continuidad para código, datos, GCP, búsqueda, taxonomía, exclusiones, navegación, imágenes y analítica.
 
@@ -19,6 +19,7 @@ explícita en el turno correspondiente.
 | Remoto | `origin/codex/v69-stock-ordering` |
 | Producción | <https://farmagreenrosario.web.app/> |
 | Proyecto GCP | `project-e2a7bc6d-e741-4d4e-85d` |
+| Facturación vigente | `Mi cuenta de facturación` (`017502-CD3DC9-5FA5F0`); `billingEnabled: true`, verificado 15/9/2026 |
 | Servicio Cloud Run | `farmagreen-v69-preprod` |
 | Región | `southamerica-east1` |
 | Revisión activa | `farmagreen-v69-preprod-weeklyfix-20260907`, 100% |
@@ -28,6 +29,11 @@ explícita en el turno correspondiente.
 
 Los handoffs del 3 y 4 de agosto conservan valor histórico. Sus conteos,
 arquitectura de 11 fuentes y estado Git no representan producción actual.
+
+El cambio de cuenta de facturación del 15/9/2026 no alteró Cloud Run,
+Scheduler, revisiones, imágenes ni el catálogo desplegado. El registro común y
+los límites de lo verificado están en
+`FARMAGREEN_BILLING_CREDITO_DOMINIO_HANDOVER_2026-06-25.md`.
 
 ## 2. Estado público confirmado
 

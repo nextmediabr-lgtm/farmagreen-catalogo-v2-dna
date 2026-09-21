@@ -335,6 +335,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     );
     await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");
     assert.equal(catalogApiRequests.length, 1, "La primera interacción debe cargar el DTO una sola vez.");
+    const cardWhatsappText = new URL(await page.locator("#gridV69 .v66-ask").first().getAttribute("href")).searchParams.get("text") || "";
+    assert.match(cardWhatsappText, /https:\/\/farmagreenrosario\.web\.app\/p\/[a-f0-9]+/);
+    assert.doesNotMatch(cardWhatsappText, /127\.0\.0\.1|localhost/);
     await page.waitForFunction(() =>
       window.__metaEvents.some(([, event, parameters]) => event === "Search" && parameters?.search_string === "eucerin"),
     );
@@ -354,6 +357,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       const values = Array.from(entry);
       return values[0] === "event" && values[1] === "view_item" && values[2]?.currency === "ARS";
     }));
+    const pdpWhatsappText = new URL(await page.locator(".pdp .cta").getAttribute("href")).searchParams.get("text") || "";
+    assert.match(pdpWhatsappText, /https:\/\/farmagreenrosario\.web\.app\/p\/[a-f0-9]+/);
+    assert.doesNotMatch(pdpWhatsappText, /127\.0\.0\.1|localhost/);
     await page.locator(".pdp .cta").evaluate((link) => {
       link.addEventListener("click", (event) => event.preventDefault(), { once: true });
       link.click();

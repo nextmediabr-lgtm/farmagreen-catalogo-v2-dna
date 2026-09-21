@@ -1,10 +1,18 @@
 steps:
+  - id: validate-release-identity
+    name: bash:5
+    entrypoint: bash
+    args:
+      - -ceu
+      - '[[ "${_CODE_REVISION}" =~ ^[0-9a-f]{40}$ ]] || { echo "Falta _CODE_REVISION con SHA completo"; exit 1; }'
   - id: build-v69-preprod
     name: gcr.io/cloud-builders/docker
     args:
       - build
       - --file
       - Dockerfile.v69-preprod
+      - --build-arg
+      - V69_CODE_REVISION=${_CODE_REVISION}
       - --tag
       - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${BUILD_ID}
       - .

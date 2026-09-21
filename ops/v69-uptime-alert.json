@@ -1,0 +1,17 @@
+{
+  "displayName": "FarmaGreen V6.9 - sitio o catálogo no utilizable",
+  "combiner": "OR",
+  "conditions": [{
+    "displayName": "Fallo desde al menos dos regiones",
+    "conditionThreshold": {
+      "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.label.check_id=\"REQUIERE_ID_DEL_UPTIME_CHECK\" AND resource.type=\"uptime_url\"",
+      "aggregations": [{ "alignmentPeriod": "600s", "perSeriesAligner": "ALIGN_NEXT_OLDER", "crossSeriesReducer": "REDUCE_COUNT_FALSE", "groupByFields": ["resource.label.host"] }],
+      "comparison": "COMPARISON_GT",
+      "thresholdValue": 1,
+      "duration": "300s",
+      "trigger": { "count": 1 }
+    }
+  }],
+  "notificationChannels": ["projects/project-e2a7bc6d-e741-4d4e-85d/notificationChannels/REQUIERE_CANAL_CONFIRMADO"],
+  "enabled": false
+}

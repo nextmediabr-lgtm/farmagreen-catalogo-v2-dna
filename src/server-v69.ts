@@ -1,6 +1,7 @@
 import type http from "node:http";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import type { CatalogV69 } from "./data-v69.js";
+import { assertCatalogPublicationV69 } from "./catalog-validation-v69.js";
 import {
   createCatalogAdminRuntimeV69,
   type CatalogAdminRuntimeV69,
@@ -148,65 +149,12 @@ export function catalogReadyForRuntimeV69(catalog: CatalogV69, environment: Envi
   if (environment.V69_ENABLE_PRODUCTION !== "1") return false;
   try {
     publicOriginV69("http://invalid.local", environment);
-  } catch {
-    return false;
-  }
-  return (
-    catalog.version === 6.9 &&
-    Boolean(catalog.commerceSyncedAt) &&
-    catalog.products.length > 0 &&
-    catalog.products.every(
-      (product) =>
-        (environment.V69_REQUIRE_MAGENTO_TAXONOMY !== "1" || product.magentoTaxonomyAttached === true) &&
-        product.availability !== "unknown" &&
-        Boolean(product.availabilityCheckedAt) &&
-        (["card", "detail"] as const).every((kind) => {
-          try {
-            const image = new URL(sourceImageV69(product, kind));
-            return image.protocol === "https:" && image.hostname === "storage.googleapis.com";
-          } catch {
-            return false;
-          }
-        }),
-    ) &&
-    (environment.V691_REQUIRE_RESPONSIVE_IMAGES !== "1" || catalog.products.every(responsiveImagesReadyV691)) &&
-    (environment.V691_REQUIRE_JPEG_RESPONSIVE_IMAGES !== "1" || catalog.products.every(responsiveJpegImagesReadyV691))
-  );
+    assertCatalogPublicationV69(catalog, environment);
+    return true;
+  } catch { return false; }
 }
 
-export function responsiveImagesReadyV691(product: CatalogV69["products"][number]) {
-  return (["card", "detail"] as const).every((kind) => {
-    const set = product.images?.responsive?.[kind];
-    if (!set || !Number.isInteger(set.width) || !Number.isInteger(set.height) || set.width <= 0 || set.height <= 0) return false;
-    return (["webp", "avif"] as const).every((format) => {
-      const variants = Object.entries(set[format] || {});
-      return variants.length > 0 && variants.every(([width, value]) => {
-        if (!/^\d+$/.test(width)) return false;
-        try {
-          const url = new URL(String(value || ""));
-          return url.protocol === "https:" && url.hostname === "storage.googleapis.com";
-        } catch {
-          return false;
-        }
-      });
-    });
-  });
-}
-
-export function responsiveJpegImagesReadyV691(product: CatalogV69["products"][number]) {
-  return (["card", "detail"] as const).every((kind) => {
-    const variants = Object.entries(product.images?.responsive?.[kind]?.jpeg || {});
-    return variants.length > 0 && variants.every(([width, value]) => {
-      if (!/^\d+$/.test(width)) return false;
-      try {
-        const url = new URL(String(value || ""));
-        return url.protocol === "https:" && url.hostname === "storage.googleapis.com";
-      } catch {
-        return false;
-      }
-    });
-  });
-}
+export { responsiveImagesReadyV691, responsiveJpegImagesReadyV691 } from "./catalog-validation-v69.js";
 
 export function publicOriginV69(requestOrigin: string, environment: Environment = process.env) {
   const configured = environment.PUBLIC_ORIGIN?.trim();
@@ -253,6 +201,7 @@ export async function handleV69Request(
     pathname === "/catalogo-v6-9" ||
     pathname === "/api/catalog-v6-9" ||
     pathname === "/api/catalog-v6-9/health" ||
+    pathname === "/readyz-v69" ||
     pathname === "/api/meta-events-v6-9" ||
     pathname === "/admin-v6-9" ||
     pathname.startsWith("/api/admin-v69/") ||
@@ -264,13 +213,18 @@ export async function handleV69Request(
     pathname.startsWith("/media-v6-9/");
   if (!isV69Route) return false;
 
+  if (environment.NODE_ENV === "production" && environment.V69_ENABLE_PRODUCTION !== "1") {
+    sendTextV69(response, "V6.9 todavía no está habilitada para esta ejecución.", 503);
+    return true;
+  }
+
   if (pathname === "/api/meta-events-v6-9") {
     await handleMetaEventV69(response, url, environment, request);
     return true;
   }
 
   try {
-    await commerceRuntime.initialize();
+    await commerceRuntime.ensureCurrent();
   } catch {
     sendTextV69(response, "V6.9 no pudo inicializarse.", 503);
     return true;
@@ -424,12 +378,14 @@ export async function handleV69Request(
     return true;
   }
 
-  if (pathname === "/api/catalog-v6-9/health") {
+  if (pathname === "/api/catalog-v6-9/health" || pathname === "/readyz-v69") {
+    const quality = catalogHealthV69(responseCache.presented ||= applyCatalogPolicyV69(catalog, policy));
+    const runtime = commerceRuntime.health();
     sendJsonV69(
       response,
       {
-        ...catalogHealthV69(responseCache.presented ||= applyCatalogPolicyV69(catalog, policy)),
-        runtime: commerceRuntime.health(),
+        ...quality,
+        runtime,
         navigationPolicy: {
           revision: policyRevision,
           configured: adminRuntime.configured,
@@ -442,7 +398,7 @@ export async function handleV69Request(
           metaCapiConfigured: Boolean(environment.META_CAPI_ACCESS_TOKEN?.trim()),
         },
       },
-      200,
+      environment.NODE_ENV === "production" && (quality.status !== "ready" || runtime.status === "degraded") ? 503 : 200,
       { "cache-control": "no-store" },
       request,
     );
@@ -744,13 +700,16 @@ export function catalogHealthV69(catalog: CatalogV69, now = new Date()) {
   const syncedAt = catalog.commerceSyncedAt ? Date.parse(catalog.commerceSyncedAt) : Number.NaN;
   const ageMs = Number.isFinite(syncedAt) ? Math.max(0, now.getTime() - syncedAt) : null;
   const fresh = ageMs !== null && ageMs <= 36 * 60 * 60 * 1000;
+  const usable = catalog.products.length > 0 && summary.unverified === 0;
   return {
     version: catalog.version,
-    status: fresh ? "ready" : "degraded",
-    reason: !catalog.commerceSyncedAt ? "missing_sync" : fresh ? "current" : "stale",
+    status: fresh && usable ? "ready" : "degraded",
+    reason: !usable ? "unusable_catalog" : !catalog.commerceSyncedAt ? "missing_sync" : fresh ? "current" : "stale",
     commerceSyncedAt: catalog.commerceSyncedAt,
     totalProducts: catalog.products.length,
     availabilitySummary: summary,
+    offers: catalog.products.filter((product) => product.discountPercent > 0).length,
+    storefrontUsable: usable,
   };
 }
 
