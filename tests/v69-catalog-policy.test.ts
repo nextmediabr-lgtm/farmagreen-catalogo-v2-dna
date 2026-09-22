@@ -75,6 +75,93 @@ test("las reglas EAN validan checksum, unicidad y conflicto inclusión/exclusió
   assert.throws(() => validateCatalogPolicyV69(policy), /simultáneamente incluido y excluido/);
 });
 
+test("marcas legacy deshabilitadas no consumen el límite de navegación", () => {
+  const policy = defaultCatalogPolicyV69();
+  for (let index = 0; index < 35; index += 1) {
+    policy.navigation.featuredBrands.push({
+      slug: `extra-${index}`,
+      name: `Extra ${index}`,
+      aliases: [],
+      enabled: index < 6,
+    });
+  }
+  assert.equal(policy.navigation.featuredBrands.filter((entry) => entry.enabled).length, 21);
+  assert.equal(validateCatalogPolicyV69(policy).navigation.featuredBrands.length, 50);
+
+  for (const entry of policy.navigation.featuredBrands.slice(21, 31)) entry.enabled = true;
+  assert.throws(() => validateCatalogPolicyV69(policy), /30 marcas destacadas habilitadas/);
+});
+
+test("promociones por marca conservan SKU y precio regular sin aplicar descuentos", () => {
+  const dermaglos = {
+    ...product("derma-promo", "Dermaglos", []),
+    listPrice: 100,
+    offerPrice: 70,
+    savingAmount: 30,
+    discountPercent: 30,
+    promotion: { type: "percentage" as const, label: "-30%", percent: 30 },
+  };
+  const eucerin = {
+    ...product("eucerin-promo", "Eucerin", []),
+    listPrice: 200,
+    offerPrice: 100,
+    savingAmount: 100,
+    discountPercent: 50,
+    promotion: { type: "percentage" as const, label: "-50%", percent: 50 },
+  };
+  const supradyn = {
+    ...product("supradyn-2x1", "Supradyn", [healthyFacet()]),
+    listPrice: 35_900,
+    offerPrice: 35_900,
+    savingAmount: 35_900,
+    discountPercent: 50,
+    promotion: {
+      type: "two_for_one" as const,
+      label: "2×1",
+      buyQuantity: 2 as const,
+      payQuantity: 1 as const,
+      priceBasis: "source_unit" as const,
+      unitPrice: 35_900,
+      bundlePrice: 35_900,
+      bundleSaving: 35_900,
+    },
+  };
+  const healthyVirtual = {
+    ...product("healthy-virtual", "Goodskin", [healthyFacet()]),
+    listPrice: 100,
+    offerPrice: 80,
+    savingAmount: 20,
+    discountPercent: 20,
+    promotion: { type: "percentage" as const, label: "-20%", percent: 20 },
+  };
+  const catalog = fixtureCatalog([dermaglos, eucerin, product("regular", "Eucerin", []), supradyn, healthyVirtual]);
+  const policy = defaultCatalogPolicyV69();
+  assert.equal(policy.navigation.promotionBrandSlugs, null);
+  policy.navigation.promotionBrandSlugs = ["dermaglos"];
+  const presented = applyCatalogPolicyV69(catalog, validateCatalogPolicyV69(policy));
+  assert.equal(presented.totalProducts, 5);
+  assert.equal(presented.products[0].offerPrice, 70);
+  assert.equal(presented.products[0].discountPercent, 30);
+  assert.equal(presented.products[1].listPrice, 200);
+  assert.equal(presented.products[1].offerPrice, 200);
+  assert.equal(presented.products[1].discountPercent, 0);
+  assert.equal(presented.products[1].promotion, undefined);
+  assert.equal(presented.products[2].offerPrice, 100);
+  assert.equal(presented.products[3].offerPrice, 35_900);
+  assert.equal(presented.products[3].promotion, undefined);
+  assert.equal(presented.products[3].discountPercent, 0);
+  assert.equal(presented.products[4].brand.name, "Productos Saludables");
+  assert.equal(presented.products[4].promotion, undefined);
+  assert.equal(catalog.products[1].offerPrice, 100);
+  policy.navigation.promotionBrandSlugs = ["productos-saludables"];
+  const virtualOnly = applyCatalogPolicyV69(catalog, policy);
+  assert.equal(virtualOnly.products[4].promotion?.type, "percentage");
+  assert.equal(virtualOnly.products[3].promotion?.type, "two_for_one");
+  assert.equal(virtualOnly.products[1].promotion, undefined);
+  policy.navigation.promotionBrandSlugs = [];
+  assert.equal(applyCatalogPolicyV69(catalog, policy).products.every((entry) => !entry.promotion), true);
+});
+
 function healthyFacet() {
   return {
     slug: "productos-saludables",

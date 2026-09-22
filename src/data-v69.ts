@@ -27,6 +27,7 @@ export type PromotionV69 =
       label: "2×1";
       buyQuantity: 2;
       payQuantity: 1;
+      priceBasis: "source_unit";
       unitPrice: number;
       bundlePrice: number;
       bundleSaving: number;
@@ -365,9 +366,23 @@ function cleanProductV69(product: ProductV69): ProductV69 {
 
 function normalizeTwoForOnePricingV69(product: ProductV69): ProductV69 {
   if (product.promotion?.type !== "two_for_one") return product;
-  const habitualPrice = Number(product.listPrice);
-  if (!(habitualPrice > 0)) return product;
-  const price = Number(habitualPrice.toFixed(2));
+  const listPrice = Number(product.listPrice);
+  const offerPrice = Number(product.offerPrice);
+  const promotionUnitPrice = Number(product.promotion.unitPrice);
+  if (!(listPrice > 0)) return product;
+
+  // Snapshots written before priceBasis existed used two incompatible shapes:
+  // an inferred 50% unit discount, or a unit price multiplied by two. Neither
+  // represented GPSFarma, whose finalPrice is already the regular unit price.
+  const observedUnitPrice = product.promotion.priceBasis === "source_unit"
+    ? promotionUnitPrice
+    : offerPrice > 0 && offerPrice < listPrice - 0.02
+      ? offerPrice
+      : promotionUnitPrice > 0 && promotionUnitPrice < listPrice - 0.02
+        ? promotionUnitPrice
+        : listPrice / 2;
+  if (!(observedUnitPrice > 0)) return product;
+  const price = Number(observedUnitPrice.toFixed(2));
   return {
     ...product,
     listPrice: price,
@@ -379,6 +394,7 @@ function normalizeTwoForOnePricingV69(product: ProductV69): ProductV69 {
       label: "2×1",
       buyQuantity: 2,
       payQuantity: 1,
+      priceBasis: "source_unit",
       unitPrice: price,
       bundlePrice: price,
       bundleSaving: price,
@@ -401,6 +417,7 @@ function cleanPromotionV69(value: unknown, product: Pick<ProductV69, "listPrice"
   if (
     promotion.buyQuantity !== 2 ||
     promotion.payQuantity !== 1 ||
+    promotion.priceBasis !== "source_unit" ||
     !(unitPrice > 0) ||
     Math.abs(Number(product.listPrice) - unitPrice) > 0.02 ||
     Math.abs(Number(product.offerPrice) - unitPrice) > 0.02 ||
@@ -414,6 +431,7 @@ function cleanPromotionV69(value: unknown, product: Pick<ProductV69, "listPrice"
     label: "2×1",
     buyQuantity: 2,
     payQuantity: 1,
+    priceBasis: "source_unit",
     unitPrice,
     bundlePrice,
     bundleSaving,

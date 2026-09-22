@@ -276,15 +276,18 @@ export function parsePromotionPricingV69(block) {
   }
   const promotion = promotionEvidence(block);
   if (promotion?.type === "two_for_one" && finalPrice > 0) {
-    const habitualPrice = roundCurrency(finalPrice * 2);
-    const pricing = computePricing(habitualPrice, habitualPrice);
+    // GPSFarma publishes the regular unit price in finalPrice. The 2×1 changes
+    // the quantity delivered, not that source price: two units cost one unit.
+    const unitPrice = roundCurrency(finalPrice);
+    const pricing = computePricing(unitPrice, unitPrice);
     return {
       ...pricing,
       promotion: {
         ...promotion,
-        unitPrice: habitualPrice,
-        bundlePrice: habitualPrice,
-        bundleSaving: habitualPrice,
+        priceBasis: "source_unit",
+        unitPrice,
+        bundlePrice: unitPrice,
+        bundleSaving: unitPrice,
       },
     };
   }

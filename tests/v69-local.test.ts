@@ -560,8 +560,8 @@ test("V6.9 presenta 2×1 como paquete sin convertirlo en descuento unitario", as
     publicId: "promo-two-for-one",
     slug: "supradyn-2x1",
     name: "Supradyn x 30 comprimidos",
-    listPrice: 35_900.02,
-    offerPrice: 35_900.02,
+    listPrice: 17_950.01,
+    offerPrice: 17_950.01,
     savingAmount: 0,
     discountPercent: 0,
     promotion: {
@@ -569,9 +569,10 @@ test("V6.9 presenta 2×1 como paquete sin convertirlo en descuento unitario", as
       label: "2×1",
       buyQuantity: 2,
       payQuantity: 1,
-      unitPrice: 35_900.02,
-      bundlePrice: 35_900.02,
-      bundleSaving: 35_900.02,
+      priceBasis: "source_unit",
+      unitPrice: 17_950.01,
+      bundlePrice: 17_950.01,
+      bundleSaving: 17_950.01,
     },
   };
   const catalog: CatalogV69 = { ...base, totalProducts: 1, products: [product] };
@@ -581,19 +582,19 @@ test("V6.9 presenta 2×1 como paquete sin convertirlo en descuento unitario", as
 
   for (const html of [catalogHtml, productHtml]) {
     assert.match(html, /class="v66-discount">2×1<\/span>/);
-    assert.match(html, /Precio habitual por unidad \$\s*35\.900/);
-    assert.match(html, /<strong>2 por \$\s*35\.900<\/strong>/);
-    assert.match(html, /\$\s*17\.950 c\/u · sólo llevando 2/);
-    assert.match(html, /Ahorrás \$\s*35\.900 \(1 producto\)/);
+    assert.match(html, /Precio habitual por unidad \$\s*17\.950/);
+    assert.match(html, /<strong>2 por \$\s*17\.950<\/strong>/);
+    assert.match(html, /\$\s*8\.975 c\/u · sólo llevando 2/);
+    assert.match(html, /Ahorrás \$\s*17\.950 \(1 producto\)/);
     assert.doesNotMatch(html, /Precio unitario/);
     assert.doesNotMatch(html, /class="v66-discount">-50%<\/span>/);
   }
   assert.deepEqual(publicProduct.promotion, product.promotion);
-  assert.equal(publicProduct.offerPrice, 35_900.02);
+  assert.equal(publicProduct.offerPrice, 17_950.01);
   assert.equal(publicProduct.discountPercent, 0);
 });
 
-test("V6.9 migra el formato 2×1 anterior sin publicar una compra individual a mitad de precio", async () => {
+test("V6.9 migra el formato 2×1 anterior usando el precio unitario observado", async () => {
   const base = await baseCatalog();
   const legacyProduct: ProductV69 = {
     ...base.products[0],
@@ -623,18 +624,67 @@ test("V6.9 migra el formato 2×1 anterior sin publicar una compra individual a m
   );
   const [product] = migrated.products;
 
-  assert.equal(product.listPrice, 35_900.02);
-  assert.equal(product.offerPrice, 35_900.02);
+  assert.equal(product.listPrice, 17_950.01);
+  assert.equal(product.offerPrice, 17_950.01);
   assert.equal(product.savingAmount, 0);
   assert.equal(product.discountPercent, 0);
+  assert.equal(product.promotion?.priceBasis, "source_unit");
   assert.deepEqual(product.promotion, {
     type: "two_for_one",
     label: "2×1",
     buyQuantity: 2,
     payQuantity: 1,
-    unitPrice: 35_900.02,
-    bundlePrice: 35_900.02,
-    bundleSaving: 35_900.02,
+    priceBasis: "source_unit",
+    unitPrice: 17_950.01,
+    bundlePrice: 17_950.01,
+    bundleSaving: 17_950.01,
+  });
+});
+
+test("V6.9 corrige snapshots 2×1 generados con el precio unitario duplicado", async () => {
+  const base = await baseCatalog();
+  const duplicatedProduct: ProductV69 = {
+    ...base.products[0],
+    publicId: "promo-two-for-one-duplicated",
+    slug: "supradyn-2x1-duplicated",
+    name: "Supradyn x 30 comprimidos",
+    listPrice: 35_900.02,
+    offerPrice: 35_900.02,
+    savingAmount: 0,
+    discountPercent: 0,
+    promotion: {
+      type: "two_for_one",
+      label: "2×1",
+      buyQuantity: 2,
+      payQuantity: 1,
+      unitPrice: 35_900.02,
+      bundlePrice: 35_900.02,
+      bundleSaving: 35_900.02,
+    },
+  };
+  const migrated = await prepareCatalogV69Data(
+    { ...base, totalProducts: 1, products: [duplicatedProduct] },
+    {
+      ...process.env,
+      V69_EXCLUSIONS_FILE: path.join(tmpdir(), "farmagreen-v69-no-duplicated-promo-exclusions.json"),
+    },
+  );
+  const [product] = migrated.products;
+
+  assert.equal(product.listPrice, 17_950.01);
+  assert.equal(product.offerPrice, 17_950.01);
+  assert.equal(product.savingAmount, 0);
+  assert.equal(product.discountPercent, 0);
+  assert.equal(product.promotion?.priceBasis, "source_unit");
+  assert.deepEqual(product.promotion, {
+    type: "two_for_one",
+    label: "2×1",
+    buyQuantity: 2,
+    payQuantity: 1,
+    priceBasis: "source_unit",
+    unitPrice: 17_950.01,
+    bundlePrice: 17_950.01,
+    bundleSaving: 17_950.01,
   });
 });
 
@@ -749,6 +799,32 @@ test("V6.9.1 publica robots y un sitemap completo con fecha de sincronización",
   assert.match(sitemap, new RegExp(`<loc>${origin}/catalogo<\\/loc>`));
   assert.ok(catalog.products.every((product) => sitemap.includes(`<loc>${origin}/p/${product.publicId}</loc>`)));
   assert.equal((sitemap.match(new RegExp(`<lastmod>${sitemapLastmodV69(catalog)}</lastmod>`, "g")) || []).length, catalog.products.length + 2);
+});
+
+test("V6.9 limita promociones por marca en API, catálogo, ficha y oferta estructurada", async () => {
+  const full = await baseCatalog();
+  const dermaglos = full.products.find((entry) => entry.brand.name === "Dermaglos" && entry.discountPercent > 0);
+  const eucerin = full.products.find((entry) => entry.brand.name === "Eucerin" && entry.discountPercent > 0);
+  assert.ok(dermaglos && eucerin);
+  const catalog = { ...full, products: [dermaglos, eucerin], totalProducts: 2 };
+  const policy = defaultCatalogPolicyV69();
+  policy.navigation.promotionBrandSlugs = ["dermaglos"];
+  const publicCatalog = publicCatalogV69(catalog, policy);
+  assert.equal(publicCatalog.totalProducts, 2);
+  assert.equal(publicCatalog.products[0].discountPercent, dermaglos.discountPercent);
+  assert.equal(publicCatalog.products[1].discountPercent, 0);
+  assert.equal(publicCatalog.products[1].offerPrice, eucerin.listPrice);
+  assert.equal(publicCatalog.products[1].promotion, undefined);
+  const detail = productPageV69(eucerin, [], "https://farmagreenrosario.web.app", policy);
+  assert.doesNotMatch(detail, /class="v66-discount"|Ahorrás/);
+  const schema = structuredData(detail).find((entry) => entry["@graph"]);
+  assert.equal(schema?.["@graph"]?.[0]?.offers?.price, eucerin.listPrice);
+
+  policy.navigation.promotionBrandSlugs = [];
+  const noOffers = catalogPageV69(catalog, new URLSearchParams({ orden: "descuento" }), "https://farmagreenrosario.web.app", { policy });
+  assert.doesNotMatch(noOffers, /<a[^>]*data-nav="ofertas"|<option value="descuento"|class="v66-discount"/);
+  assert.match(noOffers, /Todos los productos/);
+  assert.equal(publicCatalogV69(catalog, policy).products.every((entry) => entry.discountPercent === 0), true);
 });
 
 test("V6.9.1 valida GTIN antes de publicarlo como dato estructurado", () => {
@@ -928,7 +1004,13 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     );
     assert.doesNotMatch(apiText, /gpsfarma|provider|"sku"|"source"/i);
     assert.ok(api.products.every((product) => typeof product.barcode === "string"));
-    assert.equal(health.status, "ready");
+    const commerceAgeMs = Date.now() - Date.parse(api.commerceSyncedAt ?? "");
+    if (Number.isFinite(commerceAgeMs) && commerceAgeMs > 36 * 60 * 60 * 1000) {
+      assert.equal(health.status, "degraded");
+      assert.equal(health.reason, "stale");
+    } else {
+      assert.equal(health.status, "ready");
+    }
     assert.equal(health.totalProducts, api.totalProducts);
     assert.deepEqual(health.availabilitySummary, publicAvailabilitySummary(api.products));
     assert.doesNotMatch(html, /gpsfarma/i);

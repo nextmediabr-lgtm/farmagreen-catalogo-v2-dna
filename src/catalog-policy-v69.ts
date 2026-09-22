@@ -71,6 +71,8 @@ export type CatalogPolicyV69 = {
     needs: string[];
     defaultSort: string;
     showOutOfStockSort: boolean;
+    // null preserves the legacy all-brands behavior until a curated list is published.
+    promotionBrandSlugs: string[] | null;
     excludedBrandSlugs: string[];
   };
   eanRules: {
@@ -104,6 +106,7 @@ export function defaultCatalogPolicyV69(): CatalogPolicyV69 {
       needs: [...DEFAULT_NEEDS_V69],
       defaultSort: "relevancia",
       showOutOfStockSort: true,
+      promotionBrandSlugs: null,
       excludedBrandSlugs: [],
     },
     eanRules: {
@@ -123,8 +126,8 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
   }
   const navigation = record(raw.navigation, "navigation");
   const featuredRaw = array(navigation.featuredBrands, "featuredBrands");
-  if (!featuredRaw.length || featuredRaw.length > 30) {
-    throw new Error("La navegación V6.9 debe tener entre 1 y 30 marcas destacadas.");
+  if (!featuredRaw.length || featuredRaw.length > 500) {
+    throw new Error("La navegación V6.9 debe tener entre 1 y 500 marcas configuradas.");
   }
   const featuredBrands = featuredRaw.map((entry, index) => {
     const item = record(entry, `featuredBrands[${index}]`);
@@ -135,6 +138,9 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
       enabled: item.enabled !== false,
     };
   });
+  if (featuredBrands.filter((entry) => entry.enabled).length > 30) {
+    throw new Error("La navegación V6.9 permite hasta 30 marcas destacadas habilitadas.");
+  }
   assertUnique(featuredBrands.map((entry) => entry.slug), "slug de marca destacada");
   assertUnique(featuredBrands.map((entry) => normalize(entry.name)), "nombre de marca destacada");
 
@@ -166,6 +172,11 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
         80,
       ).map((entry) => slug(entry, "navigation.excludedBrandSlugs"));
   assertUnique(excludedBrandSlugs, "marca excluida");
+  const promotionBrandSlugs = navigation.promotionBrandSlugs == null
+    ? null
+    : uniqueStrings(navigation.promotionBrandSlugs, "navigation.promotionBrandSlugs", 500, 80)
+        .map((entry) => slug(entry, "navigation.promotionBrandSlugs"));
+  if (promotionBrandSlugs) assertUnique(promotionBrandSlugs, "marca con promociones");
 
   const eanRules = record(raw.eanRules, "eanRules");
   const include = validateEanRulesV69(eanRules.include, "eanRules.include");
@@ -189,6 +200,7 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
       needs,
       defaultSort,
       showOutOfStockSort: navigation.showOutOfStockSort !== false,
+      promotionBrandSlugs,
       excludedBrandSlugs,
     },
     eanRules: { include, exclude },
@@ -284,9 +296,20 @@ export function technicalBrandSlugV69(value: unknown) {
 export function applyProductPolicyV69(product: ProductV69, policy: CatalogPolicyV69): ProductV69 {
   const technicalBrand = product.brand;
   const presentedBrand = displayBrandV69(product, policy);
-  if (presentedBrand === technicalBrand) return product;
+  const promotional = Number(product.discountPercent || 0) > 0 || Boolean(product.promotion);
+  const promotionEnabled = policy.navigation.promotionBrandSlugs === null ||
+    policy.navigation.promotionBrandSlugs.includes(presentedBrand.slug);
+  if (presentedBrand === technicalBrand && (promotionEnabled || !promotional)) return product;
+  const regularPrice = Number(product.listPrice) > 0 ? product.listPrice : product.offerPrice;
   return {
     ...product,
+    ...(!promotionEnabled && promotional ? {
+      listPrice: regularPrice,
+      offerPrice: regularPrice,
+      savingAmount: 0,
+      discountPercent: 0,
+      promotion: undefined,
+    } : {}),
     brand: presentedBrand,
     aliases: [
       ...new Set([

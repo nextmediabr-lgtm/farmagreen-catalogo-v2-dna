@@ -13,6 +13,8 @@ steps:
       - Dockerfile.v69-preprod
       - --build-arg
       - V69_CODE_REVISION=${_CODE_REVISION}
+      - --build-arg
+      - V69_ALLOW_STALE_FALLBACK_BUILD=${_ALLOW_STALE_FALLBACK}
       - --tag
       - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${BUILD_ID}
       - .
@@ -25,3 +27,5 @@ images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_IMAGE}:${BUILD_ID}
 options:
   logging: CLOUD_LOGGING_ONLY
+substitutions:
+  _ALLOW_STALE_FALLBACK: '0'

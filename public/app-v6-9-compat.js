@@ -15,7 +15,7 @@ const ROUTE = BOOT.catalogRoute || "/catalogo";
 const PDP = "/p/";
 const CONTEXT = BOOT.context || {};
 const NAVIGATION = BOOT.navigation || {};
-const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", ...(NAVIGATION.showOutOfStockSort ? ["sin-stock"] : []), "descuento", "precio-asc", "precio-desc", "nombre"]);
+const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", ...(NAVIGATION.showOutOfStockSort ? ["sin-stock"] : []), ...(NAVIGATION.hasPromotions === false ? [] : ["descuento"]), "precio-asc", "precio-desc", "nombre"]);
 const DEFAULT_SORT = SORT_VALUES.has(NAVIGATION.defaultSort) ? NAVIGATION.defaultSort : "relevancia";
 const S = {
     all: BOOT.products || [],

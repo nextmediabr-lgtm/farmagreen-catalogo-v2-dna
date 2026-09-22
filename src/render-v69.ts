@@ -134,6 +134,7 @@ export type PublicCatalogV69 = {
     needs: string[];
     defaultSort: string;
     showOutOfStockSort: boolean;
+    hasPromotions: boolean;
   };
   products: PublicProductV69[];
 };
@@ -166,6 +167,7 @@ export function publicCatalogV69(
       needs: [...policy.navigation.needs],
       defaultSort: policy.navigation.defaultSort,
       showOutOfStockSort: policy.navigation.showOutOfStockSort,
+      hasPromotions: presented.products.some(isOfferV69),
     },
     products: presented.products.map(publicProductV69),
   };
@@ -262,6 +264,7 @@ export function catalogPageV69(
 ) {
   const policy = options.policy || defaultCatalogPolicyV69();
   const presented = applyCatalogPolicyV69(catalog, policy);
+  const hasPromotions = presented.products.some(isOfferV69);
   const route = options.route || CATALOG_ROUTE;
   const canonicalPath = options.canonicalPath || CATALOG_ROUTE;
   const context = pageContext(presented, query, policy);
@@ -309,6 +312,7 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
         needs: policy.navigation.needs,
         defaultSort: policy.navigation.defaultSort,
         showOutOfStockSort: policy.navigation.showOutOfStockSort,
+        hasPromotions,
       },
       context: context.state,
     })}</script>`,
@@ -320,7 +324,7 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
       ogImage: context.ogImage,
       homeHref: HOME_ROUTE,
       links: [
-        { href: `${route}#productos-v69`, label: "Ofertas", nav: "ofertas" },
+        ...(hasPromotions ? [{ href: `${route}#productos-v69`, label: "Ofertas", nav: "ofertas" }] : []),
         { href: `${route}#marcas-v69`, label: "Marcas", nav: "marcas" },
         { href: `${route}#buscar-v69`, label: "Buscar", nav: "buscar" },
         { href: `${route}?scope=todo#productos-v69`, label: "Productos", nav: "productos" },
@@ -412,7 +416,7 @@ function discoveryPanelV69(
           <option value="marca"${context.sort === "marca" ? " selected" : ""}>Marca</option>
           <option value="disponibilidad"${context.sort === "disponibilidad" ? " selected" : ""}>Disponibilidad</option>
           ${policy.navigation.showOutOfStockSort ? `<option value="sin-stock"${context.sort === "sin-stock" ? " selected" : ""}>Sin stock</option>` : ""}
-          <option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Descuento</option>
+          ${offers.length ? `<option value="descuento"${context.sort === "descuento" ? " selected" : ""}>Descuento</option>` : ""}
           <option value="precio-asc"${context.sort === "precio-asc" ? " selected" : ""}>Menor precio</option>
           <option value="precio-desc"${context.sort === "precio-desc" ? " selected" : ""}>Mayor precio</option>
           <option value="nombre"${context.sort === "nombre" ? " selected" : ""}>Nombre A–Z</option>
@@ -429,6 +433,7 @@ export function homePageV69(
   policy: CatalogPolicyV69 = defaultCatalogPolicyV69(),
 ) {
   const presented = applyCatalogPolicyV69(catalog, policy);
+  const hasPromotions = presented.products.some(isOfferV69);
   const brands = navigationBrandsV69(presented, policy);
   const homeContext = pageContext(presented, new URLSearchParams({ scope: "todo" }), policy);
   const sections = brands
@@ -473,6 +478,7 @@ export function homePageV69(
         needs: policy.navigation.needs,
         defaultSort: policy.navigation.defaultSort,
         showOutOfStockSort: policy.navigation.showOutOfStockSort,
+        hasPromotions,
       },
       context: homeContext.state,
     })}</script>`,
@@ -488,7 +494,7 @@ export function homePageV69(
       ogImageAlt: `Farmagreen Rosario. ${SOCIAL_DESCRIPTION}.`,
       homeHref: HOME_ROUTE,
       links: [
-        { href: `${CATALOG_ROUTE}#productos-v69`, label: "Ofertas" },
+        ...(hasPromotions ? [{ href: `${CATALOG_ROUTE}#productos-v69`, label: "Ofertas" }] : []),
         { href: `${HOME_ROUTE}#marcas-inicio-v69`, label: "Marcas", active: true },
         { href: `${CATALOG_ROUTE}#buscar-v69`, label: "Buscar" },
         { href: `${CATALOG_ROUTE}?scope=todo#productos-v69`, label: "Productos" },
@@ -737,13 +743,16 @@ function pageContext(
     need = "Todas";
   }
   const requestedSort = query.get("orden");
-  const defaultSort = SORTS_V69.includes(policy.navigation.defaultSort as SortV69)
+  const hasPromotions = catalog.products.some(isOfferV69);
+  const defaultSort = SORTS_V69.includes(policy.navigation.defaultSort as SortV69) &&
+    (policy.navigation.defaultSort !== "descuento" || hasPromotions)
     ? policy.navigation.defaultSort as SortV69
     : "relevancia";
   const sortAllowed = SORTS_V69.includes(requestedSort as SortV69) &&
-    (requestedSort !== "sin-stock" || policy.navigation.showOutOfStockSort);
+    (requestedSort !== "sin-stock" || policy.navigation.showOutOfStockSort) &&
+    (requestedSort !== "descuento" || hasPromotions);
   const sort: SortV69 = sortAllowed ? (requestedSort as SortV69) : defaultSort;
-  const scope: "ofertas" | "todo" = query.get("scope") === "todo" || sort === "sin-stock" || q || brand !== "Todas" || need !== "Todas" || view !== "Todas" || !catalog.products.some(isOfferV69) ? "todo" : "ofertas";
+  const scope: "ofertas" | "todo" = query.get("scope") === "todo" || sort === "sin-stock" || q || brand !== "Todas" || need !== "Todas" || view !== "Todas" || !hasPromotions ? "todo" : "ofertas";
   const state = { q, brand, need, view, scope, sort };
   let mode = "Ofertas";
   let title = "Oportunidades de hoy";

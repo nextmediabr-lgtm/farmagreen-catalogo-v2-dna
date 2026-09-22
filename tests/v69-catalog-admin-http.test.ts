@@ -119,6 +119,10 @@ test("el panel no colapsa marcas técnicas que heredaron el mismo slug Saludable
     technicalProduct("three", "Bagó"),
     technicalProduct("four", "Bagó +"),
   ];
+  products[0].discountPercent = 20;
+  products[0].offerPrice = 80;
+  products[1].discountPercent = 30;
+  products[1].offerPrice = 70;
   const catalog: CatalogV69 = {
     version: 6.9,
     syncedAt: "2026-08-26T00:00:00.000Z",
@@ -145,6 +149,9 @@ test("el panel no colapsa marcas técnicas que heredaron el mismo slug Saludable
     authenticationConfigured: true,
   });
   assert.deepEqual(state.catalog.technicalBrands.map((entry) => entry.name).sort(), ["102 años", "Bagó", "Bagó +", "Goodskin"]);
+  assert.deepEqual(state.catalog.promotionBrands, [
+    { slug: "productos-saludables", name: "Productos Saludables", count: 2 },
+  ]);
 });
 
 function technicalProduct(publicId: string, name: string): ProductV69 {

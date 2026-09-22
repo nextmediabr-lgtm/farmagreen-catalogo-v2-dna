@@ -28,6 +28,9 @@ Cloud Run. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones
 
 - limita la navegación a las marcas legacy más `Productos Saludables` como
   paraguas;
+- permite seleccionar promociones por marca, con acciones para seleccionar o
+  deseleccionar todas; las marcas desmarcadas conservan sus fichas y precio
+  regular del snapshot, pero no publican descuentos, ahorro ni 2×1;
 - permite deshabilitar y rehabilitar marcas técnicas completas; al publicar,
   sus productos salen o vuelven a catálogo, búsqueda, PDP y sitemap;
 - migra y administra inclusión/exclusión por EAN;
@@ -38,6 +41,31 @@ Cloud Run. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones
 La opción temporal `Sin stock` del selector público muestra sólo los productos
 para consultar. Se habilita o retira desde Navegación en el panel, sin deploy y
 sin excluir productos automáticamente.
+
+### Resultado de auditoría de promociones, 22 de septiembre de 2026
+
+El HTML de GPSFarma informa `finalPrice` como precio publicado; `oldPrice` es
+opcional y aparece cuando hay precio anterior. En V6.9, `offerPrice` es un campo
+interno presente incluso sin descuento. Si hay badge porcentual sin `oldPrice`,
+el parser deduce `offerPrice` aplicando el porcentaje a `finalPrice`: ese segundo
+importe no estaba observado en la fuente. El snapshot no conserva la procedencia
+de cada precio. El 22/9 una sesión GPSFarma nueva permitió consultar fichas de
+las seis marcas seleccionadas localmente: Dermaglos, Vitamin Way, ENA, Bagóvit,
+Caviahue y Aveno. Las seis muestras tenían `finalPrice` pero no `oldPrice`.
+Daniel aceptó temporalmente ese cálculo para esas marcas, no para el resto.
+
+Mitigación local: el backoffice ofrece selección por marca. La política antigua
+sigue mostrando todas hasta que se publique una selección explícita; el
+borrador local guardado habilita las seis marcas indicadas arriba. Al desmarcar una marca,
+el catálogo, la búsqueda, la ficha, la API y los datos estructurados conservan
+el SKU con el precio regular guardado en el snapshot, sin factores ni reclamos
+promocionales. Ese precio base es una mitigación conservadora, **no una garantía
+de coincidir con el `finalPrice` actual** de GPSFarma para cada SKU. `Seleccionar
+todas` y `Deseleccionar todas` solo modifican el
+borrador del panel hasta pulsar `Guardar y publicar`. Esto **no corrige** la
+extracción de origen ni convierte el snapshot en un precio en tiempo real. Los
+cron diario y semanal siguen pausados hasta una decisión posterior; publicar el
+selector no equivale a reanudarlos.
 
 Configuración: [`.env.example`](./.env.example). Los valores reales permanecen
 fuera de Git. En desarrollo puede usarse un token local efímero:
@@ -62,8 +90,9 @@ V69_AGENT_MANAGER_TOKEN=... npm run record:deploy:v69 -- \
 Implementación local; esta sección **no acredita un deploy**. No modifica las
 exclusiones, STOM, horarios, CPU, memoria ni mínimo de instancias.
 
-- El sincronizador no deduce precios tachados a partir de un badge promocional.
-  Sólo publica descuentos calculados con precios explícitos de la fuente.
+- El snapshot de fiabilidad preparado el 19/9 no deducía descuentos a partir de
+  badges. La rama temporal de promociones posterior sí conserva el cálculo por
+  badge y el selector administrativo limita cuáles se muestran al público.
 - Diario y semanal usan el mismo control de publicación: identidad, precios,
   disponibilidad, exclusiones, taxonomía e imágenes, incluyendo JPEG 320/640
   (o ancho real si el original es menor; no se amplían imágenes).
@@ -123,6 +152,13 @@ mismos controles productivos y no mayor a 36 horas al construir. El build
 ejecuta compilación, pruebas unitarias/sync y el control del respaldo; la suite
 completa local agrega navegador real. Cloud Build exige `_CODE_REVISION` con el
 SHA completo. La imagen no incluye credenciales.
+
+Para una publicación excepcional con catálogo congelado y ambos Scheduler
+`PAUSED`, Cloud Build admite `_ALLOW_STALE_FALLBACK=1`. Sólo omite el límite de
+36 horas al **empaquetar** un snapshot ya validado; por defecto vale `0`. No
+actualiza precios, no escribe GCS y no cambia el control de frescura de
+`/api/catalog-v6-9/health`, que continuará devolviendo 503 mientras el snapshot
+esté vencido. Esta excepción no autoriza ejecutar ni reanudar los cron.
 
 Tras autorizar deploy: actualizar servicio y Job al **mismo digest**, mantener
 recursos/horarios, ejecutar un canary acotado diario y uno semanal y comprobar

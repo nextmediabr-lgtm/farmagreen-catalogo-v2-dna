@@ -102,6 +102,10 @@ function statusView() {
 
 function navigationView() {
   const navigation = S.policy.navigation;
+  const promotionBrands = S.state.catalog.promotionBrands || [];
+  const selectedPromotions = new Set(navigation.promotionBrandSlugs === null
+    ? promotionBrands.map((entry) => entry.slug)
+    : navigation.promotionBrandSlugs);
   const featuredIdentities = new Set(navigation.featuredBrands.flatMap((entry) =>
     [entry.slug, entry.name, ...(entry.aliases || [])].map(brandKey),
   ));
@@ -117,6 +121,7 @@ function navigationView() {
       <div class="admin-brand-list">${navigation.featuredBrands.map((entry, index) => brandRow(entry, index)).join("")}</div>
     </section>
     <section class="admin-panel"><h2>Productos Saludables</h2><label class="admin-toggle"><input type="checkbox" data-field="umbrella-enabled"${navigation.umbrella.enabled ? " checked" : ""}><span>Mostrar como marca paraguas</span></label><p class="admin-muted">Las marcas PS-only se presentan bajo el paraguas. Las legacy marcadas “conservar” mantienen su nombre.</p></section>
+    <section class="admin-panel"><div class="admin-panel-head"><div><h2>Promociones por marca</h2><p>${promotionBrands.filter((entry) => selectedPromotions.has(entry.slug)).length} de ${promotionBrands.length} marcas seleccionadas</p></div><div><button data-action="promotion-all">Seleccionar todas</button> <button data-action="promotion-none">Deseleccionar todas</button></div></div><p class="admin-muted">Las marcas desmarcadas conservan sus productos y el precio regular del snapshot; se quitan badges, 2×1, descuentos y ahorro. Productos Saludables agrupa las marcas pequeñas como marca virtual; las marcas legacy conservadas se seleccionan por separado. Los cambios sólo se aplican al usar Guardar y publicar.</p><div class="admin-brand-list">${promotionBrands.map((entry) => `<label class="admin-brand-row admin-toggle"><input type="checkbox" data-field="promotion-brand" data-slug="${esc(entry.slug)}"${selectedPromotions.has(entry.slug) ? " checked" : ""}><span><strong>${esc(entry.name)}</strong><small>${entry.count} productos con señal promocional</small></span></label>`).join("") || '<p class="admin-muted">No hay promociones detectadas en este snapshot.</p>'}</div></section>
     <section class="admin-panel"><label>Orden inicial<select data-field="default-sort">${["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"].map((value) => `<option value="${value}"${navigation.defaultSort === value ? " selected" : ""}>${value}</option>`).join("")}</select></label><label class="admin-toggle"><input type="checkbox" data-field="show-out-of-stock-sort"${navigation.showOutOfStockSort ? " checked" : ""}><span>Mostrar “Sin stock” en Ordenar</span></label><p class="admin-muted">Activado temporalmente para revisar posibles discontinuados. No excluye productos automáticamente.</p></section>
     <section class="admin-panel"><div class="admin-panel-head"><div><h2>Detectadas, no publicadas</h2><p>${detected.length} marcas técnicas</p></div></div><p class="admin-muted">Deshabilitar excluye todos los productos de esa marca del catálogo público. El cambio se aplica al usar Guardar y publicar.</p><div class="admin-detected">${detected.slice(0, 120).map((entry) => `<div><span><strong>${esc(entry.name)}</strong><small>${entry.count} SKU</small></span><button data-action="add-brand" data-slug="${esc(entry.slug)}" data-name="${esc(entry.name)}">Agregar</button><button data-action="disable-brand" data-slug="${esc(entry.slug)}" data-name="${esc(entry.name)}">Deshabilitar</button></div>`).join("") || '<p class="admin-muted">No hay marcas técnicas pendientes.</p>'}</div></section>
     ${disabled.length ? `<section class="admin-panel"><div class="admin-panel-head"><div><h2>Marcas deshabilitadas</h2><p>${disabled.length} exclusiones</p></div></div><p class="admin-muted">Sus productos están fuera de catálogo, búsqueda, necesidades, PDP y sitemap.</p><div class="admin-detected">${disabled.map((entry) => `<div><span><strong>${esc(entry.name)}</strong><small>${entry.count} SKU excluidos</small></span><button data-action="enable-brand" data-slug="${esc(entry.slug)}">Rehabilitar</button></div>`).join("")}</div></section>` : ""}`;
@@ -200,7 +205,17 @@ document.addEventListener("click", async (event) => {
   }
   const action = button.dataset.action;
   if (action === "reload") return loadState();
-  if (action === "publish-navigation") return publish("Actualiza navegación pública.");
+  if (action === "publish-navigation") return publish("Actualiza navegación y promociones públicas.");
+  if (action === "promotion-all") {
+    S.policy.navigation.promotionBrandSlugs = S.state.catalog.promotionBrands.map((entry) => entry.slug);
+    render();
+    return;
+  }
+  if (action === "promotion-none") {
+    S.policy.navigation.promotionBrandSlugs = [];
+    render();
+    return;
+  }
   if (action === "publish-ean") return publish("Actualiza reglas EAN.");
   if (action === "toggle-brand") {
     const entry = S.policy.navigation.featuredBrands[Number(button.dataset.index)];
@@ -280,6 +295,14 @@ document.addEventListener("click", async (event) => {
 
 document.addEventListener("change", (event) => {
   if (event.target.matches('[data-field="show-out-of-stock-sort"]')) S.policy.navigation.showOutOfStockSort = event.target.checked;
+  if (event.target.matches('[data-field="promotion-brand"]')) {
+    const all = S.state.catalog.promotionBrands.map((entry) => entry.slug);
+    const selected = new Set(S.policy.navigation.promotionBrandSlugs === null ? all : S.policy.navigation.promotionBrandSlugs);
+    event.target.checked ? selected.add(event.target.dataset.slug) : selected.delete(event.target.dataset.slug);
+    S.policy.navigation.promotionBrandSlugs = [...selected];
+    render();
+    return;
+  }
   if (event.target.matches('[data-action="toggle-brand"]')) {
     const entry = S.policy.navigation.featuredBrands[Number(event.target.dataset.index)];
     entry.enabled = event.target.checked;

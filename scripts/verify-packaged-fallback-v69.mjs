@@ -23,11 +23,16 @@ const catalog = await preparePublicationV69(snapshot, {
   V691_REQUIRE_RESPONSIVE_IMAGES: "1", V691_REQUIRE_JPEG_RESPONSIVE_IMAGES: "1",
 });
 const age = Date.now() - Date.parse(snapshot.commerceSync.completedAt);
-if (age > 36 * 60 * 60 * 1000 || age < -5 * 60 * 1000) throw new Error("El respaldo de la nueva imagen no es reciente (36 h).");
+const stale = age > 36 * 60 * 60 * 1000;
+const frozenBuild = process.env.V69_ALLOW_STALE_FALLBACK_BUILD === "1";
+if ((stale && !frozenBuild) || age < -5 * 60 * 1000) {
+  throw new Error("El respaldo de la nueva imagen no es reciente (36 h).");
+}
 if (uri) {
   const temporary = `${output}.tmp`;
   await fs.writeFile(temporary, JSON.stringify(snapshot), { mode: 0o600 });
   await fs.rename(temporary, output);
 }
 console.log(JSON.stringify({ status: "verified", scope: "packaged-fallback", products: catalog.products.length,
-  commerceSyncedAt: snapshot.commerceSync.completedAt, sha256: candidateDigestV69(snapshot), cloudWrites: 0 }));
+  commerceSyncedAt: snapshot.commerceSync.completedAt, sha256: candidateDigestV69(snapshot),
+  staleWaiver: stale && frozenBuild, cloudWrites: 0 }));

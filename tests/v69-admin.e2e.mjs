@@ -47,7 +47,7 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     assert.equal(await page.locator(".admin-cards article").count(), 6);
 
     await page.locator('[data-tab="navigation"]').click();
-    assert.equal(await page.locator(".admin-brand-row").count(), 15);
+    assert.equal(await page.locator('.admin-brand-row[data-index]').count(), 15);
     assert.match(await page.locator("#adminContent").innerText(), /Productos Saludables/);
     assert.equal(await page.locator('[data-action="add-brand"][data-name="L\'Oréal Revitalift"]').count(), 0);
     const publicBeforeBrandExclusion = await page.request.get(`${origin}/api/catalog-v6-9`).then((response) => response.json());
@@ -63,6 +63,16 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     const outOfStockSort = page.locator('[data-field="show-out-of-stock-sort"]');
     assert.equal(await outOfStockSort.isChecked(), true);
     await outOfStockSort.uncheck();
+    assert.ok(await page.locator('[data-field="promotion-brand"]').count() > 1);
+    await page.locator('[data-action="promotion-all"]').click();
+    assert.equal(
+      await page.locator('[data-field="promotion-brand"]:checked').count(),
+      await page.locator('[data-field="promotion-brand"]').count(),
+    );
+    await page.locator('[data-action="promotion-none"]').click();
+    assert.equal(await page.locator('[data-field="promotion-brand"]:checked').count(), 0);
+    await page.locator('[data-field="promotion-brand"][data-slug="dermaglos"]').check();
+    assert.equal(await page.locator('[data-field="promotion-brand"]:checked').count(), 1);
     await page.locator('.admin-brand-row input[data-action="toggle-brand"]').first().uncheck();
     await page.locator('[data-action="publish-navigation"]').click();
     await page.waitForFunction(() => !document.body.classList.contains("is-busy"));
@@ -70,12 +80,21 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     assert.doesNotMatch(await page.request.get(`${origin}/catalogo-v6-9?scope=todo`).then((response) => response.text()), /option value="sin-stock"/);
     const publicAfterBrandExclusion = await page.request.get(`${origin}/api/catalog-v6-9`).then((response) => response.json());
     assert.equal(publicAfterBrandExclusion.products.some((product) => product.publicId === disabledBrandProduct.publicId), false);
+    assert.equal(publicAfterBrandExclusion.products.some((product) => product.brand.name === "Dermaglos" && product.discountPercent > 0), true);
+    assert.equal(publicAfterBrandExclusion.products.some((product) => product.brand.name === "Eucerin" && product.discountPercent > 0), false);
+    const originalEucerinOffer = publicBeforeBrandExclusion.products.find((product) => product.brand.name === "Eucerin" && product.discountPercent > 0);
+    assert.ok(originalEucerinOffer);
+    const plainEucerin = publicAfterBrandExclusion.products.find((product) => product.publicId === originalEucerinOffer.publicId);
+    assert.equal(plainEucerin?.offerPrice, originalEucerinOffer.listPrice);
+    assert.equal(plainEucerin?.promotion, undefined);
+    assert.doesNotMatch(await page.request.get(`${origin}/p/${originalEucerinOffer.publicId}`).then((response) => response.text()), /class="v66-discount"/);
     assert.equal((await page.request.get(`${origin}/p/${disabledBrandProduct.publicId}`)).status(), 404);
     assert.doesNotMatch(await page.request.get(`${origin}/sitemap.xml`).then((response) => response.text()), new RegExp(`/p/${disabledBrandProduct.publicId}<`));
     const savedPolicy = await page.request.get(`${origin}/api/admin-v69/state`, {
       headers: { authorization: "Bearer admin-e2e-token" },
     }).then((response) => response.json());
     assert.ok(savedPolicy.policy.navigation.excludedBrandSlugs.includes(disabledBrandSlug));
+    assert.deepEqual(savedPolicy.policy.navigation.promotionBrandSlugs, ["dermaglos"]);
     await page.locator(`[data-action="enable-brand"][data-slug="${disabledBrandSlug}"]`).click();
     await page.locator('[data-action="publish-navigation"]').click();
     await page.waitForFunction(() => !document.body.classList.contains("is-busy"));

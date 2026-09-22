@@ -11,6 +11,7 @@ import {
 } from "./catalog-admin-v69.js";
 import {
   applyCatalogPolicyV69,
+  displayBrandV69,
   navigationBrandsV69,
   normalizeEanV69,
   technicalBrandSlugV69,
@@ -181,12 +182,20 @@ export function adminStateV69({
 }) {
   const policy = document.policy;
   const presented = applyCatalogPolicyV69(catalog, policy);
+  const visibleIds = new Set(presented.products.map((product) => product.publicId));
   const counts = new Map<string, { slug: string; name: string; count: number }>();
+  const promotionCounts = new Map<string, { slug: string; name: string; count: number }>();
   for (const product of catalog.products) {
     const slug = technicalBrandSlugV69(product.brand?.name || product.brand?.slug || "marca");
     const current = counts.get(slug) || { slug, name: product.brand?.name || "Sin marca", count: 0 };
     current.count += 1;
     counts.set(slug, current);
+    if (visibleIds.has(product.publicId) && (product.discountPercent > 0 || product.promotion)) {
+      const displayBrand = displayBrandV69(product, policy);
+      const promotion = promotionCounts.get(displayBrand.slug) || { slug: displayBrand.slug, name: displayBrand.name, count: 0 };
+      promotion.count += 1;
+      promotionCounts.set(displayBrand.slug, promotion);
+    }
   }
   const productByEan = new Map(catalog.products.map((product) => [normalizeEanV69(product.barcode), product]));
   const withStatus = (entries: typeof policy.eanRules.include) => entries.map((entry) => {
@@ -211,6 +220,7 @@ export function adminStateV69({
       available: presented.products.filter((product) => product.availability === "limited").length,
       unavailable: presented.products.filter((product) => product.availability === "out_of_stock").length,
       technicalBrands: [...counts.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "es")),
+      promotionBrands: [...promotionCounts.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "es")),
       navigationBrands: navigationBrandsV69(presented, policy),
     },
     runtime,

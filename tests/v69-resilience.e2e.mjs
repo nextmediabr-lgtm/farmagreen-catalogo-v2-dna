@@ -8,7 +8,7 @@ import { chromium } from "playwright-core";
 import { app } from "../dist/server.js";
 import { resetCatalogV69CacheForTests } from "../dist/data-v69.js";
 
-test("home sin ofertas sobrevive a hidratar, pulsar Ofertas, buscar y recargar", { timeout: 45_000 }, async () => {
+test("home sin ofertas sobrevive a hidratar, navegar, buscar y recargar", { timeout: 45_000 }, async () => {
   const executablePath = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/chromium"].find(p => p && existsSync(p));
   assert.ok(executablePath, "Se requiere Chrome local para la verificación, no se omite la prueba.");
   const directory = await mkdtemp(path.join(tmpdir(), "v69-zero-offers-"));
@@ -33,7 +33,8 @@ test("home sin ofertas sobrevive a hidratar, pulsar Ofertas, buscar y recargar",
     await page.goto(origin, { waitUntil: "load" });
     assert.equal(await page.locator("#gridV69 .v66-card").count(), fixture.totalProducts);
     assert.equal(await page.locator("#offersEmptyV69").isVisible(), true);
-    await page.getByRole("link", { name: "Ofertas", exact: true }).click();
+    assert.equal(await page.getByRole("link", { name: "Ofertas", exact: true }).count(), 0);
+    await page.getByRole("link", { name: "Productos", exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length > 0);
     await page.getByPlaceholder("Producto, marca o necesidad").fill("eucerin");
     await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 6);

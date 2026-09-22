@@ -668,18 +668,20 @@ test("parser representa 2×1 como paquete y conserva el precio unitario", () => 
     `,
     EUCERIN,
   );
-  assert.equal(product.listPrice, 35900.02);
-  assert.equal(product.offerPrice, 35900.02);
+  assert.equal(product.listPrice, 17950.01);
+  assert.equal(product.offerPrice, 17950.01);
   assert.equal(product.savingAmount, 0);
   assert.equal(product.discountPercent, 0);
+  assert.equal(product.promotion.priceBasis, "source_unit");
   assert.deepEqual(product.promotion, {
     type: "two_for_one",
     label: "2×1",
     buyQuantity: 2,
     payQuantity: 1,
-    unitPrice: 35900.02,
-    bundlePrice: 35900.02,
-    bundleSaving: 35900.02,
+    priceBasis: "source_unit",
+    unitPrice: 17950.01,
+    bundlePrice: 17950.01,
+    bundleSaving: 17950.01,
   });
 });
 
