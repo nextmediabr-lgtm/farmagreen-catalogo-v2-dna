@@ -21,6 +21,7 @@ import {
   parseListingProducts,
   parseNextPageUrl,
   parseProductIdentityV69,
+  parsePromotionPricingV69,
   runCommercialSync,
   sourceStartUrl,
   synchronizeCatalog,
@@ -611,7 +612,7 @@ test("parser acepta precio regular y detecta el enlace siguiente", () => {
   assert.equal(parseNextPageUrl(PAGE_2), null);
 });
 
-test("parser aplica el descuento explícito sobre el precio unitario publicado", () => {
+test("parser no vuelve a descontar finalPrice cuando sólo existe un badge porcentual", () => {
   const [product] = parseListingProducts(
     `
       <li class="item product product-item">
@@ -627,10 +628,34 @@ test("parser aplica el descuento explícito sobre el precio unitario publicado",
     EUCERIN,
   );
   assert.equal(product.listPrice, 5000);
-  assert.equal(product.offerPrice, 2500);
-  assert.equal(product.savingAmount, 2500);
-  assert.equal(product.discountPercent, 50);
-  assert.deepEqual(product.promotion, { type: "percentage", label: "-50%", percent: 50 });
+  assert.equal(product.offerPrice, 5000);
+  assert.equal(product.savingAmount, 0);
+  assert.equal(product.discountPercent, 0);
+  assert.equal(product.promotion, undefined);
+  assert.equal(product.priceEvidence.basis, "source_current_only");
+});
+
+test("parser compara precios con impuestos del mismo producto y requiere precio actual", () => {
+  const pricing = parsePromotionPricingV69(`
+    <span data-price-type="oldPrice" id="price-excluding-tax-old-price-49025" data-price-amount="20510.86"></span>
+    <span data-price-type="oldPrice" id="price-including-tax-old-price-49025" data-price-amount="24818.14"></span>
+    <span data-price-type="finalPrice" id="price-including-tax-product-price-49025" data-price-amount="18613.61"></span>
+    <span data-price-type="basePrice" id="price-excluding-tax-product-price-49025" data-price-amount="15383.15"></span>
+  `);
+  assert.equal(pricing.listPrice, 24818.14);
+  assert.equal(pricing.offerPrice, 18613.61);
+  assert.equal(pricing.discountPercent, 25);
+  assert.equal(pricing.priceEvidence.basis, "source_price_pair");
+  const withoutCurrent = parsePromotionPricingV69('<span data-price-type="oldPrice" data-price-amount="24818.14"></span>');
+  assert.equal(withoutCurrent.offerPrice, 0);
+  const related = parsePromotionPricingV69(`
+    <span data-price-type="finalPrice" id="product-price-1" data-price-amount="5000"></span>
+    <span data-price-type="oldPrice" id="old-price-2" data-price-amount="20000"></span>
+    <span data-price-type="finalPrice" id="product-price-2" data-price-amount="10000"></span>
+  `);
+  assert.equal(related.listPrice, 5000);
+  assert.equal(related.offerPrice, 5000);
+  assert.equal(related.discountPercent, 0);
 });
 
 test("parser no confunde un porcentaje del nombre o la imagen con una promoción", () => {
@@ -1211,6 +1236,78 @@ test("el refresh comercial rechaza una ficha directa con un SKU contradictorio",
   );
 });
 
+test("el diario reconcilia una baja sólo ante ausencia de los listados y 404/410 explícito", async () => {
+  const sourceUrl = "https://gpsfarma.com/producto-retirado.html";
+  const base = { version: 6.9, products: [
+    product("vigente", "Crema Eucerin Demo x 50 ml", {
+      source: { url: "https://gpsfarma.com/categorias/eucerin-crema-demo-50-ml.html" },
+    }),
+    product("retirado", "Producto retirado sin coincidencias", { sku: "RETIRED-1", barcode: "7790000000101", source: { url: sourceUrl } }),
+  ] };
+  for (const status of [404, 410, 403, 429, 502, 503]) {
+    let writes = 0;
+    const run = () => runCommercialSync({
+      providedBaseCatalog: base, sources: [EUCERIN], minCoverage: 1, minPriceCoverage: 1,
+      onProgress: () => {}, writeCatalog: async () => { writes++; },
+      fetchHtml: async (url) => {
+        if (normalizeGpsProductUrl(url) === normalizeGpsProductUrl(sourceUrl)) throw new Error(`${status} source error`);
+        return PAGE_2;
+      },
+    });
+    if (status === 404 || status === 410) {
+      const result = await run();
+      assert.deepEqual(result.catalog.products.map(p => p.publicId), ["vigente"]);
+      assert.deepEqual(result.commerceSync.removedPublicIds, ["retirado"]);
+      assert.equal(result.commerceSync.metrics.permanentMissing, 1);
+      assert.equal(result.commerceSync.metrics.unverified, 0);
+      assert.equal(result.commerceSync.metrics.priceCoverage, 1);
+    } else await assert.rejects(run, new RegExp(String(status)));
+    assert.equal(writes, 0);
+  }
+  assert.equal(base.products.length, 2);
+});
+
+test("el diario recupera una URL cambiada por SKU y exige confirmar EAN en la ficha", async () => {
+  const oldUrl = "https://gpsfarma.com/retirado.html";
+  const newUrl = "https://gpsfarma.com/renombrado.html";
+  const listing = PAGE_2.replace('</ol>', `
+    <li class="product-item"><a class="product-item-link" href="${newUrl}">Nombre completamente nuevo</a>
+    <span data-price-type="finalPrice" data-price-amount="800"></span>
+    <form data-product-sku="RELOCATED-1" data-role="tocart-form"></form></li></ol>`);
+  const detail = `<table><tr><th>SKU</th><td>RELOCATED-1</td></tr>
+    <tr><th>Código de barras</th><td>7790000000101</td></tr></table>
+    <span data-price-type="finalPrice" data-price-amount="800"></span>
+    <form data-product-sku="RELOCATED-1" data-role="tocart-form"></form>`;
+  const result = await runCommercialSync({
+    providedBaseCatalog: { version: 6.9, products: [product("mismo-id", "Presentación anterior sin coincidencias", {
+      sku: "RELOCATED-1", barcode: "7790000000101", source: { url: oldUrl },
+    })] },
+    sources: [EUCERIN], minCoverage: 1, minPriceCoverage: 1, onProgress: () => {},
+    fetchHtml: async url => {
+      if (url === oldUrl) throw new Error("404 Not Found");
+      return url === newUrl ? detail : listing;
+    },
+  });
+  assert.equal(result.catalog.products[0].publicId, "mismo-id");
+  assert.equal(result.catalog.products[0].source.url, newUrl);
+  assert.equal(result.catalog.products[0].offerPrice, 800);
+  assert.equal(result.commerceSync.metrics.matchedByDirect, 1);
+  assert.deepEqual(result.commerceSync.removedPublicIds, []);
+});
+
+test("el diario no retira un producto todavía listado aunque su ficha devuelva 404", async () => {
+  const sourceUrl = "https://gpsfarma.com/categorias/eucerin-crema-demo-50-ml.html";
+  const listing = PAGE_2.replace(/<form\b[^>]*><\/form>/g, "");
+  await assert.rejects(runCommercialSync({
+    providedBaseCatalog: { version: 6.9, products: [product("listed", "Crema Eucerin Demo x 50 ml", { source: { url: sourceUrl } })] },
+    sources: [EUCERIN], onProgress: () => {},
+    fetchHtml: async url => {
+      if (url === sourceUrl) throw new Error("404 Not Found");
+      return listing;
+    },
+  }), /404/);
+});
+
 test("el refresh comercial exige que la ficha directa confirme el EAN conocido", async () => {
   const sourceUrl = "https://gpsfarma.com/producto-sin-ean.html";
   const directHtml = `
@@ -1240,6 +1337,24 @@ test("el refresh comercial exige que la ficha directa confirme el EAN conocido",
     }),
     /no confirmó el código de barra del SKU DIRECT-1/,
   );
+});
+
+test("el diario verifica en la ficha un listado que sólo informa precio anterior", async () => {
+  const sourceUrl = "https://gpsfarma.com/categorias/eucerin-crema-demo-50-ml.html";
+  const result = await runCommercialSync({
+    providedBaseCatalog: { version: 6.9, products: [product("sin-precio-actual", "Crema Eucerin Demo x 50 ml", {
+      sku: "DIRECT-1", barcode: "7798120266750", source: { url: sourceUrl },
+    })] },
+    sources: [EUCERIN], onProgress: () => {}, minCoverage: 1, minPriceCoverage: 1,
+    fetchHtml: async url => url === sourceUrl ? `
+      <table><tr><th>SKU</th><td>DIRECT-1</td></tr><tr><th>Código de barras</th><td>7798120266750</td></tr></table>
+      <span data-price-type="finalPrice" data-price-amount="800"></span>
+      <form data-product-sku="DIRECT-1" data-role="tocart-form"></form>
+    ` : PAGE_2.replace('data-price-type="finalPrice"', 'data-price-type="oldPrice"'),
+  });
+  assert.equal(result.catalog.products[0].offerPrice, 800);
+  assert.equal(result.catalog.products[0].source.pricingEvidence.basis, "source_current_only");
+  assert.equal(result.commerceSync.metrics.matchedByDirect, 1);
 });
 
 test("un marcador explícito de sin stock se conserva", () => {

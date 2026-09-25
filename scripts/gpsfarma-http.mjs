@@ -2,6 +2,10 @@ const RETRYABLE_STATUS = new Set([403, 429, 500, 502, 503, 504]);
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 export const MAX_HTML_BYTES = 6_000_000;
 
+export function isPermanentMissingGpsPage(error) {
+  return /^(?:404|410)\b/.test(error instanceof Error ? error.message : String(error));
+}
+
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export function trustedSourceUrl(value, origin) {

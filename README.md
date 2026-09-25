@@ -46,8 +46,8 @@ sin excluir productos automáticamente.
 
 El HTML de GPSFarma informa `finalPrice` como precio publicado; `oldPrice` es
 opcional y aparece cuando hay precio anterior. En V6.9, `offerPrice` es un campo
-interno presente incluso sin descuento. Si hay badge porcentual sin `oldPrice`,
-el parser deduce `offerPrice` aplicando el porcentaje a `finalPrice`: ese segundo
+interno presente incluso sin descuento. En la revisión congelada del 22/9,
+si hay badge porcentual sin `oldPrice`, el parser deduce `offerPrice` aplicando el porcentaje a `finalPrice`: ese segundo
 importe no estaba observado en la fuente. El snapshot no conserva la procedencia
 de cada precio. El 22/9 una sesión GPSFarma nueva permitió consultar fichas de
 las seis marcas seleccionadas localmente: Dermaglos, Vitamin Way, ENA, Bagóvit,
@@ -66,6 +66,56 @@ borrador del panel hasta pulsar `Guardar y publicar`. Esto **no corrige** la
 extracción de origen ni convierte el snapshot en un precio en tiempo real. Los
 cron diario y semanal siguen pausados hasta una decisión posterior; publicar el
 selector no equivale a reanudarlos.
+
+### Recuperación GPSFarma del 25 de septiembre de 2026
+
+Registro de la validación previa al despliegue. La configuración productiva
+descargada para la prueba fue la revisión 12, con seis marcas promocionales,
+89 marcas excluidas y 103 EAN excluidos. La publicación autorizada incluye el
+candidato validado y la selección de todas las promociones hecha en el panel
+local, conservando las demás reglas. Scheduler diario y semanal deben permanecer
+pausados, sin cambiar sus horarios. El despliegue efectivo se acredita por la
+revisión de Cloud Run y el comprobante de Operaciones del back office, no por
+esta sección ni por el resultado de las pruebas locales.
+
+- Se retira el cálculo temporal por badge: sin `oldPrice`, `finalPrice` se
+  conserva como único precio. Con ambos importes se calcula el descuento de esa
+  pareja, sin volver a aplicarlo sobre el precio final. Se ignoran importes sin
+  impuestos y precios anteriores identificados como pertenecientes a otro producto.
+- Cada precio de la actualización diaria conserva evidencia privada en `source.pricingEvidence`:
+  precio actual, anterior si existe, tipo de evidencia y fecha de observación.
+  Un listado sin precio actual se verifica por ficha directa; no se declara
+  actualizado usando sólo el importe anterior.
+- El 2×1 conserva la regla de paquete: precio unitario publicado, dos unidades
+  por ese importe y ahorro equivalente a una unidad. No se anuncia un precio
+  individual rebajado que exija comprar dos.
+- El diario busca URLs alternativas por SKU/EAN en todas las fuentes ya
+  recorridas y exige confirmar identidad en la ficha. Sólo reconcilia una baja
+  si el producto con identidad conocida está ausente de los listados completos
+  y sus URLs devuelven 404/410. Un producto aún listado, una identidad ambigua,
+  un 403/429/5xx o un fallo de red bloquean la publicación.
+- Las bajas diarias quedan registradas en `commerceSync.removedPublicIds` y
+  `metrics.permanentMissing`. Continúan vigentes la validación completa, el
+  control de caída de productos/precios y la publicación condicional con respaldo.
+
+La evidencia de esta ejecución queda local en
+`.codex-artifacts/recovery-20260925/`: candidato, respuestas de origen,
+comparación contra producción y reporte. No contiene un permiso de publicación.
+
+Resultado local: 16/16 fuentes, 1.468 fichas canónicas y 1.208 públicas con la
+política 12; 1.005 disponibles, 203 para consultar y 0 sin verificar. Se detectó
+una baja permanente (`3e07cdf4103e`, Magnesio sport x 30 cápsulas). El origen
+aporta 354 pares de precios con descuento y un 2×1; la selección administrativa
+publica 167 ofertas y ninguna de Eucerin. Las muestras de ficha/listado coinciden.
+Después, por pedido del operador, se utilizó la interfaz del back office local
+para seleccionar todas las promociones y guardar la revisión local 13: 15/15
+marcas, 317 descuentos y un 2×1 (318 promociones en total), sin cambiar las 89
+marcas excluidas ni los 103 EAN excluidos. Eucerin y Productos Saludables vuelven
+a mostrar sus ofertas verificadas en esta vista previa. Para trasladar esa
+selección a producción sólo se cambia `navigation.promotionBrandSlugs` mediante
+publicación condicional; no se reemplaza el documento local completo ni la
+memoria productiva. Los cron permanecen pausados.
+Build + 130 pruebas de lógica + 61 de sync/GCP + 4 E2E: 195/195 verdes.
 
 Configuración: [`.env.example`](./.env.example). Los valores reales permanecen
 fuera de Git. En desarrollo puede usarse un token local efímero:
@@ -91,7 +141,7 @@ Implementación local; esta sección **no acredita un deploy**. No modifica las
 exclusiones, STOM, horarios, CPU, memoria ni mínimo de instancias.
 
 - El snapshot de fiabilidad preparado el 19/9 no deducía descuentos a partir de
-  badges. La rama temporal de promociones posterior sí conserva el cálculo por
+  badges. La revisión productiva temporal del 22/9 sí conserva el cálculo por
   badge y el selector administrativo limita cuáles se muestran al público.
 - Diario y semanal usan el mismo control de publicación: identidad, precios,
   disponibilidad, exclusiones, taxonomía e imágenes, incluyendo JPEG 320/640

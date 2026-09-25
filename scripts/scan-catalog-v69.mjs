@@ -31,11 +31,11 @@ import {
   recalculateSnapshotV69,
 } from "./prepare-gcp-catalog-v69.mjs";
 import { extractMagentoTaxonomyV69 } from "./extract-magento-taxonomy-v69.mjs";
+import { isPermanentMissingGpsPage } from "./gpsfarma-http.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_CATALOG = path.join(ROOT, "data", "catalog-v69.json");
 const DEFAULT_EXCLUSIONS = path.join(ROOT, "data", "catalog-exclusions-v69.local.json");
-const PERMANENT_MISSING = /^(?:404|410)\b/;
 const GCS_SCOPE = "https://www.googleapis.com/auth/devstorage.read_write";
 const DERIVED_TAXONOMY_ALIASES_V69 = new Set([
   "salud",
@@ -564,8 +564,7 @@ export async function reconcileCatalogChangesV69({
         availabilityCheckedAt: completedAt,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (PERMANENT_MISSING.test(message)) {
+      if (isPermanentMissingGpsPage(error)) {
         removed.push(product.publicId);
       } else {
         throw new Error(

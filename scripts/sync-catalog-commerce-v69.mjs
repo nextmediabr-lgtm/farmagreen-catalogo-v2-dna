@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { fetchTrustedHtml, trustedSourceUrl } from "./gpsfarma-http.mjs";
+import { fetchTrustedHtml, isPermanentMissingGpsPage, trustedSourceUrl } from "./gpsfarma-http.mjs";
 import {
   bestProductCandidate,
   decodeEntities,
@@ -257,8 +257,7 @@ function promotionEvidence(block) {
 }
 
 export function parsePromotionPricingV69(block) {
-  let oldPrice = 0;
-  let finalPrice = 0;
+  const amounts = [];
   for (const tag of String(block || "").matchAll(/<span\b([^>]*)>/gi)) {
     const attributes = tag[1];
     const rawAmount = htmlAttribute(attributes, "data-price-amount");
@@ -266,14 +265,18 @@ export function parsePromotionPricingV69(block) {
     if (!Number.isFinite(amount) || amount <= 0) continue;
     const type = htmlAttribute(attributes, "data-price-type").toLowerCase();
     const id = htmlAttribute(attributes, "id").toLowerCase();
-    if (type === "oldprice" || id.includes("old-price")) oldPrice ||= amount;
-    if (
-      type === "finalprice" ||
-      (id.includes("product-price") && !id.includes("old-price") && !id.includes("excluding-tax"))
-    ) {
-      finalPrice ||= amount;
-    }
+    if (id.includes("excluding-tax") || type === "baseprice") continue;
+    const kind = type === "oldprice" || id.includes("old-price") ? "old" :
+      type === "finalprice" || id.includes("product-price") ? "current" : "";
+    if (kind) amounts.push({ kind, amount, productId: id.match(/(?:old|product)-price-(\d+)$/)?.[1] || "" });
   }
+  const current = amounts.find(entry => entry.kind === "current");
+  if (!current) return computePricing(0, 0);
+  const finalPrice = current.amount;
+  const oldPrice = amounts.find(entry => entry.kind === "old" &&
+    (!current.productId || !entry.productId || current.productId === entry.productId))?.amount || 0;
+  const priceEvidence = { basis: oldPrice > finalPrice ? "source_price_pair" : "source_current_only",
+    currentPrice: roundCurrency(finalPrice), previousPrice: oldPrice ? roundCurrency(oldPrice) : null };
   const promotion = promotionEvidence(block);
   if (promotion?.type === "two_for_one" && finalPrice > 0) {
     // GPSFarma publishes the regular unit price in finalPrice. The 2×1 changes
@@ -282,6 +285,7 @@ export function parsePromotionPricingV69(block) {
     const pricing = computePricing(unitPrice, unitPrice);
     return {
       ...pricing,
+      priceEvidence: { ...priceEvidence, basis: "source_2x1" },
       promotion: {
         ...promotion,
         priceBasis: "source_unit",
@@ -291,11 +295,9 @@ export function parsePromotionPricingV69(block) {
       },
     };
   }
-  if (promotion?.type === "percentage" && !oldPrice && finalPrice > 0) {
-    const pricing = computePricing(finalPrice, finalPrice * (1 - promotion.percent / 100));
-    return { ...pricing, promotion: { ...promotion, label: `-${pricing.discountPercent}%`, percent: pricing.discountPercent } };
-  }
-  const pricing = computePricing(oldPrice || finalPrice, finalPrice || oldPrice);
+  // A badge describes a promotion; it does not establish a second price.
+  // finalPrice is already the amount charged for one unit. Never discount it again.
+  const pricing = { ...computePricing(oldPrice || finalPrice, finalPrice), priceEvidence };
   if (promotion?.type === "percentage" && pricing.discountPercent > 0) {
     return { ...pricing, promotion: { ...promotion, label: `-${pricing.discountPercent}%`, percent: pricing.discountPercent } };
   }
@@ -581,6 +583,7 @@ function updatedMatchedProduct(product, candidate, completedAt) {
       ...(product.source && typeof product.source === "object" ? product.source : {}),
       url: candidate.sourceUrl,
       retrievedAt: completedAt,
+      ...(candidate.priceEvidence ? { pricingEvidence: { ...candidate.priceEvidence, observedAt: completedAt } } : {}),
     },
   };
 }
@@ -710,7 +713,8 @@ export function synchronizeCatalog(
     );
     const candidatesByImage = uniqueCandidatesByImage(source.products);
     const knownUrl = normalizeGpsProductUrl(product?.source?.url);
-    const exact = knownUrl ? candidatesByUrl.get(knownUrl) : null;
+    const exact = source.products.find(candidate => candidate.sourceFallbackPublicId === product.publicId) ||
+      (knownUrl ? candidatesByUrl.get(knownUrl) : null);
     if (exact && !usedCandidateUrls.has(normalizeGpsProductUrl(exact.sourceUrl))) {
       if (exact.sourceFallbackDirect) {
         matchedByDirect += 1;
@@ -861,20 +865,48 @@ async function addDirectProductFallbacksV69(
   );
   const targets = baseCatalog.products
     .map((product, index) => ({ product, refreshed: preliminary.products[index] }))
-    .filter(({ refreshed }) => refreshed?.availability === "unknown")
-    .map(({ product }) => ({
+    .filter(({ refreshed }) => refreshed?.availability === "unknown" ||
+      refreshed?.source?.pricingEvidence?.observedAt !== completedAt)
+    .map(({ product, refreshed }) => ({
       product,
+      refreshed,
       source: sourceForProduct(product, resultsByBrandId, resultsBySourceId),
     }))
     .filter(({ source }) => Boolean(source));
-  if (!targets.length) return sourceResults;
+  if (!targets.length) return { sourceResults, removedPublicIds: [] };
 
   const { parseProductPageCommerceV7Beta } = await import("./build-local-v7-beta.mjs");
-  const additions = await mapLimit(targets, concurrency, async ({ product, source }) => {
-    const sourceUrl = trustedGpsUrl(product?.source?.url);
-    const html = await fetchHtml(sourceUrl);
-    const pageIdentity = parseProductIdentityV69(html);
+  const listed = sourceResults.flatMap(source => source.products);
+  const listedUrls = new Set(listed.map(candidate => normalizeGpsProductUrl(candidate.sourceUrl)));
+  const additions = await mapLimit(targets, concurrency, async ({ product, refreshed, source }) => {
+    const expectedSku = String(product?.sku || "").trim().toUpperCase();
     const expectedBarcode = String(product?.barcode || "").replace(/\D/g, "");
+    const identityMatches = listed.filter(candidate =>
+      (expectedSku && String(candidate.sku || "").trim().toUpperCase() === expectedSku) ||
+      (expectedBarcode && String(candidate.barcode || "").replace(/\D/g, "") === expectedBarcode));
+    const knownUrl = trustedGpsUrl(product?.source?.url);
+    const refreshedUrl = trustedGpsUrl(refreshed?.source?.url || knownUrl);
+    const stillListed = identityMatches.length > 0 || listedUrls.has(normalizeGpsProductUrl(knownUrl)) ||
+      listedUrls.has(normalizeGpsProductUrl(refreshedUrl));
+    const urls = [...new Set([...identityMatches.map(candidate => trustedGpsUrl(candidate.sourceUrl)), refreshedUrl, knownUrl])];
+    let sourceUrl;
+    let html;
+    let missingError;
+    for (const url of urls) {
+      try { html = await fetchHtml(url); sourceUrl = url; break; }
+      catch (error) {
+        if (!isPermanentMissingGpsPage(error)) throw error;
+        missingError = error;
+      }
+    }
+    if (!sourceUrl) {
+      // Same permanent-missing rule as the weekly reconciler, after a complete
+      // crawl and identity lookup across every source. Transient failures never
+      // remove a product. A listed/ambiguous identity remains a blocking error.
+      if (!stillListed && expectedSku && expectedBarcode) return { removedPublicId: product.publicId };
+      throw missingError;
+    }
+    const pageIdentity = parseProductIdentityV69(html);
     if (expectedBarcode && pageIdentity.barcode !== expectedBarcode) {
       throw new Error(
         `La ficha directa no confirmó el código de barra del SKU ${String(product?.sku || "").trim()}.`,
@@ -886,6 +918,7 @@ async function addDirectProductFallbacksV69(
       catalogBrandId: String(source.catalogBrandId || source.id),
       catalogBrandName: source.catalogBrandName,
       sourceFallbackDirect: true,
+      sourceFallbackPublicId: product.publicId,
       sourceUrl,
       sourceName: product.name,
       sourceBrand: product.brand?.name || source.catalogBrandName,
@@ -898,19 +931,25 @@ async function addDirectProductFallbacksV69(
       savingAmount: commerce.savingAmount,
       discountPercent: commerce.discountPercent,
       promotion: commerce.promotion,
+      priceEvidence: commerce.priceEvidence,
     };
   });
   const additionsBySourceId = new Map();
+  const removedPublicIds = [];
   for (const addition of additions) {
+    if (addition.removedPublicId) { removedPublicIds.push(addition.removedPublicId); continue; }
     const sourceId = String(addition.sourceId);
     const existing = additionsBySourceId.get(sourceId) || [];
     existing.push(addition);
     additionsBySourceId.set(sourceId, existing);
   }
-  return sourceResults.map((source) => ({
-    ...source,
-    products: [...source.products, ...(additionsBySourceId.get(String(source.id)) || [])],
-  }));
+  return {
+    sourceResults: sourceResults.map((source) => ({
+      ...source,
+      products: [...source.products, ...(additionsBySourceId.get(String(source.id)) || [])],
+    })),
+    removedPublicIds,
+  };
 }
 
 export async function runCommercialSync({
@@ -944,7 +983,7 @@ export async function runCommercialSync({
   const sourceResults = await crawlAllSources(sources, { fetchHtml: scopedFetchHtml, onProgress });
   const completedAt = now().toISOString();
   const expectedSourceIds = sources.map((source) => String(source.id));
-  const sourceResultsWithFallbacks = await addDirectProductFallbacksV69(
+  const fallbacks = await addDirectProductFallbacksV69(
     baseCatalog,
     sourceResults,
     {
@@ -954,13 +993,17 @@ export async function runCommercialSync({
       fetchHtml: scopedFetchHtml,
     },
   );
-  const catalog = synchronizeCatalog(baseCatalog, sourceResultsWithFallbacks, {
+  const removedPublicIds = new Set(fallbacks.removedPublicIds);
+  const reconciledBase = { ...baseCatalog, products: baseCatalog.products.filter(product => !removedPublicIds.has(product.publicId)) };
+  const catalog = synchronizeCatalog(reconciledBase, fallbacks.sourceResults, {
     completedAt,
     minCoverage,
     minPriceCoverage,
     expectedSourceIds,
     inventoryScope,
   });
+  catalog.commerceSync.removedPublicIds = fallbacks.removedPublicIds;
+  catalog.commerceSync.metrics.permanentMissing = removedPublicIds.size;
   if (apply) await writeCatalog(outputPath, catalog);
   return {
     mode: apply ? "apply" : "dry-run",
