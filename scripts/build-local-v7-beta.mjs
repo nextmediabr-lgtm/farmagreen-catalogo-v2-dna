@@ -23,6 +23,9 @@ import {
 } from "./sync-catalog-commerce-v69.mjs";
 import { normalizeProductText, textFromHtml } from "./gpsfarma-listing.mjs";
 import { filterExcludedProductsV69 } from "./prepare-gcp-catalog-v69.mjs";
+import { inferTaxonomyV69 } from "./usage-taxonomy-v69.mjs";
+
+export { inferTaxonomyV69 } from "./usage-taxonomy-v69.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const DEFAULT_LOCAL_V7_BETA_OUTPUT = path.join(
@@ -817,67 +820,6 @@ function configuredBrandV69(value) {
 
 function brandIdentityKeyV69(value) {
   return normalizeProductText(String(value || "").replace(/\+/g, " plus ")).replace(/\s+/g, "");
-}
-
-export function inferTaxonomyV69(nameValue, brandValue) {
-  const text = normalizeProductText(`${nameValue} ${brandValue}`);
-  const vitaminWay = /\bvitamin\s*way\b/.test(text);
-  const capilatis = /\bcapilatis\b/.test(text);
-  const explicitBody = /\b(corporal|cuerpo|manos|pies|piernas|bodytherapy|reductora)\b/.test(text);
-  const facial = /\b(facial|rostro|face care|contorno de ojos|cc cream)\b/.test(text);
-  const topical = /\b(crema|emulsion|locion|gel|serum|espuma)\b/.test(text);
-  const presentation = [...text.matchAll(/\b(\d+(?:[.,]\d+)?)\s*(ml|g|gr|gramos)\b/g)]
-    .map((match) => Number(String(match[1]).replace(",", ".")))
-    .filter(Number.isFinite)
-    .sort((left, right) => right - left)[0] || 0;
-  const nutrition = vitaminWay ||
-    /\b(proteina|suplemento|creatina|aminoacido)\w*\b/.test(text) ||
-    (/\b(vitamina|minerales|colageno)\w*\b/.test(text) &&
-      /\b(capsula|comprimido|tableta|polvo|sobre|gomita|bebible)\w*\b/.test(text));
-  const capillary =
-    (capilatis && !explicitBody) ||
-    /\b(shampoo|acondicionador|capilar|cabello|pelo|dercos|anticaida|anti caida|caspa|rulos|desenredante|fijador|enjuague|mascara|balsamo|protector de calor|aclarante)\b/.test(text);
-  const solar = /\b(protector solar|fotoprotector|solar|after sun|post solar|broncead\w*|autobronce\w*)\b/.test(text);
-  const cleansing = /\b(limpiador|limpieza|limpeza|micelar|desmaquill\w*|jabon|syndet|exfolia\w*|microexfolia\w*)\b/.test(text);
-  const body =
-    /\b(corporal|cuerpo|manos|pies|piernas)\b/.test(text) ||
-    (topical && presentation >= 100 && !facial && !capillary && !solar && !cleansing && !nutrition);
-  let primaryCategory = "rostro";
-  if (nutrition) primaryCategory = "nutricion";
-  else if (capillary) primaryCategory = "capilar";
-  else if (solar) primaryCategory = "solares";
-  else if (cleansing) primaryCategory = "limpieza";
-  else if (/\b(bebe|infantil|pediatrico)\b/.test(text)) primaryCategory = "bebe";
-  else if (body) primaryCategory = "cuerpo";
-  else if (/\b(omron|tensiometro|nebulizador|termometro|balanza|electroestimulador)\b/.test(text)) primaryCategory = "otros";
-
-  const needs = [];
-  const rules = [
-    ["limpieza", /\b(limpiador|limpieza|limpeza|micelar|desmaquill\w*|jabon|syndet|exfolia\w*|microexfolia\w*)\b/],
-    ["solares", /\b(protector solar|fotoprotector|solar|after sun|post solar|broncead\w*|autobronce\w*)\b/],
-    ["capilar", /\b(shampoo|acondicionador|capilar|cabello|pelo|dercos|anticaida|anti caida|caspa|rulos|desenredante|fijador|enjuague|mascara|balsamo|protector de calor|aclarante)\b/],
-    ["acne", /\b(acne|antiacne|comedon|seborregulador|imperfecciones|granos)\b/],
-    ["manchas", /\b(manchas|antimanchas|anti pigment|antipigment|despigment|melasma|pigmentacion)\b/],
-    ["piel-sensible", /\b(piel sensible|atopi|rosacea|rojeces|hipoalergen\w*|bebe|infantil|irritacion)\b/],
-    ["hidratacion", /\b(hidrat\w*|hydra\w*|hydro\w*|moistur\w*|humect\w*|emoliente|piel seca|xerosis|hialuron\w*)\b/],
-    ["antiedad", /\b(antiedad|anti edad|antiage|anti aging|antiarrugas|arrugas|retinol|retinal|filler|firmeza|reafirmante|lifting|colageno)\b/],
-    ["reparacion", /\b(repar\w*|repair\w*|restaur\w*|regener\w*|cicatriz\w*|estria\w*|rugos\w*|barrera|labial|labios agrietados)\b/],
-  ];
-  for (const [need, pattern] of rules) if (pattern.test(text) && !needs.includes(need)) needs.push(need);
-  if (["nutricion", "solares", "capilar", "limpieza"].includes(primaryCategory)) {
-    needs.splice(0, needs.length, primaryCategory);
-  }
-  if (!needs.length) needs.push(primaryCategory === "bebe" ? "piel-sensible" : "cuidado-diario");
-  return {
-    primaryCategory,
-    needs: needs.slice(0, 2),
-    audit: {
-      reasonerVersion: "v69.3-live-taxonomy-evidence",
-      evidenceScope: ["name", "brand"],
-      selected: needs.slice(0, 2).map((need) => ({ need, source: "deterministic-title-rule" })),
-      rejected: [],
-    },
-  };
 }
 
 function preferredMembersV69(members) {

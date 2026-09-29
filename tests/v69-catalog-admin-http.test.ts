@@ -5,10 +5,17 @@ import path from "node:path";
 import test from "node:test";
 import { app } from "../src/server.js";
 import { adminStateV69 } from "../src/catalog-admin-http-v69.js";
+import { catalogCloudProjectV69 } from "../src/catalog-admin-scheduler-v69.js";
 import { defaultCatalogAdminDocumentV69 } from "../src/catalog-admin-v69.js";
 import type { CatalogV69, ProductV69 } from "../src/data-v69.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
+
+test("el admin resuelve el proyecto desde la identidad Cloud Run si no hay variable de entorno", async () => {
+  const auth = { getProjectId: async () => "project-e2a7bc6d-e741-4d4e-85d" } as Parameters<typeof catalogCloudProjectV69>[1];
+  assert.equal(await catalogCloudProjectV69({ NODE_ENV: "production" }, auth), "project-e2a7bc6d-e741-4d4e-85d");
+  assert.equal(await catalogCloudProjectV69({ NODE_ENV: "production", GOOGLE_CLOUD_PROJECT: "custom-project" }, auth), "custom-project");
+});
 
 test("el panel integral autentica, publica configuración, recuerda y recibe post-deploy", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "fg-v69-admin-http-"));
@@ -34,8 +41,8 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
   try {
     const [page, script, style, unauthorized] = await Promise.all([
       fetch(`${origin}/admin-v6-9`),
-      fetch(`${origin}/admin-v69-3.js`),
-      fetch(`${origin}/admin-v69-1.css`),
+      fetch(`${origin}/admin-v69-4.js`),
+      fetch(`${origin}/admin-v69-2.css`),
       fetch(`${origin}/api/admin-v69/state`),
     ]);
     assert.equal(page.status, 200);
@@ -44,7 +51,8 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
     assert.equal(unauthorized.status, 401);
     const html = await page.text();
     assert.match(html, /Administración V6\.9/);
-    assert.match(html, /admin-v69-3\.js\?v=20260826-3/);
+    assert.match(html, /admin-v69-4\.js\?v=20260928-2/);
+    assert.match(html, /data-tab="catalog"/);
     assert.doesNotMatch(html, /data-action="deploy"/);
 
     const first = await fetch(`${origin}/api/admin-v69/state`, { headers: auth });
@@ -60,6 +68,28 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
     const productToExclude = publicBefore.products.find((product: { barcode?: string }) => /^\d{8,14}$/.test(product.barcode || ""));
     const eanToExclude = productToExclude?.barcode;
     assert.ok(eanToExclude);
+    const productList = await fetch(`${origin}/api/admin-v69/products?q=${eanToExclude}`, { headers: auth }).then((response) => response.json());
+    assert.equal(productList.total, 1);
+    assert.equal(productList.items[0].visibility, "public");
+    assert.ok(state.catalog.uses.find((entry: { slug: string }) => entry.slug === "manchas"));
+    const antiPigmentByUse = await fetch(`${origin}/api/admin-v69/products?q=fcbd59a2511f&use=manchas`, { headers: auth }).then((response) => response.json());
+    assert.equal(antiPigmentByUse.total, 1);
+    assert.deepEqual(antiPigmentByUse.items[0].needs, ["manchas", "hidratacion"]);
+    assert.equal(antiPigmentByUse.items[0].useEvidence, "Snapshot vigente");
+    const wrongUse = await fetch(`${origin}/api/admin-v69/products?q=fcbd59a2511f&use=limpieza`, { headers: auth }).then((response) => response.json());
+    assert.equal(wrongUse.total, 0);
+
+    const initialJobs = await fetch(`${origin}/api/admin-v69/schedulers`, { headers: auth }).then((response) => response.json());
+    assert.equal(initialJobs.jobs.find((entry: { kind: string }) => entry.kind === "daily").state, "ENABLED");
+    const paused = await fetch(`${origin}/api/admin-v69/schedulers/daily/pause`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ expectedState: "ENABLED" }),
+    });
+    assert.equal(paused.status, 200);
+    assert.equal((await paused.json()).job.state, "PAUSED");
+    const stale = await fetch(`${origin}/api/admin-v69/schedulers/daily/pause`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ expectedState: "ENABLED" }),
+    });
+    assert.equal(stale.status, 422);
 
     const policy = structuredClone(state.policy);
     policy.navigation.featuredBrands[0].enabled = false;
@@ -71,6 +101,13 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
       note: "Prueba local",
       createdAt: "2026-08-26T00:00:00.000Z",
     });
+    const preview = await fetch(`${origin}/api/admin-v69/policy/preview`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ expectedRevision: 0, policy }),
+    });
+    assert.equal(preview.status, 200);
+    assert.equal((await preview.json()).hidden.count, 1);
+    assert.equal((await fetch(`${origin}/api/admin-v69/state`, { headers: auth }).then((response) => response.json())).admin.revision, 0);
     const published = await fetch(`${origin}/api/admin-v69/policy`, {
       method: "PUT",
       headers: { ...auth, "content-type": "application/json" },
@@ -106,6 +143,26 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
     assert.equal(finalState.admin.revision, 1);
     assert.equal(finalState.memory[0].type, "deploy");
     assert.equal(finalState.memory.some((entry: { type: string }) => entry.type === "ean"), true);
+    assert.equal(finalState.memory.some((entry: { type: string }) => entry.type === "scheduler"), true);
+    const hiddenProducts = await fetch(`${origin}/api/admin-v69/products?visibility=hidden&q=${eanToExclude}`, { headers: auth }).then((response) => response.json());
+    assert.equal(hiddenProducts.items[0].hiddenReason, "EAN excluido");
+    const requestedEan = "4006381333931";
+    assert.equal(publicBefore.products.some((product: { barcode: string }) => product.barcode === requestedEan), false);
+    const requestedPolicy = structuredClone(finalState.policy);
+    requestedPolicy.eanRules.requests.push({ ean: requestedEan, note: "Revisión antes de incluir", createdAt: "2026-09-28T00:00:00.000Z" });
+    const requestSave = await fetch(`${origin}/api/admin-v69/policy`, {
+      method: "PUT", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ expectedRevision: 1, policy: requestedPolicy }),
+    });
+    assert.equal(requestSave.status, 200);
+    const prematureApproval = await fetch(`${origin}/api/admin-v69/ean-requests/approve`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ ean: requestedEan, expectedRevision: 2 }),
+    });
+    assert.equal(prematureApproval.status, 422);
+    const requestState = await fetch(`${origin}/api/admin-v69/state`, { headers: auth }).then((response) => response.json());
+    assert.equal(requestState.policy.eanRules.requests[0].ean, requestedEan);
+    assert.equal(requestState.policy.eanRules.include.length, 0);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await rm(directory, { recursive: true, force: true });
@@ -152,6 +209,7 @@ test("el panel no colapsa marcas técnicas que heredaron el mismo slug Saludable
   assert.deepEqual(state.catalog.promotionBrands, [
     { slug: "productos-saludables", name: "Productos Saludables", count: 2 },
   ]);
+  assert.deepEqual(state.catalog.promotionTechnicalBrands.map((entry) => entry.name), ["102 años", "Goodskin"]);
 });
 
 function technicalProduct(publicId: string, name: string): ProductV69 {

@@ -142,6 +142,22 @@ test("V6.9 trata FPS como atributo y conserva la intención principal explícita
   assert.equal(trueSolar?.primaryCategory, "solares");
 });
 
+test("V6.9 corrige usos heredados y muestra hasta dos usos en tarjeta y ficha", async () => {
+  const catalog = await baseCatalog();
+  const serum = catalog.products.find((product) => product.publicId === "fcbd59a2511f");
+  const cleanser = catalog.products.find((product) => product.publicId === "927a2fac7910");
+  assert.ok(serum);
+  assert.ok(cleanser);
+  assert.deepEqual(serum.needs, ["manchas", "hidratacion"]);
+  assert.equal(serum.primaryCategory, "rostro");
+  assert.deepEqual(cleanser.needs, ["limpieza", "manchas"]);
+  const detail = productPageV69(serum, [], "http://127.0.0.1:8109");
+  const listing = catalogPageV69({ ...catalog, totalProducts: 1, products: [serum] }, new URLSearchParams("scope=todo"), "http://127.0.0.1:8109");
+  assert.match(detail, /<dt>Uso<\/dt><dd>Manchas · Hidratación<\/dd>/);
+  assert.match(listing, /<dt>Uso<\/dt><dd>Manchas · Hidratación<\/dd>/);
+  assert.match(productPageV69(cleanser, [], "http://127.0.0.1:8109"), /<dt>Uso<\/dt><dd>Limpieza · Manchas<\/dd>/);
+});
+
 async function privateFixture(catalog: CatalogV69) {
   const directory = await mkdtemp(path.join(tmpdir(), "farmagreen-v69-exclusions-"));
   const file = path.join(directory, "catalog-exclusions-v69.local.json");

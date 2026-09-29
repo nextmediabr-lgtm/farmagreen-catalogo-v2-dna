@@ -727,10 +727,10 @@ function presentation(product) {
 }
 
 function usage(product) {
-  const priority = ["nutricion", "manchas", "acne", "solares", "capilar", "piel-sensible", "antiedad", "reparacion", "hidratacion", "limpieza", "cuidado-diario"];
-  const need = priority.find((candidate) => (product.needs || []).includes(candidate));
-  if (need) return NEED_LABELS[need] || categoryLabel(need);
-  return categoryLabel(product.primaryCategory);
+  const uses = [...new Set(product.needs || [])].slice(0, 2);
+  return uses.length
+    ? uses.map((need) => NEED_LABELS[need] || categoryLabel(need)).join(" · ")
+    : categoryLabel(product.primaryCategory);
 }
 
 function categoryLabel(value) {

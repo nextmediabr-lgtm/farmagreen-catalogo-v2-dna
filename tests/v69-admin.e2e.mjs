@@ -42,9 +42,24 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     await page.locator("#localAdminToken").fill("admin-e2e-token");
     await page.locator("#localLogin").click();
     await page.locator("#adminApp").waitFor({ state: "visible" });
-    assert.equal(await page.locator("[data-tab]").count(), 4);
+    assert.equal(await page.locator("[data-tab]").count(), 5);
     assert.equal(await page.locator('[data-action="deploy"]').count(), 0);
-    assert.equal(await page.locator(".admin-cards article").count(), 6);
+    assert.equal(await page.locator(".admin-cards article").count(), 8);
+
+    await page.locator('[data-tab="catalog"]').click();
+    await page.locator('[data-catalog-query]').fill("Eucerin");
+    await page.locator('[data-action="search-products"]').click();
+    await page.waitForFunction(() => document.querySelector(".admin-product-list article"));
+    assert.match(await page.locator(".admin-product-list article").first().innerText(), /Eucerin/i);
+    await page.locator('[data-catalog-query]').fill("fcbd59a2511f");
+    await page.locator('[data-catalog-use]').selectOption("manchas");
+    await page.locator('[data-action="search-products"]').click();
+    await page.waitForFunction(() => document.querySelectorAll(".admin-product-list article").length === 1 &&
+      document.querySelector(".admin-product-list article")?.textContent?.includes("ANTI-PIGMENT"));
+    assert.match(await page.locator(".admin-product-list article").first().innerText(), /Uso A: Manchas · Uso B: Hidratación/);
+    await page.locator('[data-catalog-use]').selectOption("limpieza");
+    await page.locator('[data-action="search-products"]').click();
+    await page.waitForFunction(() => document.querySelector(".admin-product-list")?.textContent?.includes("No hay fichas"));
 
     await page.locator('[data-tab="navigation"]').click();
     assert.equal(await page.locator('.admin-brand-row[data-index]').count(), 15);
@@ -75,6 +90,9 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     assert.equal(await page.locator('[data-field="promotion-brand"]:checked').count(), 1);
     await page.locator('.admin-brand-row input[data-action="toggle-brand"]').first().uncheck();
     await page.locator('[data-action="publish-navigation"]').click();
+    await page.locator('.admin-preview').waitFor({ state: "visible" });
+    assert.match(await page.locator('.admin-preview').innerText(), /Vista previa antes de publicar/);
+    await page.locator('[data-action="confirm-publish"]').click();
     await page.waitForFunction(() => !document.body.classList.contains("is-busy"));
     await page.waitForFunction(() => document.querySelector("#adminContent")?.textContent?.includes("14 habilitadas"));
     assert.doesNotMatch(await page.request.get(`${origin}/catalogo-v6-9?scope=todo`).then((response) => response.text()), /option value="sin-stock"/);
@@ -94,9 +112,11 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
       headers: { authorization: "Bearer admin-e2e-token" },
     }).then((response) => response.json());
     assert.ok(savedPolicy.policy.navigation.excludedBrandSlugs.includes(disabledBrandSlug));
-    assert.deepEqual(savedPolicy.policy.navigation.promotionBrandSlugs, ["dermaglos"]);
+    assert.equal(savedPolicy.policy.navigation.promotionDisabledTechnicalBrandSlugs.includes("dermaglos"), false);
+    assert.equal(savedPolicy.policy.navigation.promotionDisabledTechnicalBrandSlugs.includes("eucerin"), true);
     await page.locator(`[data-action="enable-brand"][data-slug="${disabledBrandSlug}"]`).click();
     await page.locator('[data-action="publish-navigation"]').click();
+    await page.locator('[data-action="confirm-publish"]').click();
     await page.waitForFunction(() => !document.body.classList.contains("is-busy"));
     await page.waitForFunction((slug) => document.querySelector(`[data-action="disable-brand"][data-slug="${slug}"]`), disabledBrandSlug);
     const publicAfterReenable = await page.request.get(`${origin}/api/catalog-v6-9`).then((response) => response.json());
@@ -107,6 +127,7 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     await page.locator('[data-action="add-ean"][data-kind="exclude"]').click();
     assert.match(await page.locator("#adminContent").innerText(), /3337875694469/);
     await page.locator('[data-action="publish-ean"]').click();
+    await page.locator('[data-action="confirm-publish"]').click();
     await page.waitForFunction(() => !document.body.classList.contains("is-busy"));
     await page.waitForFunction(() => document.querySelector("#adminContent")?.textContent?.includes("Retinol B3") || document.querySelector("#adminContent")?.textContent?.includes("Pendiente"));
     const eanState = await page.request.get(`${origin}/api/admin-v69/state`, {
@@ -116,6 +137,10 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
 
     await page.locator('[data-tab="operations"]').click();
     assert.match(await page.locator(".admin-no-deploy").innerText(), /no despliega/i);
+    assert.match(await page.locator("#adminContent").innerText(), /simulación local/);
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.locator('[data-action="scheduler-pause"][data-kind="daily"]').click();
+    await page.waitForFunction(() => document.querySelector('[data-action="scheduler-resume"][data-kind="daily"]'));
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
 
     await page.setViewportSize({ width: 390, height: 844 });

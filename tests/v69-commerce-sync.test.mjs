@@ -305,6 +305,44 @@ test("la política EAN dinámica integra inclusión y exclusión sin filtrar por
   assert.deepEqual(effective.barcodes.sort(), ["7793640992929", "7798008296039"]);
 });
 
+test("una solicitud EAN retiene una alta para revisión sin afectar el resto del scan", async () => {
+  const ean = "3337875694469";
+  const completedAt = "2026-08-25T12:00:00.000Z";
+  const result = await reconcileCatalogChangesV69({
+    baseCatalog: discoveryBaseCatalog([], completedAt),
+    completedAt,
+    sources: discoverySourcesV69(),
+    reviewEans: new Set([ean]),
+    detailedGroups: [{
+      baseIndex: null,
+      detail: {
+        sku: "LRP-RETINOL-REVIEW",
+        barcode: ean,
+        description: "Serum con retinol y vitamina B3.",
+        image: "https://gpsfarma.com/media/catalog/product/l/r/lrp-retinol.jpg",
+      },
+      members: [listingMember("6048", "LRP-RETINOL-REVIEW", "Retinol B3 La Roche Posay x 30 ml", 1, {
+        catalogBrandId: "6048",
+        catalogBrandName: "La Roche Posay",
+        sourceBrand: "La Roche Posay",
+        listedBrand: "La Roche Posay",
+        imageUrl: "https://gpsfarma.com/media/catalog/product/l/r/lrp-retinol.jpg",
+      })],
+    }],
+  });
+  assert.equal(result.catalog.products.length, 0);
+  assert.equal(result.discoverySync.metrics.positive, 0);
+  assert.equal(result.discoverySync.metrics.eanReviewPending, 1);
+  assert.equal(result.discoverySync.eanReviewCandidates[0].ean, ean);
+  const finalized = await finalizeCatalogDiscoveryV69({
+    catalog: result.catalog,
+    prepareImages: async ({ catalog }) => catalog,
+    rebuildTaxonomy: async ({ catalog }) => catalog,
+  });
+  assert.equal(finalized.discoverySync.activationReady, true);
+  assert.equal(finalized.catalog.discoverySync.eanReviewCandidates[0].ean, ean);
+});
+
 test("la ficha técnica resuelve la marca real y repara el legado de Productos Saludables", async () => {
   const completedAt = "2026-08-25T12:00:00.000Z";
   const detail = parseProductDetailV69(`
@@ -476,6 +514,43 @@ test("el reindexado semanal reconstruye necesidades desde evidencia viva", () =>
   assert.equal(catalog.products[0].taxonomy.indexedAt, indexedAt);
   assert.equal(catalog.searchIndexedAt, indexedAt);
   assert.equal(catalog.needsIndexedAt, indexedAt);
+});
+
+test("el uso principal sale del título y la línea, no de categorías Magento históricas", () => {
+  const catalog = reindexCatalogV69({
+    version: 6.9,
+    products: [
+      product("anti-pigment", "Sérum Facial ANTI-PIGMENT con Ácido Hialurónico x 30 ml", {
+        line: "Anti-Pigment",
+        needs: ["limpieza"],
+        primaryCategory: "limpieza",
+        aliases: ["limpieza", "antimanchas"],
+        magentoCategories: [{ id: "6779", name: "Limpieza" }],
+      }),
+      product("cleanser", "Gel Limpiador Eucerin Anti-Pigment x 200 ml", {
+        line: "Anti-Pigment",
+        needs: ["limpieza"],
+        primaryCategory: "limpieza",
+        magentoCategories: [{ id: "8", name: "Anti-pigment" }],
+      }),
+      product("hyaluron-filler", "Crema facial HYALURON-FILLER antiedad x 50 ml", {
+        needs: ["limpieza"],
+        primaryCategory: "limpieza",
+      }),
+      product("existing-secondary", "Crema corporal para piel seca y sensible x 200 ml", {
+        needs: ["piel-sensible", "hidratacion"],
+        primaryCategory: "cuerpo",
+      }),
+    ],
+  }, "2026-09-28T00:00:00.000Z");
+  assert.deepEqual(catalog.products[0].needs, ["manchas", "hidratacion"]);
+  assert.equal(catalog.products[0].primaryCategory, "rostro");
+  assert.deepEqual(catalog.products[0].taxonomy.evidenceScope, ["name", "line", "brand"]);
+  assert.ok(catalog.products[0].aliases.includes("Limpieza"), "la categoría sigue disponible para búsqueda");
+  assert.deepEqual(catalog.products[1].needs, ["limpieza"]);
+  assert.equal(catalog.products[1].primaryCategory, "limpieza");
+  assert.deepEqual(catalog.products[2].needs, ["hidratacion", "antiedad"]);
+  assert.deepEqual(catalog.products[3].needs, ["piel-sensible", "hidratacion"], "no borra un uso secundario ya sustentado");
 });
 
 test("el reindexado vivo no convierte dermocosmética en Nutrición por aliases del paraguas", () => {

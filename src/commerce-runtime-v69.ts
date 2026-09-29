@@ -8,6 +8,7 @@ import {
 } from "./data-v69.js";
 import { gcsSnapshotStoreV69, SnapshotConflictV69, SnapshotWriteUncertainV69 } from "./catalog-snapshot-store-v69.js";
 import { preparePublicationV69, assertCatalogTransitionV69 } from "./catalog-validation-v69.js";
+import { createCatalogAdminRuntimeV69 } from "./catalog-admin-v69.js";
 
 export type RuntimeEnvironmentV69 = Readonly<Record<string, string | undefined>>;
 
@@ -552,6 +553,7 @@ async function defaultRunDiscoveryV69(
   const module = await import("../scripts/scan-catalog-v69.mjs");
   const scanned = await module.runCatalogDiscoveryV69({
     providedBaseCatalog: baseCatalog,
+    providedPolicy: await createCatalogAdminRuntimeV69(environment).policy(),
   });
   const finalized = await module.finalizeCatalogDiscoveryV69({
     catalog: scanned.catalog,

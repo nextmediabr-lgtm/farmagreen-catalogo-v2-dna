@@ -73,6 +73,9 @@ test("las reglas EAN validan checksum, unicidad y conflicto inclusión/exclusió
     createdAt: "2026-08-25T00:00:00.000Z",
   });
   assert.throws(() => validateCatalogPolicyV69(policy), /simultáneamente incluido y excluido/);
+  policy.eanRules.include = [];
+  policy.eanRules.requests.push({ ean: "3337875694469", note: "Revisar", createdAt: "2026-08-25T00:00:00.000Z" });
+  assert.throws(() => validateCatalogPolicyV69(policy), /solicitud EAN no puede estar ya incluida o excluida/);
 });
 
 test("marcas legacy deshabilitadas no consumen el límite de navegación", () => {
@@ -160,6 +163,17 @@ test("promociones por marca conservan SKU y precio regular sin aplicar descuento
   assert.equal(virtualOnly.products[1].promotion, undefined);
   policy.navigation.promotionBrandSlugs = [];
   assert.equal(applyCatalogPolicyV69(catalog, policy).products.every((entry) => !entry.promotion), true);
+
+  // The public umbrella stays intact while its technical brands are controlled separately.
+  policy.navigation.promotionDisabledTechnicalBrandSlugs = ["goodskin", "eucerin"];
+  const technical = applyCatalogPolicyV69(catalog, validateCatalogPolicyV69(policy));
+  assert.equal(technical.products[3].brand.name, "Productos Saludables");
+  assert.equal(technical.products[3].promotion?.type, "two_for_one");
+  assert.equal(technical.products[4].promotion, undefined);
+  assert.equal(technical.products[1].promotion, undefined);
+  assert.equal(technical.products[0].discountPercent, 30);
+  policy.navigation.promotionDisabledTechnicalBrandSlugs = [];
+  assert.equal(applyCatalogPolicyV69(catalog, policy).products[4].discountPercent, 20);
 });
 
 function healthyFacet() {

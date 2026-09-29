@@ -24,7 +24,7 @@ Vista local: <http://127.0.0.1:8109/>.
 ## Administración V6.9
 
 La consola integral productiva vive en `/admin-v6-9` dentro de la misma app de
-Cloud Run. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones.
+Cloud Run. Tiene cinco secciones: Estado, Navegación, Catálogo, Reglas EAN y Operaciones.
 
 - limita la navegación a las marcas legacy más `Productos Saludables` como
   paraguas;
@@ -41,6 +41,31 @@ Cloud Run. Tiene cuatro secciones: Estado, Navegación, Reglas EAN y Operaciones
 La opción temporal `Sin stock` del selector público muestra sólo los productos
 para consultar. Se habilita o retira desde Navegación en el panel, sin deploy y
 sin excluir productos automáticamente.
+
+### Ampliación del admin (29/9/2026)
+
+El panel agrega Catálogo como quinta
+sección (búsqueda, filtros, paginación y motivo de ocultación), frescura de
+snapshot, vista previa obligatoria antes de publicar, aviso de cambios sin
+guardar y promociones por **marca técnica**. `Productos Saludables` sigue siendo
+una sola marca pública; las marcas nuevas con promoción de origen validada quedan
+habilitadas por defecto al optar por el control técnico. Una política anterior
+con `promotionDisabledTechnicalBrandSlugs: null` conserva su selección vigente
+hasta que el operador la edite y publique desde Navegación.
+
+Los EAN nuevos de inclusión se guardan como `requests`, no como inclusión activa:
+el scan retiene el alta solicitada, deja evidencia resumida y exige aprobación
+explícita antes del próximo scan. Las inclusiones existentes siguen activas. El
+runtime semanal ahora lee la misma política administrativa que el panel; no
+depende de un archivo local en Cloud Run.
+
+Operaciones presenta los dos crons de Cloud Scheduler con su estado real en
+producción, y permite pausar/reanudar cada uno tras confirmar y
+releer el estado. En desarrollo el control es **simulado** y nunca llama a GCP;
+refresh y discovery manual están deshabilitados allí. El panel sigue sin deploy,
+editor de precios/stock ni cambios IAM. El runtime necesita
+`cloudscheduler.jobs.get`, `.pause` y `.enable`; el código limita las operaciones
+a los dos jobs V6.9 conocidos. Los permisos IAM se gestionan fuera del panel.
 
 ### Resultado de auditoría de promociones, 22 de septiembre de 2026
 

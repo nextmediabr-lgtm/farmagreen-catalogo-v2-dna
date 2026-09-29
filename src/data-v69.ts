@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { reconcileCatalogUsesV69 } from "../scripts/usage-taxonomy-v69.mjs";
 import type { Catalog, Product } from "./data.js";
 import {
   loadMagentoTaxonomyV69,
@@ -358,10 +359,20 @@ function cleanProductV69(product: ProductV69): ProductV69 {
     source: normalizedProduct.source && typeof normalizedProduct.source === "object" ? { ...normalizedProduct.source, url: cleanOptional(normalizedProduct.source.url) } : undefined,
   };
   const promotion = cleanPromotionV69(normalizedProduct.promotion, cleaned);
-  return reviseFpsPrimaryUseV69({
+  const fpsRevised = reviseFpsPrimaryUseV69({
     ...cleaned,
     ...(promotion ? { promotion } : { promotion: undefined }),
   });
+  if (fpsRevised.taxonomy?.reasonerVersion === "v69.1-fps-primary-intent") return fpsRevised;
+  const titleUse = reconcileCatalogUsesV69(fpsRevised);
+  if (!titleUse) return fpsRevised;
+  return {
+    ...fpsRevised,
+    primaryCategory: titleUse.primaryCategory,
+    categorySlugs: [titleUse.primaryCategory],
+    needs: titleUse.needs,
+    taxonomy: { ...(fpsRevised.taxonomy || {}), ...titleUse.audit },
+  };
 }
 
 function normalizeTwoForOnePricingV69(product: ProductV69): ProductV69 {

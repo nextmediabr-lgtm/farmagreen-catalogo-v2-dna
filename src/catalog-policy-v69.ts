@@ -73,11 +73,15 @@ export type CatalogPolicyV69 = {
     showOutOfStockSort: boolean;
     // null preserves the legacy all-brands behavior until a curated list is published.
     promotionBrandSlugs: string[] | null;
+    // null keeps the published legacy selection; an array opts into technical-brand controls.
+    // New, source-validated brands are enabled unless explicitly disabled here.
+    promotionDisabledTechnicalBrandSlugs: string[] | null;
     excludedBrandSlugs: string[];
   };
   eanRules: {
     include: EanRuleV69[];
     exclude: EanRuleV69[];
+    requests: EanRuleV69[];
   };
 };
 
@@ -107,11 +111,13 @@ export function defaultCatalogPolicyV69(): CatalogPolicyV69 {
       defaultSort: "relevancia",
       showOutOfStockSort: true,
       promotionBrandSlugs: null,
+      promotionDisabledTechnicalBrandSlugs: null,
       excludedBrandSlugs: [],
     },
     eanRules: {
       include: [],
       exclude: [],
+      requests: [],
     },
   };
 }
@@ -177,14 +183,23 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
     : uniqueStrings(navigation.promotionBrandSlugs, "navigation.promotionBrandSlugs", 500, 80)
         .map((entry) => slug(entry, "navigation.promotionBrandSlugs"));
   if (promotionBrandSlugs) assertUnique(promotionBrandSlugs, "marca con promociones");
+  const promotionDisabledTechnicalBrandSlugs = navigation.promotionDisabledTechnicalBrandSlugs == null
+    ? null
+    : uniqueStrings(navigation.promotionDisabledTechnicalBrandSlugs, "navigation.promotionDisabledTechnicalBrandSlugs", 500, 80)
+        .map((entry) => slug(entry, "navigation.promotionDisabledTechnicalBrandSlugs"));
+  if (promotionDisabledTechnicalBrandSlugs) assertUnique(promotionDisabledTechnicalBrandSlugs, "marca técnica sin promociones");
 
   const eanRules = record(raw.eanRules, "eanRules");
   const include = validateEanRulesV69(eanRules.include, "eanRules.include");
   const exclude = validateEanRulesV69(eanRules.exclude, "eanRules.exclude");
+  const requests = eanRules.requests === undefined ? [] : validateEanRulesV69(eanRules.requests, "eanRules.requests");
   const includeSet = new Set(include.map((entry) => entry.ean));
   const conflicts = exclude.filter((entry) => includeSet.has(entry.ean));
   if (conflicts.length) {
     throw new Error("Un EAN no puede estar simultáneamente incluido y excluido.");
+  }
+  if (requests.some((entry) => includeSet.has(entry.ean) || exclude.some((rule) => rule.ean === entry.ean))) {
+    throw new Error("Una solicitud EAN no puede estar ya incluida o excluida.");
   }
 
   return {
@@ -201,9 +216,10 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
       defaultSort,
       showOutOfStockSort: navigation.showOutOfStockSort !== false,
       promotionBrandSlugs,
+      promotionDisabledTechnicalBrandSlugs,
       excludedBrandSlugs,
     },
-    eanRules: { include, exclude },
+    eanRules: { include, exclude, requests },
   };
 }
 
@@ -297,8 +313,11 @@ export function applyProductPolicyV69(product: ProductV69, policy: CatalogPolicy
   const technicalBrand = product.brand;
   const presentedBrand = displayBrandV69(product, policy);
   const promotional = Number(product.discountPercent || 0) > 0 || Boolean(product.promotion);
-  const promotionEnabled = policy.navigation.promotionBrandSlugs === null ||
-    policy.navigation.promotionBrandSlugs.includes(presentedBrand.slug);
+  const disabledTechnicalBrands = policy.navigation.promotionDisabledTechnicalBrandSlugs;
+  const promotionEnabled = disabledTechnicalBrands !== null
+    ? !disabledTechnicalBrands.includes(technicalBrandSlugV69(technicalBrand?.name || technicalBrand?.slug))
+    : policy.navigation.promotionBrandSlugs === null ||
+      policy.navigation.promotionBrandSlugs.includes(presentedBrand.slug);
   if (presentedBrand === technicalBrand && (promotionEnabled || !promotional)) return product;
   const regularPrice = Number(product.listPrice) > 0 ? product.listPrice : product.offerPrice;
   return {

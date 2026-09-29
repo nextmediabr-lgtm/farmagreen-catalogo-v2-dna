@@ -15,6 +15,7 @@ export type CatalogAdminMemoryTypeV69 =
   | "navigation"
   | "ean"
   | "operation"
+  | "scheduler"
   | "deploy"
   | "rollback";
 
@@ -302,7 +303,7 @@ export function validateCatalogAdminDocumentV69(value: unknown): CatalogAdminDoc
   const memory = list(raw.memory, "memory").slice(-MAX_MEMORY).map((entry, index) => {
     const item = object(entry, `memory[${index}]`);
     const type = text(item.type, `memory[${index}].type`, 32) as CatalogAdminMemoryTypeV69;
-    if (!["navigation", "ean", "operation", "deploy", "rollback"].includes(type)) {
+    if (!["navigation", "ean", "operation", "scheduler", "deploy", "rollback"].includes(type)) {
       throw new Error("La memoria administrativa contiene otro tipo de evento.");
     }
     return {

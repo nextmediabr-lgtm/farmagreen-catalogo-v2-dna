@@ -3,6 +3,7 @@ import type http from "node:http";
 import { GoogleAuth } from "google-auth-library";
 import type { CommerceRuntimeV69 } from "./commerce-runtime-v69.js";
 import type { CatalogV69 } from "./data-v69.js";
+import { catalogCloudProjectV69, createCatalogSchedulerV69, type SchedulerKindV69 } from "./catalog-admin-scheduler-v69.js";
 import {
   CatalogAdminConflictV69,
   type CatalogAdminActorV69,
@@ -10,11 +11,16 @@ import {
   type CatalogAdminRuntimeV69,
 } from "./catalog-admin-v69.js";
 import {
+  DEFAULT_NEEDS_V69,
   applyCatalogPolicyV69,
+  applyProductPolicyV69,
   displayBrandV69,
+  isProductExcludedByPolicyV69,
   navigationBrandsV69,
   normalizeEanV69,
   technicalBrandSlugV69,
+  validateCatalogPolicyV69,
+  type CatalogPolicyV69,
 } from "./catalog-policy-v69.js";
 
 const MAX_BODY = 128_000;
@@ -105,6 +111,71 @@ export async function handleCatalogAdminRequestV69({
       return true;
     }
 
+    if (pathname === "/api/admin-v69/products" && method(request) === "GET") {
+      const current = await adminRuntime.current(true);
+      sendAdminJson(response, adminProductsV69(catalog, current.document.policy, url.searchParams));
+      return true;
+    }
+
+    if (pathname === "/api/admin-v69/policy/preview" && method(request) === "POST") {
+      const body = await readAdminJson(request);
+      const current = await adminRuntime.current(true);
+      if (integer(body.expectedRevision, "expectedRevision") !== current.document.revision) {
+        throw new CatalogAdminConflictV69("La configuración cambió; recargá antes de previsualizar.");
+      }
+      const proposed = validateCatalogPolicyV69(body.policy);
+      sendAdminJson(response, adminPolicyPreviewV69(catalog, current.document.policy, proposed));
+      return true;
+    }
+
+    if (pathname === "/api/admin-v69/schedulers" && method(request) === "GET") {
+      sendAdminJson(response, { jobs: await createCatalogSchedulerV69(environment).list() });
+      return true;
+    }
+
+    const schedulerMatch = pathname.match(/^\/api\/admin-v69\/schedulers\/(daily|weekly)\/(pause|resume)$/);
+    if (schedulerMatch && method(request) === "POST") {
+      const body = await readAdminJson(request);
+      const kind = schedulerMatch[1] as SchedulerKindV69;
+      const action = schedulerMatch[2] as "pause" | "resume";
+      const expectedState = requiredText(body.expectedState, "expectedState", 16);
+      const job = await createCatalogSchedulerV69(environment).change(kind, action, expectedState);
+      let memoryRecorded = true;
+      try {
+        await adminRuntime.recordMemory({
+          actor,
+          type: "scheduler",
+          summary: `${action === "pause" ? "Pausó" : "Reanudó"} el cron ${kind}${job.simulated ? " (simulado localmente)" : ""}.`,
+          details: { job: job.name, state: job.state, simulated: job.simulated },
+        });
+      } catch {
+        memoryRecorded = false;
+      }
+      sendAdminJson(response, { job, memoryRecorded, ...(memoryRecorded ? {} : { warning: "El cron cambió y se verificó, pero la memoria no pudo guardarse." }) }, memoryRecorded ? 200 : 202);
+      return true;
+    }
+
+    if (pathname === "/api/admin-v69/ean-requests/approve" && method(request) === "POST") {
+      const body = await readAdminJson(request);
+      const ean = normalizeEanV69(body.ean);
+      const expectedRevision = integer(body.expectedRevision, "expectedRevision");
+      const current = await adminRuntime.current(true);
+      const requestRule = current.document.policy.eanRules.requests.find((entry) => entry.ean === ean);
+      if (!requestRule) throw new Error("La solicitud EAN ya no está pendiente.");
+      const discovery = (catalog as CatalogV69 & { discoverySync?: { eanReviewCandidates?: Array<{ ean: string }> } }).discoverySync;
+      const sourceValidated = discovery?.eanReviewCandidates?.some((entry) => entry.ean === ean);
+      const alreadyPresent = catalog.products.some((product) => normalizeEanV69(product.barcode) === ean);
+      if (!sourceValidated && !alreadyPresent) {
+        throw new Error("Ese EAN todavía no tiene evidencia del scan o una ficha actual; no se puede aprobar.");
+      }
+      const policy = structuredClone(current.document.policy);
+      policy.eanRules.requests = policy.eanRules.requests.filter((entry) => entry.ean !== ean);
+      policy.eanRules.include.push({ ...requestRule, note: requestRule.note || "Aprobado tras revisión de fuente." });
+      const saved = await adminRuntime.publishPolicy({ policy, expectedRevision, actor, type: "ean", summary: `Aprueba inclusión EAN ${ean} para el próximo scan.` });
+      sendAdminJson(response, { revision: saved.document.revision });
+      return true;
+    }
+
     if (pathname === "/api/admin-v69/policy" && method(request) === "PUT") {
       const body = await readAdminJson(request);
       const expectedRevision = integer(body.expectedRevision, "expectedRevision");
@@ -135,6 +206,7 @@ export async function handleCatalogAdminRequestV69({
     }
 
     if (pathname === "/api/admin-v69/operations/refresh" && method(request) === "POST") {
+      if (environment.NODE_ENV !== "production") throw new Error("El refresh real está deshabilitado en la vista previa local.");
       const result = await commerceRuntime.refresh(`admin|${new Date().toISOString()}`);
       await adminRuntime.recordMemory({
         actor,
@@ -147,6 +219,7 @@ export async function handleCatalogAdminRequestV69({
     }
 
     if (pathname === "/api/admin-v69/operations/discovery" && method(request) === "POST") {
+      if (environment.NODE_ENV !== "production" && !dependencies.runDiscovery) throw new Error("El scan real está deshabilitado en la vista previa local.");
       const runner = dependencies.runDiscovery || (() => runDiscoveryJobV69(environment));
       const result = await runner();
       await adminRuntime.recordMemory({
@@ -185,6 +258,7 @@ export function adminStateV69({
   const visibleIds = new Set(presented.products.map((product) => product.publicId));
   const counts = new Map<string, { slug: string; name: string; count: number }>();
   const promotionCounts = new Map<string, { slug: string; name: string; count: number }>();
+  const technicalPromotionCounts = new Map<string, { slug: string; name: string; displayName: string; count: number; selected: boolean }>();
   for (const product of catalog.products) {
     const slug = technicalBrandSlugV69(product.brand?.name || product.brand?.slug || "marca");
     const current = counts.get(slug) || { slug, name: product.brand?.name || "Sin marca", count: 0 };
@@ -195,9 +269,20 @@ export function adminStateV69({
       const promotion = promotionCounts.get(displayBrand.slug) || { slug: displayBrand.slug, name: displayBrand.name, count: 0 };
       promotion.count += 1;
       promotionCounts.set(displayBrand.slug, promotion);
+      const disabled = policy.navigation.promotionDisabledTechnicalBrandSlugs;
+      const selected = disabled !== null
+        ? !disabled.includes(slug)
+        : policy.navigation.promotionBrandSlugs === null || policy.navigation.promotionBrandSlugs.includes(displayBrand.slug);
+      const technical = technicalPromotionCounts.get(slug) || { slug, name: product.brand?.name || "Sin marca", displayName: displayBrand.name, count: 0, selected };
+      technical.count += 1;
+      technicalPromotionCounts.set(slug, technical);
     }
   }
   const productByEan = new Map(catalog.products.map((product) => [normalizeEanV69(product.barcode), product]));
+  const reviewCandidates = new Map(
+    ((catalog as CatalogV69 & { discoverySync?: { eanReviewCandidates?: Array<{ ean: string; name: string; brand: string }> } }).discoverySync?.eanReviewCandidates || [])
+      .map((candidate) => [candidate.ean, candidate]),
+  );
   const withStatus = (entries: typeof policy.eanRules.include) => entries.map((entry) => {
     const product = productByEan.get(entry.ean);
     return {
@@ -221,13 +306,31 @@ export function adminStateV69({
       unavailable: presented.products.filter((product) => product.availability === "out_of_stock").length,
       technicalBrands: [...counts.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "es")),
       promotionBrands: [...promotionCounts.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "es")),
+      promotionTechnicalBrands: [...technicalPromotionCounts.values()].sort((left, right) => left.displayName.localeCompare(right.displayName, "es") || left.name.localeCompare(right.name, "es")),
       navigationBrands: navigationBrandsV69(presented, policy),
+      uses: DEFAULT_NEEDS_V69.map((slug) => ({
+        slug,
+        publicCount: presented.products.filter((product) => product.needs?.includes(slug)).length,
+        snapshotCount: catalog.products.filter((product) => product.needs?.includes(slug)).length,
+      })),
+      commerceSyncedAt: catalog.commerceSyncedAt,
+      discoverySyncedAt: (catalog as CatalogV69 & { discoverySync?: { completedAt?: string } }).discoverySync?.completedAt || null,
     },
     runtime,
     policy,
     eanStatus: {
       include: withStatus(policy.eanRules.include),
       exclude: withStatus(policy.eanRules.exclude),
+      requests: policy.eanRules.requests.map((entry) => {
+        const product = productByEan.get(entry.ean);
+        const candidate = reviewCandidates.get(entry.ean);
+        return {
+          ...entry,
+          status: product || candidate ? "reviewable" : "pending",
+          product: product ? { publicId: product.publicId, name: product.name, availability: product.availability } : null,
+          candidate: candidate || null,
+        };
+      }),
     },
     memory: [...document.memory].reverse(),
     snapshots: [...document.snapshots].reverse().map((entry) => ({
@@ -238,14 +341,80 @@ export function adminStateV69({
   };
 }
 
+export function adminProductsV69(catalog: CatalogV69, policy: CatalogPolicyV69, params: URLSearchParams) {
+  const query = (params.get("q") || "").trim().toLocaleLowerCase("es").slice(0, 100);
+  const brand = (params.get("brand") || "").trim().slice(0, 80);
+  const use = (params.get("use") || "").trim();
+  if (use && !DEFAULT_NEEDS_V69.includes(use as typeof DEFAULT_NEEDS_V69[number])) throw new Error("Filtro de uso inválido.");
+  const visibility = params.get("visibility") || "all";
+  if (!["all", "public", "hidden"].includes(visibility)) throw new Error("Filtro de visibilidad inválido.");
+  const pageValue = Number(params.get("page") || 1);
+  if (!Number.isSafeInteger(pageValue) || pageValue < 1 || pageValue > 10_000) throw new Error("Página de catálogo inválida.");
+  const page = pageValue;
+  const pageSize = 30;
+  const matching = catalog.products.filter((product) => {
+    const hidden = isProductExcludedByPolicyV69(product, policy);
+    if (visibility === "public" && hidden || visibility === "hidden" && !hidden) return false;
+    if (brand && technicalBrandSlugV69(product.brand?.name || product.brand?.slug) !== brand) return false;
+    if (use && !product.needs?.includes(use)) return false;
+    if (!query) return true;
+    return [product.name, product.brand?.name, product.barcode, product.sku, product.publicId]
+      .some((value) => String(value || "").toLocaleLowerCase("es").includes(query));
+  });
+  const items = matching.slice((page - 1) * pageSize, page * pageSize).map((product) => {
+    const hidden = isProductExcludedByPolicyV69(product, policy);
+    const presented = hidden ? null : applyProductPolicyV69(product, policy);
+    const brandSlug = technicalBrandSlugV69(product.brand?.name || product.brand?.slug);
+    return {
+      publicId: product.publicId,
+      name: product.name,
+      ean: normalizeEanV69(product.barcode),
+      technicalBrand: product.brand?.name || "Sin marca",
+      displayedBrand: presented?.brand?.name || null,
+      visibility: hidden ? "hidden" : "public",
+      hiddenReason: hidden ? policy.eanRules.exclude.some((entry) => entry.ean === normalizeEanV69(product.barcode)) ? "EAN excluido" : `Marca ${brandSlug} excluida` : null,
+      availability: product.availability,
+      listPrice: presented?.listPrice ?? product.listPrice,
+      offerPrice: presented?.offerPrice ?? product.offerPrice,
+      promotion: presented?.promotion?.label || null,
+      needs: product.needs || [],
+      useEvidence: product.taxonomy?.reasonerVersion === "v69.4-title-line-use" ? "Título y línea" : "Snapshot vigente",
+      taxonomyAttached: product.magentoTaxonomyAttached === true,
+      hasCardImage: Boolean(product.images?.card),
+      hasDetailImage: Boolean(product.images?.detail),
+      sourceMemberships: (product.sourceMemberships || []).map((entry) => entry.viewName).slice(0, 5),
+    };
+  });
+  return { page, pageSize, total: matching.length, items };
+}
+
+export function adminPolicyPreviewV69(catalog: CatalogV69, current: CatalogPolicyV69, proposed: CatalogPolicyV69) {
+  const before = applyCatalogPolicyV69(catalog, current);
+  const after = applyCatalogPolicyV69(catalog, proposed);
+  const beforeIds = new Set(before.products.map((product) => product.publicId));
+  const afterIds = new Set(after.products.map((product) => product.publicId));
+  const names = new Map(catalog.products.map((product) => [product.publicId, product.name]));
+  const hidden = [...beforeIds].filter((id) => !afterIds.has(id));
+  const restored = [...afterIds].filter((id) => !beforeIds.has(id));
+  const promotions = (products: CatalogV69["products"]) => products.filter((product) => product.discountPercent > 0 || product.promotion).length;
+  return {
+    before: { products: before.products.length, promotions: promotions(before.products) },
+    after: { products: after.products.length, promotions: promotions(after.products) },
+    hidden: { count: hidden.length, examples: hidden.slice(0, 5).map((id) => ({ id, name: names.get(id) || id })) },
+    restored: { count: restored.length, examples: restored.slice(0, 5).map((id) => ({ id, name: names.get(id) || id })) },
+    pendingEanRequests: proposed.eanRules.requests.length,
+    note: "Vista previa local de la política; no modifica precios de origen ni ejecuta un scan.",
+  };
+}
+
 export async function runDiscoveryJobV69(environment: CatalogAdminEnvironmentV69) {
-  const project = environment.GOOGLE_CLOUD_PROJECT?.trim();
   const region = environment.V69_DISCOVERY_JOB_REGION?.trim() || "southamerica-east1";
   const job = environment.V69_DISCOVERY_JOB_NAME?.trim();
-  if (!project || !job || !/^[a-z][a-z0-9-]{0,62}$/.test(job)) {
+  if (!job || !/^[a-z][a-z0-9-]{0,62}$/.test(job)) {
     throw new Error("El Job semanal no está configurado para el panel.");
   }
   const auth = new GoogleAuth({ scopes: [CLOUD_SCOPE] });
+  const project = await catalogCloudProjectV69(environment, auth);
   const token = await auth.getAccessToken();
   if (!token) throw new Error("Google Cloud no entregó credenciales para iniciar el scan.");
   const endpoint = `https://run.googleapis.com/v2/projects/${encodeURIComponent(project)}/locations/${encodeURIComponent(region)}/jobs/${encodeURIComponent(job)}:run`;
@@ -263,7 +432,7 @@ export async function runDiscoveryJobV69(environment: CatalogAdminEnvironmentV69
 
 function adminPageV69({ clientId, localMode }: { clientId: string; localMode: boolean }) {
   const bootstrap = JSON.stringify({ clientId, localMode }).replace(/</g, "\\u003c");
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Administración V6.9 | FarmaGreen</title><link rel="icon" href="/logo_farmagreen.png"><link rel="stylesheet" href="/admin-v69-1.css?v=20260826-1"></head><body><header class="admin-top"><img src="/logo_farmagreen.png" alt="FarmaGreen"><div><strong>Administración V6.9</strong><span>Catálogo, navegación y memoria operativa</span></div><button id="logoutAdmin" type="button">Salir</button></header><main><section id="adminLogin" class="admin-login"><h1>Acceso privado</h1><p>Ingresá con la cuenta Google autorizada.</p><div id="googleLogin"></div>${localMode ? '<label>Token local<input id="localAdminToken" type="password" autocomplete="off"><button id="localLogin" type="button">Entrar localmente</button></label>' : ""}<p id="loginError" role="alert"></p></section><section id="adminApp" hidden><nav class="admin-tabs" aria-label="Secciones"><button data-tab="status" class="on">Estado</button><button data-tab="navigation">Navegación</button><button data-tab="ean">Reglas EAN</button><button data-tab="operations">Operaciones</button></nav><section id="adminContent" aria-live="polite"></section></section></main><script type="application/json" id="admin-v69-data">${bootstrap}</script>${clientId ? '<script src="https://accounts.google.com/gsi/client" async defer></script>' : ""}<script type="module" src="/admin-v69-3.js?v=20260826-3"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Administración V6.9 | FarmaGreen</title><link rel="icon" href="/logo_farmagreen.png"><link rel="stylesheet" href="/admin-v69-2.css?v=20260928-2"></head><body><header class="admin-top"><img src="/logo_farmagreen.png" alt="FarmaGreen"><div><strong>Administración V6.9</strong><span>Catálogo, navegación y memoria operativa</span></div><button id="logoutAdmin" type="button">Salir</button></header><main><section id="adminLogin" class="admin-login"><h1>Acceso privado</h1><p>Ingresá con la cuenta Google autorizada.</p><div id="googleLogin"></div>${localMode ? '<label>Token local<input id="localAdminToken" type="password" autocomplete="off"><button id="localLogin" type="button">Entrar localmente</button></label>' : ""}<p id="loginError" role="alert"></p></section><section id="adminApp" hidden><nav class="admin-tabs" aria-label="Secciones"><button data-tab="status" class="on">Estado</button><button data-tab="catalog">Catálogo</button><button data-tab="navigation">Navegación</button><button data-tab="ean">Reglas EAN</button><button data-tab="operations">Operaciones</button></nav><section id="adminContent" aria-live="polite"></section></section></main><script type="application/json" id="admin-v69-data">${bootstrap}</script>${clientId ? '<script src="https://accounts.google.com/gsi/client" async defer></script>' : ""}<script type="module" src="/admin-v69-4.js?v=20260928-2"></script></body></html>`;
 }
 
 function sendAdminHtml(response: http.ServerResponse, body: string) {

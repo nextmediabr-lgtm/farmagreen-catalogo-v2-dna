@@ -20,11 +20,11 @@ import {
   consolidateDetailedGroupsV69,
   enrichListingGroupsV69,
   groupSourceListingsV69,
-  inferTaxonomyV69,
   isCollectionBrandPlaceholderV69,
   newProductFromSourceGroupV69,
   parseProductPageCommerceV7Beta,
 } from "./build-local-v7-beta.mjs";
+import { reconcileCatalogUsesV69 } from "./usage-taxonomy-v69.mjs";
 import {
   filterExcludedProductsV69,
   prepareGcpCatalogV69,
@@ -173,6 +173,7 @@ export async function runCatalogDiscoveryV69({
     completedAt,
     fetchHtml: scopedFetch,
     sources,
+    reviewEans: policyEansV69(policy, "requests"),
   });
   const inclusionEans = policyEansV69(policy, "include");
   const discoveredEans = new Set(
@@ -487,6 +488,7 @@ export async function reconcileCatalogChangesV69({
   completedAt = new Date().toISOString(),
   fetchHtml,
   sources = discoverySourcesV69(),
+  reviewEans = new Set(),
 } = {}) {
   if (!baseCatalog || !Array.isArray(baseCatalog.products)) {
     throw new Error("El scan V6.9 requiere un catálogo base.");
@@ -502,6 +504,7 @@ export async function reconcileCatalogChangesV69({
   const sourceById = new Map(sources.map((source) => [String(source.id), source]));
   const matchedBaseIndexes = new Set();
   const addedPublicIds = [];
+  const eanReviewCandidates = [];
   let positivePending = 0;
 
   for (const group of detailedGroups) {
@@ -534,6 +537,15 @@ export async function reconcileCatalogChangesV69({
       continue;
     }
     const withMemberships = mergeMemberships(candidate, memberships);
+    const candidateEan = normalizeBarcode(withMemberships.barcode);
+    if (reviewEans.has(candidateEan)) {
+      eanReviewCandidates.push({
+        ean: candidateEan,
+        name: String(withMemberships.name || "").slice(0, 160),
+        brand: String(withMemberships.brand?.name || "").slice(0, 80),
+      });
+      continue;
+    }
     products.push(withMemberships);
     addedPublicIds.push(withMemberships.publicId);
   }
@@ -605,6 +617,7 @@ export async function reconcileCatalogChangesV69({
         positive: visibleAddedPublicIds.length,
         positiveExcluded: addedPublicIds.length - visibleAddedPublicIds.length,
         positivePending,
+        eanReviewPending: eanReviewCandidates.length,
         negative: removed.length,
         negativePending: negativePending.length,
         products: reindexed.products.length,
@@ -612,6 +625,7 @@ export async function reconcileCatalogChangesV69({
       addedPublicIds: visibleAddedPublicIds,
       removedPublicIds: removed,
       negativePendingPublicIds: negativePending,
+      eanReviewCandidates,
       searchIndexedAt: completedAt,
       needsIndexedAt: completedAt,
       activationReady:
@@ -640,19 +654,12 @@ export function reindexCatalogV69(catalog, indexedAt = new Date().toISOString())
         entry.name,
         ...(entry.aliases || []),
       ]);
-      const evidence = unique([
-        product.name,
-        product.line,
-        ...evidenceAliases,
-        ...categoryNames,
-        ...viewTerms,
-      ]);
-      const inferred = inferTaxonomyV69(evidence.join(" "), product.brand?.name || "");
+      const inferred = reconcileCatalogUsesV69(product);
       return {
         ...product,
-        primaryCategory: inferred.primaryCategory,
-        categorySlugs: [inferred.primaryCategory],
-        needs: inferred.needs,
+        primaryCategory: inferred?.primaryCategory || product.primaryCategory,
+        categorySlugs: [inferred?.primaryCategory || product.primaryCategory],
+        needs: inferred?.needs || product.needs,
         aliases: unique([
           ...evidenceAliases,
           product.name,
@@ -660,15 +667,14 @@ export function reindexCatalogV69(catalog, indexedAt = new Date().toISOString())
           ...(product.brand?.aliases || []),
           ...categoryNames,
           ...viewTerms,
-          ...inferred.needs,
+          ...(inferred?.needs || product.needs || []),
         ]),
         taxonomy: {
           ...(product.taxonomy && typeof product.taxonomy === "object"
             ? product.taxonomy
             : {}),
-          ...inferred.audit,
+          ...(inferred?.audit || {}),
           indexedAt,
-          evidenceScope: ["name", "brand", "aliases", "magentoCategories"],
         },
       };
     }),
