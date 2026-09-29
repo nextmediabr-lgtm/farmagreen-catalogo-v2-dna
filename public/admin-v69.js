@@ -12,6 +12,7 @@ const USE_LABELS = {
   hidratacion: "Hidratación", limpieza: "Limpieza", solares: "Solares",
   capilar: "Cabello", antiedad: "Antiedad", reparacion: "Reparación",
   nutricion: "Nutrición", "cuidado-diario": "Cuidado diario",
+  fragancias: "Fragancias",
 };
 const S = {
   token: sessionStorage.getItem(TOKEN_KEY) || "",
@@ -160,6 +161,7 @@ function navigationView() {
       <div class="admin-brand-list">${navigation.featuredBrands.map((entry, index) => brandRow(entry, index)).join("")}</div>
     </section>
     <section class="admin-panel"><h2>Productos Saludables</h2><label class="admin-toggle"><input type="checkbox" data-field="umbrella-enabled"${navigation.umbrella.enabled ? " checked" : ""}><span>Mostrar como marca paraguas</span></label><p class="admin-muted">Las marcas PS-only se presentan bajo el paraguas. Las legacy marcadas “conservar” mantienen su nombre.</p></section>
+    <section class="admin-panel"><h2>Perfumes y Fragancias</h2><label class="admin-toggle"><input type="checkbox" data-field="fragrances-enabled"${navigation.fragrancesEnabled !== false ? " checked" : ""}><span>Habilitar colección</span></label><p>${S.state.catalog.fragrances?.public || 0} públicos · ${S.state.catalog.fragrances?.available || 0} disponibles STOM · ${S.state.catalog.fragrances?.withoutStock || 0} ocultos por falta de stock.</p><p class="admin-muted">Sólo se muestran fichas con stock STOM verificado. Entrega o Retiro en 24 hs. Las exclusiones por marca y EAN siguen vigentes. Deshabilitar la colección oculta sus productos.</p></section>
     <section class="admin-panel"><div class="admin-panel-head"><div><h2>Promociones por marca técnica</h2><p>${promotionBrands.filter((entry) => selectedPromotions.has(entry.slug)).length} de ${promotionBrands.length} marcas con señal</p></div><div><button data-action="promotion-all">Seleccionar todas</button> <button data-action="promotion-none">Deseleccionar todas</button></div></div><p class="admin-muted">Productos Saludables sigue siendo una sola marca pública; aquí sus marcas internas se controlan por separado. Desmarcar conserva el producto y el precio regular, pero quita badge, 2×1, descuento y ahorro. Las marcas nuevas con promoción validada se activan por defecto, salvo exclusión explícita.</p><div class="admin-brand-list">${promotionBrands.map((entry) => `<label class="admin-brand-row admin-toggle"><input type="checkbox" data-field="promotion-brand" data-slug="${esc(entry.slug)}"${selectedPromotions.has(entry.slug) ? " checked" : ""}><span><strong>${esc(entry.name)}</strong><small>${esc(entry.displayName)} · ${entry.count} productos con señal promocional</small></span></label>`).join("") || '<p class="admin-muted">No hay promociones detectadas en este snapshot.</p>'}</div></section>
     <section class="admin-panel"><label>Orden inicial<select data-field="default-sort">${["relevancia", "marca", "disponibilidad", "descuento", "precio-asc", "precio-desc", "nombre"].map((value) => `<option value="${value}"${navigation.defaultSort === value ? " selected" : ""}>${value}</option>`).join("")}</select></label><label class="admin-toggle"><input type="checkbox" data-field="show-out-of-stock-sort"${navigation.showOutOfStockSort ? " checked" : ""}><span>Mostrar “Sin stock” en Ordenar</span></label><p class="admin-muted">Activado temporalmente para revisar posibles discontinuados. No excluye productos automáticamente.</p></section>
     <section class="admin-panel"><div class="admin-panel-head"><div><h2>Detectadas, no publicadas</h2><p>${detected.length} marcas técnicas</p></div></div><p class="admin-muted">Deshabilitar excluye todos los productos de esa marca del catálogo público. El cambio se aplica al usar Guardar y publicar.</p><div class="admin-detected">${detected.slice(0, 120).map((entry) => `<div><span><strong>${esc(entry.name)}</strong><small>${entry.count} SKU</small></span><button data-action="add-brand" data-slug="${esc(entry.slug)}" data-name="${esc(entry.name)}">Agregar</button><button data-action="disable-brand" data-slug="${esc(entry.slug)}" data-name="${esc(entry.name)}">Deshabilitar</button></div>`).join("") || '<p class="admin-muted">No hay marcas técnicas pendientes.</p>'}</div></section>
@@ -471,6 +473,7 @@ document.addEventListener("change", (event) => {
     return;
   }
   if (event.target.matches('[data-field="umbrella-enabled"]')) S.policy.navigation.umbrella.enabled = event.target.checked;
+  if (event.target.matches('[data-field="fragrances-enabled"]')) S.policy.navigation.fragrancesEnabled = event.target.checked;
   if (event.target.matches('[data-field="default-sort"]')) S.policy.navigation.defaultSort = event.target.value;
 });
 

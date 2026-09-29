@@ -41,6 +41,7 @@ const NEED_LABELS = {
     reparacion: "Reparación",
     nutricion: "Nutrición",
     "cuidado-diario": "Cuidado diario",
+    fragancias: "Fragancias",
 };
 const SEARCH_ALIASES = {
     eucrin: ["eucerin"],
@@ -635,10 +636,11 @@ function compareRelevance(left, right) {
     return 0;
 }
 function availabilityMeta(product) {
+    var _a;
     if ((product === null || product === void 0 ? void 0 : product.availability) === "available_reference") {
         return {
-            className: "",
-            label: "Disponible para Entrega",
+            className: ((_a = product.needs) === null || _a === void 0 ? void 0 : _a.includes("fragancias")) ? " is-fragrance" : "",
+            label: product.availabilityLabel || "Disponible para Entrega",
             title: "Estado observado en Rosario durante la última verificación; consultá para confirmar.",
         };
     }
@@ -974,6 +976,7 @@ function catalogCopy() {
     return { mode: "Ofertas", title: "Oportunidades de hoy", context: "Los mejores descuentos disponibles primero.", nav: "ofertas" };
 }
 function render(historyMode = "replace") {
+    document.body.classList.toggle("v69-fragrances", S.view === "perfumes-fragancias" || S.need === "fragancias");
     const hasOffers = S.all.some(isOffer);
     if (S.scope === "ofertas" && !hasOffers)
         S.scope = "todo";

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { FRAGRANCES_COLLECTION_V69, isFragranceProductV69 } from "../scripts/catalog-collections-v69.mjs";
 import { OAuth2Client } from "google-auth-library";
 import {
   loadBaseCatalogV69,
@@ -479,6 +480,8 @@ export function validateSyncedCatalogV69(
   const candidate = value as Partial<SyncedCatalogV69>;
   const sync = candidate.commerceSync;
   const discovery = candidate.discoverySync;
+  const hasFragrances = Array.isArray(candidate.products) && candidate.products.some(isFragranceProductV69);
+  const expectedSources = EXPECTED_SOURCE_COUNT + (hasFragrances ? 1 : 0);
   if (
     Number(candidate.version) !== 6.9 ||
     !Array.isArray(candidate.products) ||
@@ -488,8 +491,9 @@ export function validateSyncedCatalogV69(
     sync.status !== "completed" ||
     !validTimestamp(sync.completedAt) ||
     !Array.isArray(sync.sources) ||
-    sync.sources.length !== EXPECTED_SOURCE_COUNT ||
-    new Set(sync.sources.map((source) => String(source.id))).size !== EXPECTED_SOURCE_COUNT ||
+    sync.sources.length !== expectedSources ||
+    new Set(sync.sources.map((source) => String(source.id))).size !== expectedSources ||
+    (hasFragrances && !sync.sources.some((source) => source.id === FRAGRANCES_COLLECTION_V69.slug)) ||
     sync.sources.some((source) => source.status !== "completed")
   ) {
     throw new Error("Snapshot V6.9 incompleto.");

@@ -84,6 +84,19 @@ test("V6.9 usa el catálogo base sólo si el snapshot remoto no está disponible
   assert.equal(runtime.health().lastFailureAt, "2026-08-03T11:00:00.000Z");
 });
 
+test("el snapshot con Fragancias exige su fuente extra sin romper los snapshots de dieciséis fuentes", () => {
+  const base = syncedCatalog("2026-09-29T10:00:00.000Z");
+  const fragrance = { ...base.products[0], primaryCategory: "fragancias" };
+  const expanded = { ...base, products: [fragrance], commerceSync: {
+    ...base.commerceSync,
+    sources: [...base.commerceSync.sources, { id: "perfumes-fragancias", status: "completed" as const }],
+  } };
+  assert.equal(validateSyncedCatalogV69(base), base);
+  assert.equal(validateSyncedCatalogV69(expanded), expanded);
+  assert.throws(() => validateSyncedCatalogV69({ ...expanded, commerceSync: base.commerceSync }), /incompleto/);
+  assert.throws(() => validateSyncedCatalogV69({ ...expanded, commerceSync: { ...expanded.commerceSync, sources: [...base.commerceSync.sources, { id: "otra-fuente", status: "completed" }] } }), /incompleto/);
+});
+
 test("V6.9 rechaza snapshots con disponibilidad pendiente", () => {
   const valid = syncedCatalog("2026-08-03T10:00:00.000Z");
   assert.equal(validateSyncedCatalogV69(valid), valid);

@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { GoogleAuth } from "google-auth-library";
 import {
   GPS_SOURCES_V69,
+  GPS_FRAGRANCES_SOURCE_V69,
+  sourcesForCatalogV69,
   crawlAllSources,
   createLocationScopedFetchV69,
   inventoryScopeV69,
@@ -57,6 +59,7 @@ const DERIVED_TAXONOMY_ALIASES_V69 = new Set([
 ]);
 
 const SOURCE_FACETS_V69 = Object.freeze({
+  [GPS_FRAGRANCES_SOURCE_V69.id]: GPS_FRAGRANCES_SOURCE_V69.facet,
   "5930": facet("eucerin", "Eucerin", ["eucerin"]),
   "5704": facet("bagovit", "Bagóvit", ["bagovit", "bagóvit"]),
   "6827": facet("cerave", "CeraVe", ["cerave", "cera ve"]),
@@ -92,7 +95,7 @@ export function discoverySourcesV69(sources = GPS_SOURCES_V69) {
     return {
       ...source,
       facet: configured,
-      membershipOnly: id === "9100",
+      membershipOnly: id === "9100" || Boolean(source.membershipOnly),
     };
   });
 }
@@ -141,7 +144,7 @@ export async function runCatalogDiscoveryV69({
     );
   const policy = providedPolicy || (await loadLocalAdminPolicyV69(rootDir));
   const effectiveExclusions = applyPolicyEanRulesV69(exclusions, policy);
-  const sources = discoverySourcesV69();
+  const sources = discoverySourcesV69(sourcesForCatalogV69(baseCatalog));
   const scopedFetch =
     fetchHtml ||
     (await createLocationScopedFetchV69({

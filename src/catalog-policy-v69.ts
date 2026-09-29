@@ -1,4 +1,5 @@
 import type { CatalogV69, ProductV69 } from "./data-v69.js";
+import { FRAGRANCES_COLLECTION_V69, hasVerifiedStockV69, isFragranceProductV69 } from "../scripts/catalog-collections-v69.mjs";
 
 export const HEALTHY_COLLECTION_SLUG_V69 = "productos-saludables";
 export const HEALTHY_COLLECTION_NAME_V69 = "Productos Saludables";
@@ -33,6 +34,7 @@ export const DEFAULT_NEEDS_V69 = Object.freeze([
   "reparacion",
   "nutricion",
   "cuidado-diario",
+  "fragancias",
 ]);
 
 const SORT_VALUES_V69 = new Set([
@@ -69,6 +71,7 @@ export type CatalogPolicyV69 = {
       preserveBrandSlugs: string[];
     };
     needs: string[];
+    fragrancesEnabled: boolean;
     defaultSort: string;
     showOutOfStockSort: boolean;
     // null preserves the legacy all-brands behavior until a curated list is published.
@@ -108,6 +111,7 @@ export function defaultCatalogPolicyV69(): CatalogPolicyV69 {
         preserveBrandSlugs: featuredBrands.map((entry) => entry.slug),
       },
       needs: [...DEFAULT_NEEDS_V69],
+      fragrancesEnabled: true,
       defaultSort: "relevancia",
       showOutOfStockSort: true,
       promotionBrandSlugs: null,
@@ -213,6 +217,7 @@ export function validateCatalogPolicyV69(value: unknown): CatalogPolicyV69 {
         preserveBrandSlugs,
       },
       needs,
+      fragrancesEnabled: navigation.fragrancesEnabled !== false,
       defaultSort,
       showOutOfStockSort: navigation.showOutOfStockSort !== false,
       promotionBrandSlugs,
@@ -298,6 +303,8 @@ export function applyCatalogPolicyV69(catalog: CatalogV69, policy: CatalogPolicy
 }
 
 export function isProductExcludedByPolicyV69(product: ProductV69, policy: CatalogPolicyV69) {
+  if (isFragranceProductV69(product) &&
+      (policy.navigation.fragrancesEnabled === false || !hasVerifiedStockV69(product))) return true;
   const ean = normalizeEanV69(product.barcode);
   const excludedBrand = policy.navigation.excludedBrandSlugs.includes(
     technicalBrandSlugV69(product.brand?.name || product.brand?.slug),
@@ -355,6 +362,16 @@ export function navigationBrandsV69(catalog: CatalogV69, policy: CatalogPolicyV6
       slug: policy.navigation.umbrella.slug,
       name: policy.navigation.umbrella.name,
       count: catalog.products.filter(isHealthyCollectionProductV69).length,
+      kind: "collection",
+    });
+  }
+  const fragrances = catalog.products.filter((product) =>
+    isFragranceProductV69(product) && !isProductExcludedByPolicyV69(product, policy));
+  if (policy.navigation.fragrancesEnabled !== false && fragrances.length) {
+    brands.push({
+      slug: FRAGRANCES_COLLECTION_V69.slug,
+      name: FRAGRANCES_COLLECTION_V69.name,
+      count: fragrances.length,
       kind: "collection",
     });
   }

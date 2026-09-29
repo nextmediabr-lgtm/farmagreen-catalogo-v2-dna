@@ -10,6 +10,61 @@ import {
   validateCatalogPolicyV69,
 } from "../src/catalog-policy-v69.js";
 import type { CatalogV69, ProductV69 } from "../src/data-v69.js";
+import { FRAGRANCES_COLLECTION_V69 } from "../scripts/catalog-collections-v69.mjs";
+import { reconcileCatalogUsesV69 } from "../scripts/usage-taxonomy-v69.mjs";
+import { catalogPageV69, productPageV69 } from "../src/render-v69.js";
+
+test("el tema visual queda limitado a la colección, uso y fichas de Fragancias", () => {
+  const fragrance = { ...product("perfume-theme", "Nautica", [FRAGRANCES_COLLECTION_V69]), primaryCategory: "fragancias", needs: ["fragancias"] };
+  const skincare = { ...product("dermo-theme", "Eucerin", []), name: "Crema sin perfume", primaryCategory: "cuerpo", needs: ["hidratacion"] };
+  const catalog = fixtureCatalog([fragrance, skincare]);
+  const policy = defaultCatalogPolicyV69();
+  const origin = "http://127.0.0.1:8116";
+  const bodyClass = (html: string) => /<body class="([^"]*)"/.exec(html)?.[1] || "";
+
+  assert.match(bodyClass(catalogPageV69(catalog, new URLSearchParams("scope=todo&view=perfumes-fragancias"), origin, { policy })), /\bv69-fragrances\b/);
+  assert.match(bodyClass(catalogPageV69(catalog, new URLSearchParams("scope=todo&need=fragancias"), origin, { policy })), /\bv69-fragrances\b/);
+  assert.match(bodyClass(productPageV69(fragrance, [], origin, policy)), /\bv69-fragrances\b/);
+  for (const query of ["scope=todo", "scope=todo&marca=Eucerin", "scope=todo&view=productos-saludables"]) {
+    assert.doesNotMatch(bodyClass(catalogPageV69(catalog, new URLSearchParams(query), origin, { policy })), /\bv69-fragrances\b/);
+  }
+  assert.doesNotMatch(bodyClass(productPageV69(skincare, [], origin, policy)), /\bv69-fragrances\b/);
+});
+
+test("Fragancias conserva stock en el snapshot pero oculta agotados, desconocidos y exclusiones al público", () => {
+  const policy = defaultCatalogPolicyV69();
+  const fragrance = (id: string) => ({ ...product(id, "Nautica", [FRAGRANCES_COLLECTION_V69]), primaryCategory: "fragancias", needs: ["fragancias"] });
+  const available = fragrance("perfume-stock");
+  const noStock = { ...fragrance("perfume-zero"), availability: "out_of_stock" as const };
+  const unknown = { ...fragrance("perfume-unknown"), availability: "unknown" as const, availabilityCheckedAt: null };
+  const undated = { ...fragrance("perfume-undated"), availabilityCheckedAt: null };
+  const excluded = { ...fragrance("perfume-excluded"), barcode: "3337875694469" };
+  policy.eanRules.exclude.push({ ean: excluded.barcode, note: "", createdAt: "2026-09-29T10:00:00.000Z" });
+  const skincare = { ...product("dermo", "Eucerin", []), name: "Loción sin perfume", primaryCategory: "cuerpo", needs: ["hidratacion"], availability: "out_of_stock" as const };
+  const catalog = fixtureCatalog([available, noStock, unknown, undated, excluded, skincare]);
+  const visible = applyCatalogPolicyV69(catalog, policy);
+  assert.deepEqual(visible.products.map(p => p.publicId), [available.publicId, skincare.publicId]);
+  assert.equal(catalog.products.length, 6);
+  const navigation = navigationBrandsV69(catalog, policy);
+  assert.equal(navigation.find(p => p.slug === FRAGRANCES_COLLECTION_V69.slug)?.count, 1);
+  assert.equal(navigation.some(p => p.kind === "brand" && p.name === "Nautica"), false);
+  policy.navigation.fragrancesEnabled = false;
+  assert.deepEqual(applyCatalogPolicyV69(catalog, policy).products.map(p => p.publicId), [skincare.publicId]);
+  assert.equal(navigationBrandsV69(catalog, policy).some(p => p.slug === FRAGRANCES_COLLECTION_V69.slug), false);
+  policy.navigation.fragrancesEnabled = true;
+  policy.navigation.excludedBrandSlugs.push("nautica");
+  assert.deepEqual(applyCatalogPolicyV69(catalog, policy).products.map(p => p.publicId), [skincare.publicId]);
+});
+
+test("el uso Fragancias viene de su colección GPS y no de descripciones 'sin perfume'", () => {
+  const perfume = { ...product("edp", "Nautica", [FRAGRANCES_COLLECTION_V69]), name: "Voyage EDP x 100 ml" };
+  assert.deepEqual(reconcileCatalogUsesV69(perfume)?.needs, ["fragancias"]);
+  const skincare = { ...product("dermo", "Vichy", []), name: "Crema hidratante sin fragancia", primaryCategory: "cuerpo", needs: ["hidratacion"] };
+  assert.notEqual(reconcileCatalogUsesV69(skincare)?.primaryCategory, "fragancias");
+  const legacy = structuredClone(defaultCatalogPolicyV69()) as unknown as { navigation: Record<string, unknown> };
+  delete legacy.navigation.fragrancesEnabled;
+  assert.equal(validateCatalogPolicyV69(legacy).navigation.fragrancesEnabled, true);
+});
 
 test("la navegación separa marcas legacy del paraguas Productos Saludables", () => {
   const policy = defaultCatalogPolicyV69();

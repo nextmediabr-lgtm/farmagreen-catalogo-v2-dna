@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { hasVerifiedStockV69, isFragranceProductV69 } from "../scripts/catalog-collections-v69.mjs";
 import type http from "node:http";
 import { GoogleAuth } from "google-auth-library";
 import type { CommerceRuntimeV69 } from "./commerce-runtime-v69.js";
@@ -302,6 +303,12 @@ export function adminStateV69({
     catalog: {
       products: presented.products.length,
       rawProducts: catalog.products.length,
+      fragrances: {
+        snapshot: catalog.products.filter(isFragranceProductV69).length,
+        available: catalog.products.filter((product) => isFragranceProductV69(product) && hasVerifiedStockV69(product)).length,
+        public: presented.products.filter(isFragranceProductV69).length,
+        withoutStock: catalog.products.filter((product) => isFragranceProductV69(product) && !hasVerifiedStockV69(product)).length,
+      },
       available: presented.products.filter((product) => product.availability === "limited").length,
       unavailable: presented.products.filter((product) => product.availability === "out_of_stock").length,
       technicalBrands: [...counts.values()].sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, "es")),
@@ -372,13 +379,17 @@ export function adminProductsV69(catalog: CatalogV69, policy: CatalogPolicyV69, 
       technicalBrand: product.brand?.name || "Sin marca",
       displayedBrand: presented?.brand?.name || null,
       visibility: hidden ? "hidden" : "public",
-      hiddenReason: hidden ? policy.eanRules.exclude.some((entry) => entry.ean === normalizeEanV69(product.barcode)) ? "EAN excluido" : `Marca ${brandSlug} excluida` : null,
+      hiddenReason: hidden ? isFragranceProductV69(product) && !hasVerifiedStockV69(product)
+        ? "Sin stock STOM verificado"
+        : isFragranceProductV69(product) && policy.navigation.fragrancesEnabled === false
+          ? "Colección Fragancias deshabilitada"
+          : policy.eanRules.exclude.some((entry) => entry.ean === normalizeEanV69(product.barcode)) ? "EAN excluido" : `Marca ${brandSlug} excluida` : null,
       availability: product.availability,
       listPrice: presented?.listPrice ?? product.listPrice,
       offerPrice: presented?.offerPrice ?? product.offerPrice,
       promotion: presented?.promotion?.label || null,
       needs: product.needs || [],
-      useEvidence: product.taxonomy?.reasonerVersion === "v69.4-title-line-use" ? "Título y línea" : "Snapshot vigente",
+      useEvidence: isFragranceProductV69(product) ? "Colección GPS Perfumes y Fragancias" : product.taxonomy?.reasonerVersion === "v69.4-title-line-use" ? "Título y línea" : "Snapshot vigente",
       taxonomyAttached: product.magentoTaxonomyAttached === true,
       hasCardImage: Boolean(product.images?.card),
       hasDetailImage: Boolean(product.images?.detail),
@@ -432,7 +443,7 @@ export async function runDiscoveryJobV69(environment: CatalogAdminEnvironmentV69
 
 function adminPageV69({ clientId, localMode }: { clientId: string; localMode: boolean }) {
   const bootstrap = JSON.stringify({ clientId, localMode }).replace(/</g, "\\u003c");
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Administración V6.9 | FarmaGreen</title><link rel="icon" href="/logo_farmagreen.png"><link rel="stylesheet" href="/admin-v69-2.css?v=20260928-2"></head><body><header class="admin-top"><img src="/logo_farmagreen.png" alt="FarmaGreen"><div><strong>Administración V6.9</strong><span>Catálogo, navegación y memoria operativa</span></div><button id="logoutAdmin" type="button">Salir</button></header><main><section id="adminLogin" class="admin-login"><h1>Acceso privado</h1><p>Ingresá con la cuenta Google autorizada.</p><div id="googleLogin"></div>${localMode ? '<label>Token local<input id="localAdminToken" type="password" autocomplete="off"><button id="localLogin" type="button">Entrar localmente</button></label>' : ""}<p id="loginError" role="alert"></p></section><section id="adminApp" hidden><nav class="admin-tabs" aria-label="Secciones"><button data-tab="status" class="on">Estado</button><button data-tab="catalog">Catálogo</button><button data-tab="navigation">Navegación</button><button data-tab="ean">Reglas EAN</button><button data-tab="operations">Operaciones</button></nav><section id="adminContent" aria-live="polite"></section></section></main><script type="application/json" id="admin-v69-data">${bootstrap}</script>${clientId ? '<script src="https://accounts.google.com/gsi/client" async defer></script>' : ""}<script type="module" src="/admin-v69-4.js?v=20260928-2"></script></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Administración V6.9 | FarmaGreen</title><link rel="icon" href="/logo_farmagreen.png"><link rel="stylesheet" href="/admin-v69-2.css?v=20260929-fragrancias-1"></head><body><header class="admin-top"><img src="/logo_farmagreen.png" alt="FarmaGreen"><div><strong>Administración V6.9</strong><span>Catálogo, navegación y memoria operativa</span></div><button id="logoutAdmin" type="button">Salir</button></header><main><section id="adminLogin" class="admin-login"><h1>Acceso privado</h1><p>Ingresá con la cuenta Google autorizada.</p><div id="googleLogin"></div>${localMode ? '<label>Token local<input id="localAdminToken" type="password" autocomplete="off"><button id="localLogin" type="button">Entrar localmente</button></label>' : ""}<p id="loginError" role="alert"></p></section><section id="adminApp" hidden><nav class="admin-tabs" aria-label="Secciones"><button data-tab="status" class="on">Estado</button><button data-tab="catalog">Catálogo</button><button data-tab="navigation">Navegación</button><button data-tab="ean">Reglas EAN</button><button data-tab="operations">Operaciones</button></nav><section id="adminContent" aria-live="polite"></section></section></main><script type="application/json" id="admin-v69-data">${bootstrap}</script>${clientId ? '<script src="https://accounts.google.com/gsi/client" async defer></script>' : ""}<script type="module" src="/admin-v69-5.js?v=20260929-fragrancias-1"></script></body></html>`;
 }
 
 function sendAdminHtml(response: http.ServerResponse, body: string) {

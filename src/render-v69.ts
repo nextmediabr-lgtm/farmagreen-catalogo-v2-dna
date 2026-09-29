@@ -7,6 +7,7 @@ import {
   type PublicAvailabilityV69,
 } from "./data-v69.js";
 import type { ResponsiveImageSet } from "./data.js";
+import { FRAGRANCES_AVAILABILITY_LABEL_V69, FRAGRANCES_COLLECTION_V69, isFragranceProductV69 } from "../scripts/catalog-collections-v69.mjs";
 import {
   applyCatalogPolicyV69,
   applyProductPolicyV69,
@@ -41,6 +42,7 @@ const NEEDS = [
   { slug: "reparacion", label: "Reparación" },
   { slug: "nutricion", label: "Nutrición" },
   { slug: "cuidado-diario", label: "Cuidado diario" },
+  { slug: "fragancias", label: "Fragancias" },
 ] as const;
 
 const NEED_LABELS = new Map<string, string>(NEEDS.map((need) => [need.slug, need.label]));
@@ -106,6 +108,7 @@ export type PublicProductV69 = {
   discountPercent: number;
   promotion?: PromotionV69;
   availability: PublicAvailabilityV69;
+  availabilityLabel: string;
   availabilityCheckedAt: string | null;
   images: {
     card: string;
@@ -317,7 +320,7 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
       context: context.state,
     })}</script>`,
     {
-      bodyClass: "v65 v66 v67 v69",
+      bodyClass: `v65 v66 v67 v69${context.state.view === FRAGRANCES_COLLECTION_V69.slug || context.state.need === "fragancias" ? " v69-fragrances" : ""}`,
       origin,
       canonicalPath,
       ogType: "website",
@@ -569,7 +572,7 @@ export function productPageV69(
       },
     })}</script>`,
     {
-      bodyClass: "v65 v66 v67 v69 product-detail",
+      bodyClass: `v65 v66 v67 v69 product-detail${isFragranceProductV69(product) ? " v69-fragrances" : ""}`,
       origin,
       canonicalPath: productPath,
       ogType: "product",
@@ -1273,7 +1276,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-3.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-13.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-4.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-14.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
 }
 
 function cardV69(product: ProductV69, _origin = "http://127.0.0.1:8109", priority = false) {
@@ -1298,12 +1301,12 @@ function stockBadgeV69(product: ProductV69, detail = false) {
     ? "Consultar Disponibilidad"
     : unverified
       ? "Consultar Disponibilidad"
-      : "Disponible para Entrega";
+      : isFragranceProductV69(product) ? FRAGRANCES_AVAILABILITY_LABEL_V69 : "Disponible para Entrega";
   const checked = product.availabilityCheckedAt ? shortDateV69(product.availabilityCheckedAt) : "";
   const freshness = checked
     ? `Verificado en Rosario ${checked}`
     : "Confirmamos disponibilidad por WhatsApp";
-  return `<p class="v69-stock${unavailable ? " is-unavailable" : ""}${unverified ? " is-unverified" : ""}${detail ? " is-pdp" : ""}"><span aria-hidden="true"></span><strong>${label}</strong>${detail ? `<small>${e(freshness)}</small>` : ""}</p>`;
+  return `<p class="v69-stock${unavailable ? " is-unavailable" : ""}${unverified ? " is-unverified" : ""}${isFragranceProductV69(product) ? " is-fragrance" : ""}${detail ? " is-pdp" : ""}"><span aria-hidden="true"></span><strong>${label}</strong>${detail ? `<small>${e(freshness)}</small>` : ""}</p>`;
 }
 
 export function availabilitySummaryV69(products: ProductV69[]) {
@@ -1454,6 +1457,9 @@ function publicProductV69(product: ProductV69): PublicProductV69 {
     discountPercent: product.discountPercent,
     ...(product.promotion ? { promotion: { ...product.promotion } } : {}),
     availability: publicAvailabilityV69(product),
+    availabilityLabel: isFragranceProductV69(product) && product.availability === "limited"
+      ? FRAGRANCES_AVAILABILITY_LABEL_V69
+      : product.availability === "limited" ? "Disponible para Entrega" : "Consultar Disponibilidad",
     availabilityCheckedAt: product.availabilityCheckedAt,
     images: {
       card: safeImage(product, "card"),

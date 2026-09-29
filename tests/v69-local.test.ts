@@ -509,8 +509,8 @@ test("SSR V6.9 respeta los órdenes, filtra sin stock y mantiene marca/necesidad
       assert.doesNotMatch(html, /Disponible para Entrega/);
     }
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-13\.js/);
-    assert.match(html, /styles-v6-9-3\.css/);
+    assert.match(html, /app-v6-9-14\.js/);
+    assert.match(html, /styles-v6-9-4\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
     assert.doesNotMatch(html, /gpsfarma/i);
@@ -888,8 +888,8 @@ test("los activos versionados V6.9 usan Brotli y caché inmutable fuera del prev
   const origin = await listen(server);
   try {
     const [appResponse, cssResponse, logoResponse] = await Promise.all([
-      fetch(`${origin}/app-v6-9-13.js`, { headers: { "accept-encoding": "br" } }),
-      fetch(`${origin}/styles-v6-9-3.css`, { headers: { "accept-encoding": "br" } }),
+      fetch(`${origin}/app-v6-9-14.js`, { headers: { "accept-encoding": "br" } }),
+      fetch(`${origin}/styles-v6-9-4.css`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/logo_farmagreen-v69-1.png`, { headers: { "accept-encoding": "br" } }),
     ]);
     for (const response of [appResponse, cssResponse]) {
@@ -902,6 +902,24 @@ test("los activos versionados V6.9 usan Brotli y caché inmutable fuera del prev
     assert.equal(logoResponse.status, 200);
     assert.equal(logoResponse.headers.get("content-encoding"), null);
     assert.equal(logoResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  } finally {
+    await close(server);
+  }
+});
+
+test("el motivo floral público es un JPEG ligero y no abre el directorio de activos", async () => {
+  const server = app({ NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" });
+  const origin = await listen(server);
+  try {
+    for (const version of [1, 2]) {
+      const response = await fetch(`${origin}/fragrances-luxury-botanical-v${version}.jpg`);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("content-type"), "image/jpeg");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      assert.deepEqual([...bytes.slice(0, 2)], [0xff, 0xd8]);
+      assert.ok(bytes.length < 200_000);
+    }
+    assert.equal((await fetch(`${origin}/.codex-artifacts/perfumes-preview/luxury-background.prompt.md`)).status, 403);
   } finally {
     await close(server);
   }
@@ -930,10 +948,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-13.js`),
+      fetch(`${origin}/app-v6-9-14.js`),
       fetch(`${origin}/analytics-v69-4.js`),
       fetch(`${origin}/meta-pixel-v69-3.js`),
-      fetch(`${origin}/styles-v6-9-3.css`),
+      fetch(`${origin}/styles-v6-9-4.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
       fetch(`${origin}/robots.txt`),
       fetch(`${origin}/sitemap.xml`),
@@ -991,6 +1009,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       "aliases",
       "availability",
       "availabilityCheckedAt",
+      "availabilityLabel",
       "barcode",
       "brand",
       "catalogViews",
@@ -1039,12 +1058,12 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(home, /Farmacia y Dermocosmetica, Catalogo de Precios y Promociones/);
     assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
-    assert.match(root, /styles-v6-9-3\.css/);
+    assert.match(root, /styles-v6-9-4\.css/);
     assert.match(root, /measurement-loader-v69-1\.js/);
-    assert.match(root, /app-v6-9-13\.js/);
+    assert.match(root, /app-v6-9-14\.js/);
     assert.match(root, /data-analytics-src="\/analytics-v69-4\.js"/);
     assert.match(root, /data-meta-src="\/meta-pixel-v69-3\.js"/);
-    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-13.js"));
+    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-14.js"));
     assert.equal((root.match(/logo_farmagreen-v69-1\.png/g) || []).length >= 2, true);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);

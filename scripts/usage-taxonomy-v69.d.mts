@@ -11,4 +11,6 @@ export function reconcileCatalogUsesV69(product: {
   brand?: { name?: string };
   primaryCategory: string;
   needs: string[];
+  catalogFacets?: Array<{ slug: string; kind: string }>;
+  sourceMemberships?: Array<{ viewSlug: string; viewKind: string }>;
 }): InferredTaxonomyV69 | null;

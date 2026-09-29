@@ -39,6 +39,7 @@ const NEED_LABELS = {
   reparacion: "Reparación",
   nutricion: "Nutrición",
   "cuidado-diario": "Cuidado diario",
+  fragancias: "Fragancias",
 };
 
 const SEARCH_ALIASES = {
@@ -664,8 +665,8 @@ function compareRelevance(left, right) {
 function availabilityMeta(product) {
   if (product?.availability === "available_reference") {
     return {
-      className: "",
-      label: "Disponible para Entrega",
+      className: product.needs?.includes("fragancias") ? " is-fragrance" : "",
+      label: product.availabilityLabel || "Disponible para Entrega",
       title: "Estado observado en Rosario durante la última verificación; consultá para confirmar.",
     };
   }
@@ -1007,6 +1008,7 @@ function catalogCopy() {
 }
 
 function render(historyMode = "replace") {
+  document.body.classList.toggle("v69-fragrances", S.view === "perfumes-fragancias" || S.need === "fragancias");
   const hasOffers = S.all.some(isOffer);
   if (S.scope === "ofertas" && !hasOffers) S.scope = "todo";
   const offersEmpty = $("#offersEmptyV69");

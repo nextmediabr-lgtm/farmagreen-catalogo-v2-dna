@@ -13,6 +13,8 @@ import {
 import {
   DEFAULT_INVENTORY_SCOPE_V69,
   GPS_SOURCES_V69,
+  GPS_FRAGRANCES_SOURCE_V69,
+  sourcesForCatalogV69,
   crawlSource,
   inventoryScopeV69,
   normalizeGpsImagePath,
@@ -50,6 +52,15 @@ const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtur
 const PAGE_1 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-1.html"), "utf8");
 const PAGE_2 = await fs.readFile(path.join(FIXTURES, "gpsfarma-list-page-2.html"), "utf8");
 const EUCERIN = GPS_SOURCES_V69.find((source) => source.id === "5930");
+
+test("la colección Fragancias se incorpora al refresh diario y al scan conservando STOM y las fuentes existentes", () => {
+  assert.equal(sourcesForCatalogV69({ products: [] }).length, 16);
+  const sources = sourcesForCatalogV69({ products: [{ catalogFacets: [GPS_FRAGRANCES_SOURCE_V69.facet] }] });
+  assert.equal(sources.length, 17);
+  assert.equal(sources.at(-1).pathname, "/categorias/perfumes-y-fragancias.html");
+  assert.equal(discoverySourcesV69(sources).at(-1).membershipOnly, true);
+  assert.match(sourceStartUrl(sources.at(-1)), /categorias\/perfumes-y-fragancias.html/);
+});
 
 test("declara exactamente las 16 fuentes comerciales de V6.9 con las marcas incorporadas en STOM", () => {
   assert.equal(GPS_SOURCES_V69.length, 16);

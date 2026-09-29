@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchTrustedHtml, isPermanentMissingGpsPage, trustedSourceUrl } from "./gpsfarma-http.mjs";
+import { FRAGRANCES_COLLECTION_V69, isFragranceProductV69 } from "./catalog-collections-v69.mjs";
 import {
   bestProductCandidate,
   decodeEntities,
@@ -22,6 +23,16 @@ export const DEFAULT_INVENTORY_SCOPE_V69 = Object.freeze({
 });
 
 const LOCATION_ENDPOINT_V69 = "/rest/V1/gpsfarma/geolocation/customer/location";
+
+export const GPS_FRAGRANCES_SOURCE_V69 = Object.freeze({
+  id: FRAGRANCES_COLLECTION_V69.slug,
+  catalogBrandId: FRAGRANCES_COLLECTION_V69.slug,
+  catalogBrandName: FRAGRANCES_COLLECTION_V69.name,
+  mode: "category",
+  pathname: "/categorias/perfumes-y-fragancias.html",
+  membershipOnly: true,
+  facet: FRAGRANCES_COLLECTION_V69,
+});
 
 export const GPS_SOURCES_V69 = Object.freeze([
   { id: "5930", catalogBrandId: "5930", catalogBrandName: "Eucerin", mode: "brand" },
@@ -120,6 +131,14 @@ export const GPS_SOURCES_V69 = Object.freeze([
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0 Safari/537.36";
+
+// A catalog carrying this collection refreshes it with the same daily job.
+// Existing sixteen-source snapshots keep their original contract.
+export function sourcesForCatalogV69(catalog) {
+  return (catalog?.products || []).some(isFragranceProductV69)
+    ? [...GPS_SOURCES_V69, GPS_FRAGRANCES_SOURCE_V69]
+    : GPS_SOURCES_V69;
+}
 
 export function trustedGpsUrl(value) {
   return trustedSourceUrl(value, GPS_ORIGIN);
@@ -955,7 +974,7 @@ async function addDirectProductFallbacksV69(
 export async function runCommercialSync({
   rootDir = ROOT,
   apply = false,
-  sources = GPS_SOURCES_V69,
+  sources,
   providedBaseCatalog,
   fetchHtml,
   inventoryScope = inventoryScopeV69(),
@@ -975,6 +994,7 @@ export async function runCommercialSync({
     : path.join(dataDir, "catalog-v68.json");
   const baseCatalog =
     providedBaseCatalog || JSON.parse(await fs.readFile(inputPath, "utf8"));
+  sources ||= sourcesForCatalogV69(baseCatalog);
   const scopedFetchHtml =
     fetchHtml ||
     (await createLocationScopedFetchV69({

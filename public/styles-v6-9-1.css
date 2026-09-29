@@ -1920,3 +1920,53 @@ body.v69 .v69-footer-instagram span{font-size:11px;line-height:1.1}
   body.v69 .v69-footer-contact{justify-items:center;text-align:center}
   body.v69 .v69-footer-instagram{justify-self:center}
 }
+
+/* Keep the 24-hour collection message readable instead of clipping it. */
+body.v69 .v69-stock.is-fragrance,
+body.v69 .v69-stock.is-fragrance strong{
+  white-space:normal;
+  line-height:1.2;
+}
+body.v69 .v66-card .v69-stock.is-fragrance{
+  height:auto;
+  min-height:30px;
+  border-radius:10px;
+}
+
+/* Luxury botanical backdrop: scoped to Fragancias, never to the general catalog or admin. */
+body.v69.v69-fragrances{
+  background-color:#244f7e;
+  background-image:linear-gradient(rgba(10,30,55,.08),rgba(10,30,55,.08)),url("fragrances-luxury-botanical-v2.jpg");
+  background-position:center top;
+  background-size:auto,1024px 1024px;
+  background-repeat:repeat;
+}
+body.v69.v69-fragrances .v66-catalog-head{
+  padding-bottom:16px;
+  border-bottom:1px solid rgba(203,174,111,.45);
+}
+body.v69.v69-fragrances #catalogTitleV69{
+  color:#e7edf2;
+  font-family:Georgia,"Times New Roman",serif;
+  font-weight:500;
+  letter-spacing:-.035em;
+}
+body.v69.v69-fragrances #modeV69,
+body.v69.v69-fragrances .v65-related>.v65-head .v65-k{color:#d3b77a}
+body.v69.v69-fragrances #countV69,
+body.v69.v69-fragrances .v65-related>.v65-head p{color:#c4d5de}
+body.v69.v69-fragrances .v65-related>.v65-head h2{color:#e7edf2}
+body.v69.v69-fragrances #showAllV69{
+  border:1px solid #c7d0d7;
+  background:linear-gradient(135deg,#f4f6f8,#dbe2e7);
+  color:#172b3c;
+}
+body.v69.v69-fragrances .v69-pdp-crumb,
+body.v69.v69-fragrances .v69-pdp-crumb a{color:#d3e0e7}
+body.v69.v69-fragrances .v69-pdp-crumb .v69-crumb-context{color:#9ed5d3}
+body.v69.v69-fragrances .v66-pdp{
+  border:1px solid rgba(203,174,111,.55);
+  border-radius:24px;
+  background:#fff;
+  box-shadow:0 18px 40px rgba(0,0,0,.18);
+}

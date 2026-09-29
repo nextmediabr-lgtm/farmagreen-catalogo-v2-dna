@@ -42,6 +42,26 @@ La opción temporal `Sin stock` del selector público muestra sólo los producto
 para consultar. Se habilita o retira desde Navegación en el panel, sin deploy y
 sin excluir productos automáticamente.
 
+### Perfumes y Fragancias
+
+La colección virtual `perfumes-fragancias` conserva una ficha por SKU y no
+incorpora automáticamente sus marcas técnicas al menú principal. El uso
+`Fragancias` se determina por pertenencia a la colección GPS, no por encontrar
+la palabra “perfume” en una crema. Sólo se publican productos con stock STOM
+verificado; los agotados o no verificados quedan ocultos. La disponibilidad
+indica “Disponible para Entrega o Retiro en 24 hs.”.
+
+Navegación permite habilitar/deshabilitar toda la colección. Siguen aplicándose
+las exclusiones vigentes por marca y EAN, y el control de promociones. El fondo
+floral azul zafiro se limita a esta colección, su uso y sus fichas; catálogo
+general, Productos Saludables y administración conservan su apariencia.
+
+Cuando el snapshot contiene Fragancias, el refresh diario y el scan semanal
+incluyen la fuente adicional de perfumes. Se conservan los horarios existentes;
+un deploy no reanuda un Scheduler pausado. Toda alta exige identidad, taxonomía
+Magento e imágenes GCS completas, incluidos JPEG 320/640. Los archivos públicos
+se versionan para evitar que la caché conserve el cliente o el tema anterior.
+
 ### Ampliación del admin (29/9/2026)
 
 El panel agrega Catálogo como quinta

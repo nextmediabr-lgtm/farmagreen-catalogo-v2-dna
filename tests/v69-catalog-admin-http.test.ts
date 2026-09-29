@@ -41,7 +41,7 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
   try {
     const [page, script, style, unauthorized] = await Promise.all([
       fetch(`${origin}/admin-v6-9`),
-      fetch(`${origin}/admin-v69-4.js`),
+      fetch(`${origin}/admin-v69-5.js`),
       fetch(`${origin}/admin-v69-2.css`),
       fetch(`${origin}/api/admin-v69/state`),
     ]);
@@ -51,7 +51,7 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
     assert.equal(unauthorized.status, 401);
     const html = await page.text();
     assert.match(html, /Administración V6\.9/);
-    assert.match(html, /admin-v69-4\.js\?v=20260928-2/);
+    assert.match(html, /admin-v69-5\.js\?v=20260929-fragrancias-1/);
     assert.match(html, /data-tab="catalog"/);
     assert.doesNotMatch(html, /data-action="deploy"/);
 

@@ -1,7 +1,9 @@
 import { normalizeProductText } from "./gpsfarma-listing.mjs";
+import { isFragranceProductV69 } from "./catalog-collections-v69.mjs";
 
-// Only the product title and its own line may determine its uses. Magento
-// categories and search aliases remain searchable, but are not product intent.
+// General use matching relies on the product title and its own line. Only the
+// explicit GPS fragrance collection is a source-based override (below).
+// Magento categories and search aliases are not product intent.
 export function inferTaxonomyV69(nameValue, brandValue) {
   const text = normalizeProductText(`${nameValue} ${brandValue}`);
   const vitaminWay = /\bvitamin\s*way\b/.test(text);
@@ -66,6 +68,21 @@ export function inferTaxonomyV69(nameValue, brandValue) {
 const EXPLICIT_SOLAR_NAME_V69 = /\b(protector(?:a)? solar|proteccion solar|fotoprotector\w*|fotoproteccion|anthelios|capital soleil|ideal soleil|solar|sun|fotoultra|foto ultra|fusion water|eryfotona|actinic control|after sun|post solar|autobronceante|bronceador)\b/;
 
 export function reconcileCatalogUsesV69(product) {
+  // The exact GPS collection membership is evidence; "sin perfume" in a
+  // skincare title must never create a fragrance match.
+  if (isFragranceProductV69(product)) {
+    if (product.primaryCategory === "fragancias" && product.needs?.length === 1 && product.needs[0] === "fragancias") return null;
+    return {
+      primaryCategory: "fragancias",
+      needs: ["fragancias"],
+      audit: {
+        reasonerVersion: "v69.5-fragrance-source",
+        evidenceScope: ["catalogFacets", "sourceMemberships"],
+        selected: [{ need: "fragancias", source: "gps-fragrance-collection" }],
+        originalNeeds: product.needs || [],
+      },
+    };
+  }
   const inferred = inferTaxonomyV69([product.name, product.line].filter(Boolean).join(" "), product.brand?.name || "");
   if (inferred.needs[0] === "cuidado-diario") return null;
   // A supplement or an explicitly solar product needs human review before a
