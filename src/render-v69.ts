@@ -151,7 +151,7 @@ export function publicCatalogV69(
   catalog: CatalogV69,
   policy: CatalogPolicyV69 = defaultCatalogPolicyV69(),
 ): PublicCatalogV69 {
-  const presented = applyCatalogPolicyV69(catalog, policy);
+  const presented = publicPresentationV69(catalog, policy);
   const unavailable = presented.products.filter((product) => product.availability === "out_of_stock").length;
   const unverified = presented.products.filter((product) => product.availability === "unknown").length;
   return {
@@ -267,7 +267,7 @@ export function catalogPageV69(
   options: CatalogPageOptionsV69 = {},
 ) {
   const policy = options.policy || defaultCatalogPolicyV69();
-  const presented = applyCatalogPolicyV69(catalog, policy);
+  const presented = publicPresentationV69(catalog, policy);
   const hasPromotions = presented.products.some(isOfferV69);
   const route = options.route || CATALOG_ROUTE;
   const canonicalPath = options.canonicalPath || CATALOG_ROUTE;
@@ -437,7 +437,7 @@ export function homePageV69(
   origin = "http://127.0.0.1:8109",
   policy: CatalogPolicyV69 = defaultCatalogPolicyV69(),
 ) {
-  const presented = applyCatalogPolicyV69(catalog, policy);
+  const presented = publicPresentationV69(catalog, policy);
   const hasPromotions = presented.products.some(isOfferV69);
   const brands = navigationBrandsV69(presented, policy);
   const homeContext = pageContext(presented, new URLSearchParams({ scope: "todo" }), policy);
@@ -514,8 +514,8 @@ export function productPageV69(
   origin = "http://127.0.0.1:8109",
   policy: CatalogPolicyV69 = defaultCatalogPolicyV69(),
 ) {
-  product = applyProductPolicyV69(product, policy);
-  related = related.map((entry) => applyProductPolicyV69(entry, policy));
+  product = publicProductTextV69(applyProductPolicyV69(product, policy));
+  related = related.map((entry) => publicProductTextV69(applyProductPolicyV69(entry, policy)));
   const needsAvailabilityConsult = product.availability !== "limited";
   const productPath = publicProductPathV69(product);
   const productUrl = absolute(origin, productPath);
@@ -1396,6 +1396,70 @@ function unit(value: string) {
 
 function safeList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+// Project source text only at the public boundary. Keep the private snapshot,
+// category identities and synchronization evidence intact for the next refresh.
+function publicSourceTextV69(value: string) {
+  if (!/gps[\s._-]*farma/i.test(value)) return value;
+  return value
+    .replace(/\([^)]*gps[\s._-]*farma[^)]*\)|\[[^\]]*gps[\s._-]*farma[^\]]*\]/gi, "")
+    .replace(/(?:https?:\/\/|\/\/|www\.)[^\s<>"']*gps[\s._-]*farma[^\s<>"']*/gi, "")
+    .replace(/gps[\s._-]*farma(?:\.com(?:\.[a-z]{2})?)?(?:\/[^\s<>"']*)?/gi, "")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+function publicSourceTextListV69(value: unknown) {
+  return safeList(value).map(publicSourceTextV69).filter(Boolean);
+}
+
+function publicProductTextV69(product: ProductV69): ProductV69 {
+  const detail = (product as ProductV69 & { detail?: V69Detail }).detail;
+  return {
+    ...product,
+    name: publicSourceTextV69(product.name),
+    brand: {
+      ...product.brand,
+      name: publicSourceTextV69(product.brand.name),
+      aliases: publicSourceTextListV69(product.brand.aliases),
+    },
+    line: publicSourceTextV69(product.line),
+    aliases: publicSourceTextListV69(product.aliases),
+    description: publicSourceTextV69(product.description),
+    magentoCategories: (product.magentoCategories || []).map(({ id, name }) => ({
+      id,
+      name: publicSourceTextV69(name) || `Categoría ${id}`,
+    })),
+    catalogFacets: (product.catalogFacets || []).map((facet) => ({
+      ...facet,
+      name: publicSourceTextV69(facet.name),
+      aliases: publicSourceTextListV69(facet.aliases),
+    })),
+    ...(product.promotion?.type === "percentage" ? {
+      promotion: { ...product.promotion, label: publicSourceTextV69(product.promotion.label) },
+    } : {}),
+    ...(detail ? {
+      detail: {
+        summary: publicSourceTextListV69(detail.summary),
+        sections: (Array.isArray(detail.sections) ? detail.sections : []).filter(Boolean).map((section) => ({
+          ...section,
+          title: publicSourceTextV69(section.title),
+          content: publicSourceTextListV69(section.content),
+        })),
+      },
+    } : {}),
+  };
+}
+
+function publicPresentationV69(catalog: CatalogV69, policy: CatalogPolicyV69): CatalogV69 {
+  const presented = applyCatalogPolicyV69(catalog, policy);
+  return {
+    ...presented,
+    magentoCategoryPaths: Object.fromEntries(Object.entries(presented.magentoCategoryPaths || {})
+      .map(([id, names]) => [id, publicSourceTextListV69(names)])),
+    products: presented.products.map(publicProductTextV69),
+  };
 }
 
 function brandName(product: Partial<ProductV69> | undefined) {

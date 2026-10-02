@@ -30,6 +30,21 @@ async function exclusionFixture() {
   assert.ok(limited.length >= 2);
   const directory = await mkdtemp(path.join(tmpdir(), "farmagreen-v69-e2e-"));
   const file = path.join(directory, "catalog-exclusions-v69.local.json");
+  // Include a source label that the older local snapshot did not contain.
+  // The same privacy gate must hold before and after client hydration.
+  const catalogFile = path.join(directory, "catalog.json");
+  raw.magentoCategoryPaths = {
+    ...raw.magentoCategoryPaths,
+    "6485": ["Promos Especiales", "Noviembre", "RED (GPSfarma s version)"],
+  };
+  const visible = raw.products.find((product) => !limited.slice(0, 2).some((entry) => entry.publicId === product.publicId));
+  assert.ok(visible);
+  visible.magentoCategories = [
+    ...(visible.magentoCategories || []).filter((category) => category.id !== "6485"),
+    { id: "6485", name: "RED (GPSfarma s version)" },
+  ];
+  visible.magentoTaxonomyAttached = true;
+  await writeFile(catalogFile, JSON.stringify(raw), "utf8");
   await writeFile(
     file,
     JSON.stringify({
@@ -47,7 +62,7 @@ async function exclusionFixture() {
     }),
     "utf8",
   );
-  return { directory, file };
+  return { directory, file, catalogFile };
 }
 
 async function startServer() {
@@ -57,7 +72,7 @@ async function startServer() {
     exclusions: process.env.V69_EXCLUSIONS_FILE,
     required: process.env.V69_REQUIRE_EXCLUSIONS,
   };
-  process.env.V69_CATALOG_FILE = CATALOG_FILE;
+  process.env.V69_CATALOG_FILE = fixture.catalogFile;
   process.env.V69_EXCLUSIONS_FILE = fixture.file;
   process.env.V69_REQUIRE_EXCLUSIONS = "1";
   resetCatalogV69CacheForTests();
@@ -302,6 +317,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(api.availabilitySummary.unverified, 0);
 
     await page.goto(`${runtime.origin}/?scope=todo`, { waitUntil: "domcontentloaded" });
+    assert.doesNotMatch(await page.content(), /gps[\s._-]*farma/i);
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
     assert.equal(await page.evaluate(() => document.body.dataset.v69CatalogLoaded), "false");
     assert.equal(catalogApiRequests.length, 0, "La carga inicial no debe descargar el DTO completo.");
