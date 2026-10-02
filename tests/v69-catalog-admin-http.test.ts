@@ -75,7 +75,7 @@ test("el panel integral autentica, publica configuración, recuerda y recibe pos
     const antiPigmentByUse = await fetch(`${origin}/api/admin-v69/products?q=fcbd59a2511f&use=manchas`, { headers: auth }).then((response) => response.json());
     assert.equal(antiPigmentByUse.total, 1);
     assert.deepEqual(antiPigmentByUse.items[0].needs, ["manchas", "hidratacion"]);
-    assert.equal(antiPigmentByUse.items[0].useEvidence, "Snapshot vigente");
+    assert.equal(antiPigmentByUse.items[0].useEvidence, "Título, línea y beneficios del producto");
     const wrongUse = await fetch(`${origin}/api/admin-v69/products?q=fcbd59a2511f&use=limpieza`, { headers: auth }).then((response) => response.json());
     assert.equal(wrongUse.total, 0);
 

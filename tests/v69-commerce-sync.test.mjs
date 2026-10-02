@@ -133,9 +133,10 @@ test("Bagóvit conserva marca, posición, búsqueda y usos determinísticos", ()
     primaryCategory: "rostro",
     needs: ["antiedad"],
     audit: {
-      reasonerVersion: "v69.3-live-taxonomy-evidence",
-      evidenceScope: ["name", "brand"],
-      selected: [{ need: "antiedad", source: "deterministic-title-rule" }],
+      reasonerVersion: "v69.6-evidence-dual-use",
+      evidenceScope: ["name", "line", "brand"],
+      excludedEvidence: ["aliases", "magentoCategories", "instructions", "composition", "unsupported-legacy-needs"],
+      selected: [{ need: "antiedad", source: "product-evidence", field: "name", rule: "topical-title-ingredient", match: "colageno" }],
       rejected: [],
     },
   });
@@ -145,9 +146,10 @@ test("Bagóvit conserva marca, posición, búsqueda y usos determinísticos", ()
       primaryCategory: "cuerpo",
       needs: ["reparacion"],
       audit: {
-        reasonerVersion: "v69.3-live-taxonomy-evidence",
-        evidenceScope: ["name", "brand"],
-        selected: [{ need: "reparacion", source: "deterministic-title-rule" }],
+        reasonerVersion: "v69.6-evidence-dual-use",
+        evidenceScope: ["name", "line", "brand"],
+        excludedEvidence: ["aliases", "magentoCategories", "instructions", "composition", "unsupported-legacy-needs"],
+        selected: [{ need: "reparacion", source: "product-evidence", field: "name", rule: "explicit-benefit", match: "reparadora" }],
         rejected: [],
       },
     },
@@ -196,9 +198,10 @@ test("CeraVe conserva marca, posición, búsqueda y usos determinísticos", () =
     primaryCategory: "rostro",
     needs: ["hidratacion"],
     audit: {
-      reasonerVersion: "v69.3-live-taxonomy-evidence",
-      evidenceScope: ["name", "brand"],
-      selected: [{ need: "hidratacion", source: "deterministic-title-rule" }],
+      reasonerVersion: "v69.6-evidence-dual-use",
+      evidenceScope: ["name", "line", "brand"],
+      excludedEvidence: ["aliases", "magentoCategories", "instructions", "composition", "unsupported-legacy-needs"],
+      selected: [{ need: "hidratacion", source: "product-evidence", field: "name", rule: "explicit-benefit", match: "hidratante" }],
       rejected: [],
     },
   });
@@ -213,9 +216,10 @@ test("Neutrogena, Vitamin Way y Capilatis conservan familias y usos determiníst
     primaryCategory: "nutricion",
     needs: ["nutricion"],
     audit: {
-      reasonerVersion: "v69.3-live-taxonomy-evidence",
-      evidenceScope: ["name", "brand"],
-      selected: [{ need: "nutricion", source: "deterministic-title-rule" }],
+      reasonerVersion: "v69.6-evidence-dual-use",
+      evidenceScope: ["name", "line", "brand"],
+      excludedEvidence: ["aliases", "magentoCategories", "instructions", "composition", "unsupported-legacy-needs"],
+      selected: [{ need: "nutricion", source: "product-evidence", field: "name", rule: "product-identity", match: "nutricion" }],
       rejected: [],
     },
   });
@@ -556,11 +560,11 @@ test("el uso principal sale del título y la línea, no de categorías Magento h
   }, "2026-09-28T00:00:00.000Z");
   assert.deepEqual(catalog.products[0].needs, ["manchas", "hidratacion"]);
   assert.equal(catalog.products[0].primaryCategory, "rostro");
-  assert.deepEqual(catalog.products[0].taxonomy.evidenceScope, ["name", "line", "brand"]);
+  assert.deepEqual(catalog.products[0].taxonomy.evidenceScope, ["name", "line", "brand", "description"]);
   assert.ok(catalog.products[0].aliases.includes("Limpieza"), "la categoría sigue disponible para búsqueda");
   assert.deepEqual(catalog.products[1].needs, ["limpieza"]);
   assert.equal(catalog.products[1].primaryCategory, "limpieza");
-  assert.deepEqual(catalog.products[2].needs, ["hidratacion", "antiedad"]);
+  assert.deepEqual(catalog.products[2].needs, ["antiedad", "hidratacion"]);
   assert.deepEqual(catalog.products[3].needs, ["piel-sensible", "hidratacion"], "no borra un uso secundario ya sustentado");
 });
 

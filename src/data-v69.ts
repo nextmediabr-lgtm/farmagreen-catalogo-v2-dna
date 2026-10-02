@@ -359,19 +359,18 @@ function cleanProductV69(product: ProductV69): ProductV69 {
     source: normalizedProduct.source && typeof normalizedProduct.source === "object" ? { ...normalizedProduct.source, url: cleanOptional(normalizedProduct.source.url) } : undefined,
   };
   const promotion = cleanPromotionV69(normalizedProduct.promotion, cleaned);
-  const fpsRevised = reviseFpsPrimaryUseV69({
+  const withPromotion = {
     ...cleaned,
     ...(promotion ? { promotion } : { promotion: undefined }),
-  });
-  if (fpsRevised.taxonomy?.reasonerVersion === "v69.1-fps-primary-intent") return fpsRevised;
-  const titleUse = reconcileCatalogUsesV69(fpsRevised);
-  if (!titleUse) return fpsRevised;
+  };
+  const titleUse = reconcileCatalogUsesV69(withPromotion);
+  if (!titleUse) return withPromotion;
   return {
-    ...fpsRevised,
+    ...withPromotion,
     primaryCategory: titleUse.primaryCategory,
     categorySlugs: [titleUse.primaryCategory],
     needs: titleUse.needs,
-    taxonomy: { ...(fpsRevised.taxonomy || {}), ...titleUse.audit },
+    taxonomy: { ...(withPromotion.taxonomy || {}), ...titleUse.audit },
   };
 }
 
@@ -449,69 +448,6 @@ function cleanPromotionV69(value: unknown, product: Pick<ProductV69, "listPrice"
   };
 }
 
-const EXPLICIT_SOLAR_PRODUCT_V69 =
-  /\b(protector(?:a)? solar|proteccion solar|fotoprotector\w*|fotoproteccion|anthelios|capital soleil|ideal soleil|solar|sun|fotoultra|foto ultra|fusion water|eryfotona|actinic control|after sun|post solar|autobronceante|bronceador)\b/;
-
-const FPS_PRIMARY_INTENTS_V69 = [
-  {
-    need: "manchas",
-    pattern: /\b(anti pigment\w*|antipigment\w*|anti manchas?|antimanchas?|despigment\w*|mela b3|melasma|pigment control)\b/,
-  },
-  {
-    need: "antiedad",
-    pattern: /\b(antiedad|anti edad|antiage|anti aging|antiarrugas?|arrugas?|hyaluron filler|volume lift|elasticity|ultra firmeza|ultra age|revitalift|healthy renew|age correct|age repair|uv age|retinol|filler)\b/,
-  },
-  {
-    need: "hidratacion",
-    pattern: /\b(hidrat\w*|hydra\w*|hyalu b5|aqualia|moistur\w*|humect\w*|emoliente)\b/,
-  },
-] as const;
-
-export function reviseFpsPrimaryUseV69(product: ProductV69): ProductV69 {
-  if (product.primaryCategory !== "solares") return product;
-  const evidence = normalizeIntentTextV69(product.name);
-  if (EXPLICIT_SOLAR_PRODUCT_V69.test(evidence)) return product;
-  const intent = FPS_PRIMARY_INTENTS_V69.find((candidate) => candidate.pattern.test(evidence));
-  if (!intent) return product;
-
-  const originalNeeds = Array.isArray(product.needs) ? [...product.needs] : [];
-  const originalTaxonomy = product.taxonomy && typeof product.taxonomy === "object" ? product.taxonomy : {};
-  return {
-    ...product,
-    primaryCategory: "rostro",
-    categorySlugs: [...new Set([...(product.categorySlugs || []).filter((category) => category !== "solares"), "rostro"])],
-    needs: [intent.need],
-    taxonomy: {
-      ...originalTaxonomy,
-      reasonerVersion: "v69.1-fps-primary-intent",
-      originalNeeds,
-      selected: [
-        {
-          need: intent.need,
-          confidence: 0.98,
-          source: "name",
-          field: "name",
-          rule: "fps-is-attribute-not-primary-intent",
-        },
-      ],
-      rejected: [
-        {
-          need: "solares",
-          reason: "fps-without-explicit-solar-product-intent",
-        },
-      ],
-    },
-  };
-}
-
-function normalizeIntentTextV69(value: unknown) {
-  return String(value || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
 
 function emptyExclusionsV69(): ExclusionsV69 {
   return { products: [], skus: [], barcodes: [], urls: [], hidden: {} };

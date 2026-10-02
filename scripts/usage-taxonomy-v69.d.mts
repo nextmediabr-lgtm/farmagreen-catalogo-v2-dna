@@ -4,13 +4,19 @@ export type InferredTaxonomyV69 = {
   audit: Record<string, unknown>;
 };
 
-export function inferTaxonomyV69(nameValue: unknown, brandValue: unknown): InferredTaxonomyV69;
-export function reconcileCatalogUsesV69(product: {
-  name: string;
+export type UseEvidenceV69 = {
   line?: string;
-  brand?: { name?: string };
-  primaryCategory: string;
-  needs: string[];
+  description?: string;
+  detail?: { summary?: string[]; sections?: Array<{ id?: string; title?: string; content?: string[] }> };
+  primaryCategory?: string;
   catalogFacets?: Array<{ slug: string; kind: string }>;
   sourceMemberships?: Array<{ viewSlug: string; viewKind: string }>;
+};
+
+export function inferTaxonomyV69(nameValue: unknown, brandValue: unknown, evidence?: UseEvidenceV69): InferredTaxonomyV69;
+export function reconcileCatalogUsesV69(product: UseEvidenceV69 & {
+  name: string;
+  brand?: { name?: string };
+  needs: string[];
+  taxonomy?: Record<string, unknown>;
 }): InferredTaxonomyV69 | null;

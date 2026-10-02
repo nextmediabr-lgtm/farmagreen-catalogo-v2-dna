@@ -714,7 +714,6 @@ export function newProductFromSourceGroupV69(group, completedAt) {
       ? `barcode:${barcode}`
       : `url:${normalizeGpsProductUrl(member.sourceUrl)}|image:${normalizeGpsImagePath(member.imageUrl)}|${normalizeProductText(`${brand.name} ${name}`)}`;
   const publicId = crypto.createHash("sha256").update(`farmagreen-v69|${identity}`).digest("hex").slice(0, 12);
-  const taxonomy = inferTaxonomyV69(name, brand.name);
   const description = tidy(group.detail?.description || group.detail?.overview) || METADATA_ONLY_DESCRIPTION;
   const image = trustedGpsImageV69(group.detail?.image) || member.imageUrl || "";
   if (!image) throw new Error(`Producto nuevo sin imagen: ${name}`);
@@ -723,6 +722,7 @@ export function newProductFromSourceGroupV69(group, completedAt) {
     configuredBrandFacet ? [configuredBrandFacet] : [],
     facetsFromMembersV69(group.members),
   );
+  const taxonomy = inferTaxonomyV69(name, brand.name, { line: brand.name, description, catalogFacets });
   return {
     publicId,
     slug: `${slugify(`${brand.name}-${name}`)}--${publicId}`,

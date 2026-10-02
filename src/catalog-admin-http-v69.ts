@@ -389,7 +389,9 @@ export function adminProductsV69(catalog: CatalogV69, policy: CatalogPolicyV69, 
       offerPrice: presented?.offerPrice ?? product.offerPrice,
       promotion: presented?.promotion?.label || null,
       needs: product.needs || [],
-      useEvidence: isFragranceProductV69(product) ? "Colección GPS Perfumes y Fragancias" : product.taxonomy?.reasonerVersion === "v69.4-title-line-use" ? "Título y línea" : "Snapshot vigente",
+      useEvidence: product.taxonomy?.reasonerVersion === "v69.6-evidence-dual-use"
+        ? "Título, línea y beneficios del producto" + (isFragranceProductV69(product) ? " · Colección GPS Fragancias" : "")
+        : isFragranceProductV69(product) ? "Colección GPS Perfumes y Fragancias" : product.taxonomy?.reasonerVersion === "v69.4-title-line-use" ? "Título y línea" : "Snapshot vigente",
       taxonomyAttached: product.magentoTaxonomyAttached === true,
       hasCardImage: Boolean(product.images?.card),
       hasDetailImage: Boolean(product.images?.detail),

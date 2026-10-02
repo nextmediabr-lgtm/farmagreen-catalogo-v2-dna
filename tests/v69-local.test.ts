@@ -118,26 +118,17 @@ function publicAvailabilitySummary(products: Array<{ availability: string }>) {
 
 test("V6.9 trata FPS como atributo y conserva la intención principal explícita", async () => {
   const catalog = await baseCatalog();
-  const revised = catalog.products.filter(
-    (product) => (product.taxonomy as { reasonerVersion?: string } | undefined)?.reasonerVersion === "v69.1-fps-primary-intent",
-  );
-  assert.equal(revised.length, 27);
-  assert.deepEqual(
-    revised.reduce<Record<string, number>>((counts, product) => {
-      counts[product.needs[0]] = (counts[product.needs[0]] || 0) + 1;
-      return counts;
-    }, {}),
-    { manchas: 3, antiedad: 15, hidratacion: 9 },
-  );
-  assert.ok(revised.every((product) => product.primaryCategory === "rostro" && !product.needs.includes("solares")));
+  assert.ok(catalog.products.every((product) => product.taxonomy?.reasonerVersion === "v69.6-evidence-dual-use"),
+    "FPS ya no usa un clasificador separado que elimina el segundo uso");
 
   const antiPigment = catalog.products.find((product) => product.publicId === "4415c97e870c");
   const antiAge = catalog.products.find((product) => product.publicId === "d619540a5259");
   const hydration = catalog.products.find((product) => product.publicId === "4919a122cd84");
   const trueSolar = catalog.products.find((product) => product.publicId === "43e4da205cb5");
-  assert.deepEqual(antiPigment?.needs, ["manchas"]);
-  assert.deepEqual(antiAge?.needs, ["antiedad"]);
+  assert.deepEqual(antiPigment?.needs, ["manchas", "hidratacion"]);
+  assert.deepEqual(antiAge?.needs, ["antiedad", "hidratacion"]);
   assert.deepEqual(hydration?.needs, ["hidratacion"]);
+  assert.ok([antiPigment, antiAge, hydration].every((product) => product?.primaryCategory === "rostro" && !product.needs.includes("solares")));
   assert.deepEqual(trueSolar?.needs, ["solares"]);
   assert.equal(trueSolar?.primaryCategory, "solares");
 });
@@ -150,12 +141,12 @@ test("V6.9 corrige usos heredados y muestra hasta dos usos en tarjeta y ficha", 
   assert.ok(cleanser);
   assert.deepEqual(serum.needs, ["manchas", "hidratacion"]);
   assert.equal(serum.primaryCategory, "rostro");
-  assert.deepEqual(cleanser.needs, ["limpieza", "manchas"]);
+  assert.deepEqual(cleanser.needs, ["limpieza"]);
   const detail = productPageV69(serum, [], "http://127.0.0.1:8109");
   const listing = catalogPageV69({ ...catalog, totalProducts: 1, products: [serum] }, new URLSearchParams("scope=todo"), "http://127.0.0.1:8109");
   assert.match(detail, /<dt>Uso<\/dt><dd>Manchas · Hidratación<\/dd>/);
   assert.match(listing, /<dt>Uso<\/dt><dd>Manchas · Hidratación<\/dd>/);
-  assert.match(productPageV69(cleanser, [], "http://127.0.0.1:8109"), /<dt>Uso<\/dt><dd>Limpieza · Manchas<\/dd>/);
+  assert.match(productPageV69(cleanser, [], "http://127.0.0.1:8109"), /<dt>Uso<\/dt><dd>Limpieza<\/dd>/);
 });
 
 async function privateFixture(catalog: CatalogV69) {
