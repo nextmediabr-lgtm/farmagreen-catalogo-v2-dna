@@ -24,6 +24,7 @@ const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/farmagreen-social-previe
 const SOCIAL_DESCRIPTION = "Farmacia y Dermocosmetica, Catalogo de Precios y Promociones";
 const HOME_ROUTE = "/";
 const CATALOG_ROUTE = "/catalogo";
+const CATALOG_PAGE_SIZE_V69 = 64;
 const PRODUCT_ROUTE = "/p/";
 const BUSINESS_NAME = "Farmagreen Rosario";
 const BUSINESS_ADDRESS = "Bv. Avellaneda Bis 524, Rosario, Santa Fe";
@@ -290,12 +291,12 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
       <p class="v69-availability-note" id="availabilityNoteV69" hidden>${presented.commerceSyncedAt ? `Estado comercial en Rosario verificado ${e(shortDateV69(presented.commerceSyncedAt))}. Confirmamos disponibilidad por WhatsApp.` : presented.availabilityReferenceAt ? `Verificación parcial en Rosario actualizada ${e(shortDateV69(presented.availabilityReferenceAt))}. Confirmamos disponibilidad por WhatsApp.` : "Estado comercial en Rosario pendiente de sincronización. Confirmamos disponibilidad por WhatsApp."}</p>
     </div>
     <div class="v66-catalog-tools">
-      <p id="countV69" aria-live="polite">${Math.min(48, initial.length)} de ${initial.length}</p>
+      <p id="countV69" aria-live="polite">${Math.min(CATALOG_PAGE_SIZE_V69, initial.length)} de ${initial.length}</p>
       <button class="v65-link-button" type="button" id="showAllV69">Ver todo el catálogo</button>
     </div>
   </div>
   <p id="offersEmptyV69"${presented.products.some(isOfferV69) ? " hidden" : ""}>No hay ofertas verificadas en este momento. Podés explorar todos los productos.</p>
-  <section class="v65-grid" id="gridV69">${initial.length ? initial.slice(0, 48).map((product, index) => cardV69(product, origin, index === 0)).join("") : '<div class="v66-empty"><strong>No encontramos coincidencias.</strong><span>Probá otra palabra o limpiá los filtros.</span></div>'}</section>
+  <section class="v65-grid" id="gridV69">${initial.length ? initial.slice(0, CATALOG_PAGE_SIZE_V69).map((product, index) => cardV69(product, origin, index === 0)).join("") : '<div class="v66-empty"><strong>No encontramos coincidencias.</strong><span>Probá otra palabra o limpiá los filtros.</span></div>'}</section>
   <div class="morebox"><button id="loadMoreV69" type="button" aria-label="Cargar más productos">Cargar más productos</button></div>
 </section>
 
@@ -307,6 +308,7 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
       commerceSyncedAt: presented.commerceSyncedAt,
       availabilityReferenceAt: presented.availabilityReferenceAt,
       dataEndpoint: "/api/catalog-v6-9",
+      pageSize: CATALOG_PAGE_SIZE_V69,
       magentoCategoryPaths: presented.magentoCategoryPaths || {},
       totalProducts: presented.totalProducts,
       initialResultCount: initial.length,
@@ -1276,7 +1278,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-4.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-14.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-4.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-15.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
 }
 
 function cardV69(product: ProductV69, _origin = "http://127.0.0.1:8109", priority = false) {

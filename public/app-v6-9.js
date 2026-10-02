@@ -7,7 +7,7 @@ const BOOT = (() => {
 })();
 const BASE = (BOOT.base || "").replace(/\/$/, "");
 const PUBLIC_SITE_ORIGIN = BOOT.shareOrigin || "https://farmagreenrosario.web.app";
-const PAGE = 48;
+const PAGE = Number(BOOT.pageSize) || 64;
 const ROUTE = BOOT.catalogRoute || "/catalogo";
 const PDP = "/p/";
 const CONTEXT = BOOT.context || {};

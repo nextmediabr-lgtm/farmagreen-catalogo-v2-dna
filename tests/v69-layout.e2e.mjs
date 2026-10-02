@@ -305,6 +305,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
     assert.equal(await page.evaluate(() => document.body.dataset.v69CatalogLoaded), "false");
     assert.equal(catalogApiRequests.length, 0, "La carga inicial no debe descargar el DTO completo.");
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), 64, "PC debe renderizar 64 fichas sin descargar todo el catálogo.");
+    assert.equal(await page.locator("#fg69-data").evaluate((data) => JSON.parse(data.textContent).pageSize), 64);
     await page.waitForFunction(() => window.__metaEvents.some(([command, event]) => command === "track" && event === "PageView"));
     await page.waitForTimeout(50);
     const browserPageView = await page.evaluate(() => window.__metaEvents.find(([command, event]) => command === "track" && event === "PageView"));
@@ -325,7 +327,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       return values[0] === "event" && values[1] === "generate_lead" && values[2]?.lead_type === "general" && values[2]?.method === "WhatsApp";
     })), true);
     assert.equal(new URL(page.url()).pathname, "/");
-    assert.equal(await page.locator("#gridV69 .v66-card").count(), 48);
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), 64);
     assert.equal(await page.locator("#showAllV69").count(), 1);
     assert.equal(await page.locator("#showAllV69").isHidden(), true);
     assert.equal(await page.locator("#countV69").isHidden(), false);
@@ -440,7 +442,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       );
       await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
       await page.waitForFunction(
-        (expected) => document.querySelector("#countV69")?.textContent === `48 de ${expected}`,
+        (expected) => document.querySelector("#countV69")?.textContent === `64 de ${expected}`,
         healthyCollectionCount,
       );
       assert.equal(new URL(page.url()).searchParams.get("view"), "productos-saludables");
@@ -479,8 +481,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     if (!remoteOrigin) assert.equal(localCssResponse.headers()["cache-control"], "no-store");
     assert.equal(await firstRowColumns(page), 5);
     assert.equal(await hasHorizontalOverflow(page), false);
-    assert.equal(await page.locator("#gridV69 .v66-card").count(), 48);
-    assert.equal(await page.locator("#gridV69 .v69-stock").count(), 48);
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), 64);
+    assert.equal(await page.locator("#gridV69 .v69-stock").count(), 64);
     assert.equal(await page.locator(".v69-footer").count(), 1);
     const instagram = page.locator(".v69-footer-instagram");
     assert.equal(await instagram.getAttribute("href"), "https://www.instagram.com/farmagreenrosario");
@@ -563,8 +565,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.equal(await page.locator("#availabilityNoteV69").isVisible(), false);
     assert.equal(await page.locator("#loadMoreV69").isVisible(), true);
     await page.locator("#loadMoreV69").click();
-    await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 96);
-    assert.equal(await page.locator("#gridV69 .v66-card").count(), 96);
+    await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 128);
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), 128);
     assert.equal(await page.locator("#loadMoreV69").isVisible(), true);
 
     await selectSort(page, api.products, "precio-desc");
@@ -595,7 +597,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await selectSort(page, api.products, "nombre");
     await selectSort(page, api.products, "marca");
 
-    const allPages = Math.ceil(api.totalProducts / 48);
+    const allPages = Math.ceil(api.totalProducts / 64);
     await page.goto(`${runtime.origin}/catalogo-v6-9/?scope=todo&pagina=${allPages}`, {
       waitUntil: "domcontentloaded",
     });
@@ -661,7 +663,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.waitForFunction(
-      (expected) => document.querySelector("#countV69")?.textContent === `48 de ${expected}`,
+      (expected) => document.querySelector("#countV69")?.textContent === `64 de ${expected}`,
       isdinCount,
     );
     await page.waitForFunction(
@@ -845,7 +847,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       { width: mobileInstagramGeometry.svgWidth, height: mobileInstagramGeometry.svgHeight },
       { width: 34, height: 34 },
     );
-    assert.equal(await page.locator("#gridV69 .v69-stock").count(), 48);
+    assert.equal(await page.locator("#gridV69 .v69-stock").count(), 64);
     assert.equal(await page.locator("#sortV69").inputValue(), "relevancia");
     assert.deepEqual(
       await page.locator(".v69-sort").evaluate((sort) => {
@@ -1048,7 +1050,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     const brandQuery = "protector solar";
     const brandMatches = filterProductsBySearchV69(api.products, brandQuery);
     const expectedBrandIds = sortProductsV69(brandMatches, "marca", brandQuery)
-      .slice(0, 48)
+      .slice(0, 64)
       .map((product) => product.publicId);
     await page.locator("#searchV69").fill(brandQuery);
     await page.locator("#sortV69").selectOption("marca");
@@ -1076,10 +1078,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.waitForFunction(
       ({ query, expected }) =>
         new URL(location.href).searchParams.get("q") === query &&
-        document.querySelector("#countV69")?.textContent === `${Math.min(48, expected)} de ${expected}`,
+        document.querySelector("#countV69")?.textContent === `${Math.min(64, expected)} de ${expected}`,
       { query: typoQuery, expected: typoExpected },
     );
-    assert.equal(await page.locator("#gridV69 .v66-card").count(), Math.min(48, typoExpected));
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), Math.min(64, typoExpected));
     assert.ok(typoExpected >= 2);
     assert.match(await page.locator("#catalogTitleV69").textContent(), /protetor solar bebe/i);
 
@@ -1089,7 +1091,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       await page.waitForFunction(
         ({ query, expected }) =>
           new URL(location.href).searchParams.get("q") === query &&
-          document.querySelector("#countV69")?.textContent === `${Math.min(48, expected)} de ${expected}`,
+          document.querySelector("#countV69")?.textContent === `${Math.min(64, expected)} de ${expected}`,
         { query, expected },
       );
       return page.locator("#gridV69 .v65-hit").evaluateAll((links) =>
@@ -1123,17 +1125,17 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       await page.waitForFunction(
         ({ query, expected }) =>
           new URL(location.href).searchParams.get("q") === query &&
-          document.querySelector("#countV69")?.textContent === `${Math.min(48, expected)} de ${expected}`,
+          document.querySelector("#countV69")?.textContent === `${Math.min(64, expected)} de ${expected}`,
         { query, expected },
       );
-      assert.equal(await page.locator("#gridV69 .v66-card").count(), Math.min(48, expected), query);
+      assert.equal(await page.locator("#gridV69 .v66-card").count(), Math.min(64, expected), query);
     }
 
     await page.locator("#searchV69").fill("cr");
     await page.waitForFunction(
       (expected) =>
         !new URL(location.href).searchParams.has("q") &&
-        document.querySelector("#countV69")?.textContent === `48 de ${expected}`,
+        document.querySelector("#countV69")?.textContent === `64 de ${expected}`,
       api.totalProducts,
     );
     await page.locator("#searchV69").fill("cre");
@@ -1141,7 +1143,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.waitForFunction(
       (expected) =>
         new URL(location.href).searchParams.get("q") === "cre" &&
-        document.querySelector("#countV69")?.textContent === `${Math.min(48, expected)} de ${expected}`,
+        document.querySelector("#countV69")?.textContent === `${Math.min(64, expected)} de ${expected}`,
       creamCount,
     );
     assert.deepEqual(providerRequests, []);
@@ -1189,6 +1191,8 @@ test("V6.9 difiere catálogo y medición hasta una interacción real", { timeout
     assert.equal(requests.some((value) => value.includes("/analytics-v69-4.js")), false);
     assert.equal(requests.some((value) => value.includes("/meta-pixel-v69-3.js")), false);
     assert.equal(requests.some((value) => /googletagmanager\.com|connect\.facebook\.net/.test(value)), false);
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), 64, "Móvil debe conservar las mismas 64 fichas iniciales que PC.");
+    assert.equal(await page.locator("#fg69-data").evaluate((data) => JSON.parse(data.textContent).pageSize), 64);
 
     await page.locator('[data-filter-menu-trigger="brand"]').click();
     await page.waitForFunction(() => window.__fgMeasurementStartedV69 === true);
@@ -1205,6 +1209,12 @@ test("V6.9 difiere catálogo y medición hasta una interacción real", { timeout
 
     await page.locator("#searchV69").fill("eucerin");
     await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");
+    assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 1);
+    await page.locator("#searchV69").fill("");
+    await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 64);
+    await page.locator("#loadMoreV69").click();
+    await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 128);
+    assert.equal(await page.locator("#gridV69 .v66-card").count(), 128, "Móvil carga el siguiente bloque de 64 sin volver a descargar el DTO.");
     assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 1);
   } finally {
     await browser?.close();
