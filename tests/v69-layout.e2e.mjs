@@ -308,6 +308,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     const apiText = await apiResponse.text();
     assert.doesNotMatch(apiText, /gpsfarma|provider|"sku"|"source"/i);
     const api = JSON.parse(apiText);
+    const availabilityLabels = Object.fromEntries(
+      api.products.map((product) => [product.publicId, product.availabilityLabel]),
+    );
     assert.ok(api.products.every((product) => typeof product.barcode === "string"));
     assert.equal(api.totalProducts, api.products.length);
     assert.deepEqual(api.availabilitySummary, publicAvailabilitySummary(api.products));
@@ -424,10 +427,28 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       ),
       1,
     );
-    assert.equal(api.navigation.brands.length, 16);
-    assert.equal(api.navigation.brands.at(-1).name, "Productos Saludables");
+    // The backoffice owns the menu: compare every name and its order instead
+    // of freezing the legacy count or assuming the umbrella is always last.
+    const navigationNames = api.navigation.brands.map((entry) => entry.name);
+    assert.equal(new Set(navigationNames).size, navigationNames.length);
+    assert.deepEqual(
+      await page.locator(".v69-home-brand h2").evaluateAll(
+        (headings) => headings.map((heading) => heading.textContent.trim()),
+      ),
+      navigationNames,
+    );
+    assert.deepEqual(
+      await page.locator(".v67-brand-option .v67-brand-copy strong").allTextContents(),
+      ["Todas", ...navigationNames],
+    );
+    assert.equal(
+      api.navigation.brands.filter((entry) => entry.slug === "productos-saludables" && entry.kind === "collection").length,
+      1,
+    );
     assert.equal(api.navigation.brands.some((entry) => entry.name === "Goodskin"), false);
-    const healthyOptionText = await page.locator(".v67-brand-option").last().textContent();
+    const healthyOption = page.locator('.v67-brand-option[data-view="productos-saludables"]');
+    assert.equal(await healthyOption.count(), 1);
+    const healthyOptionText = await healthyOption.textContent();
     assert.match(healthyOptionText, /Productos Saludables/);
     assert.doesNotMatch(healthyOptionText, /\d+\s+productos|paraguas/i);
     assert.equal(await page.locator(".v69-home-brand h2", { hasText: "CeraVe" }).count(), 1);
@@ -607,7 +628,10 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
 
     await selectSort(page, api.products, "descuento");
     await selectSort(page, api.products, "disponibilidad");
-    assert.equal(await page.locator("#gridV69 .v69-stock").first().innerText(), "Disponible para Entrega");
+    assert.equal(
+      await page.locator("#gridV69 .v69-stock").first().innerText(),
+      expectedFirst(api.products, "disponibilidad").availabilityLabel,
+    );
     await selectSort(page, api.products, "sin-stock");
     assert.equal(await page.locator("#gridV69 .v66-card:not(.v69-card-unavailable)").count(), 0);
     await selectSort(page, api.products, "nombre");
@@ -622,7 +646,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       api.totalProducts,
     );
     assert.equal(await page.locator("#loadMoreV69").isVisible(), false);
-    const fullDesktopAudit = await page.locator("#gridV69").evaluate((grid) => {
+    const fullDesktopAudit = await page.locator("#gridV69").evaluate((grid, labels) => {
       const cards = [...grid.querySelectorAll(".v66-card")];
       const failures = [];
       const counts = { available: 0, unavailable: 0, unverified: 0, attention: 0 };
@@ -637,11 +661,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
         else if (unverified) counts.unverified += 1;
         else counts.available += 1;
         if (action?.classList.contains("v69-ask-unavailable")) counts.attention += 1;
-        const expectedLabel = unavailable
-          ? "Consultar Disponibilidad"
-          : unverified
-            ? "Consultar Disponibilidad"
-            : "Disponible para Entrega";
+        const publicId = card.querySelector(".v65-hit")?.getAttribute("href")?.match(/\/p\/([^/?#]+)/)?.[1];
+        const expectedLabel = labels[publicId];
         const expectedColor = needsAttention ? "rgb(255, 209, 1)" : "rgb(37, 211, 102)";
         if (
           label !== expectedLabel ||
@@ -654,7 +675,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
         }
       }
       return { count: cards.length, counts, failures };
-    });
+    }, availabilityLabels);
     assert.equal(fullDesktopAudit.count, api.totalProducts);
     assert.deepEqual(
       fullDesktopAudit.counts,
@@ -720,22 +741,20 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     assert.match(await page.locator(".v65-service-list").innerText(), /Coordinamos Retiro o Envío, Consultar formas de Pago/i);
     const relatedStockGeometry = await page
       .locator(".v65-related .v66-card .v69-stock")
-      .evaluateAll((stocks) => stocks.map((stock) => {
+      .evaluateAll((stocks, labels) => stocks.map((stock) => {
         const card = stock.closest(".v66-card");
         const price = stock.nextElementSibling;
         const stockRect = stock.getBoundingClientRect();
         const priceRect = price?.getBoundingClientRect();
-        const needsAttention = Boolean(
-          card?.classList.contains("v69-card-unavailable") || card?.classList.contains("v69-card-unverified"),
-        );
+        const publicId = card?.querySelector(".v65-hit")?.getAttribute("href")?.match(/\/p\/([^/?#]+)/)?.[1];
         return {
           text: stock.textContent?.trim(),
-          expectedText: needsAttention ? "Consultar Disponibilidad" : "Disponible para Entrega",
+          expectedText: labels[publicId],
           height: Math.round(stockRect.height),
           overflows: stock.scrollHeight > stock.clientHeight + 1 || stock.scrollWidth > stock.clientWidth + 1,
           overlapsPrice: Boolean(priceRect && stockRect.bottom > priceRect.top),
         };
-      }));
+      }), availabilityLabels);
     assert.ok(relatedStockGeometry.length >= 5);
     assert.equal(
       relatedStockGeometry.every(
