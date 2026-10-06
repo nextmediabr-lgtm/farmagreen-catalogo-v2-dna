@@ -605,6 +605,16 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 128);
     assert.equal(await page.locator("#gridV69 .v66-card").count(), 128);
     assert.equal(await page.locator("#loadMoreV69").isVisible(), true);
+    await page.evaluate(() => { window.__cardsBeforeMoreV69 = [...document.querySelectorAll("#gridV69 .v66-card")]; });
+    await page.locator("#loadMoreV69").click();
+    await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 192);
+    assert.equal(await page.evaluate(() => window.__cardsBeforeMoreV69.every(
+      (card, index) => card === document.querySelectorAll("#gridV69 .v66-card")[index],
+    )), true, "Cargar más en PC debe conservar las tarjetas ya hidratadas.");
+    const loadedProductIds = await page.locator("#gridV69 .v65-hit").evaluateAll((links) =>
+      links.map((link) => new URL(link.href).pathname.split("/").filter(Boolean).at(-1)),
+    );
+    assert.equal(new Set(loadedProductIds).size, 192, "Los bloques agregados no deben duplicar fichas.");
 
     await selectSort(page, api.products, "precio-desc");
     await page.waitForFunction(() => window.__metaEvents.some(([command, event, parameters]) =>
@@ -1247,9 +1257,21 @@ test("V6.9 difiere catálogo y medición hasta una interacción real", { timeout
     assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 1);
     await page.locator("#searchV69").fill("");
     await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 64);
+    await page.evaluate(() => { window.__cardsBeforeMoreV69 = [...document.querySelectorAll("#gridV69 .v66-card")]; });
     await page.locator("#loadMoreV69").click();
     await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 128);
     assert.equal(await page.locator("#gridV69 .v66-card").count(), 128, "Móvil carga el siguiente bloque de 64 sin volver a descargar el DTO.");
+    assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 1);
+    assert.equal(await page.evaluate(() => window.__cardsBeforeMoreV69.every(
+      (card, index) => card === document.querySelectorAll("#gridV69 .v66-card")[index],
+    )), true, "Cargar más en móvil debe conservar las tarjetas y sus imágenes.");
+    await page.goBack();
+    await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 64);
+    await page.goForward();
+    await page.waitForFunction(() => document.querySelectorAll("#gridV69 .v66-card").length === 128);
+    assert.equal(new Set(await page.locator("#gridV69 .v65-hit").evaluateAll((links) =>
+      links.map((link) => link.getAttribute("href")),
+    )).size, 128);
     assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 1);
   } finally {
     await browser?.close();

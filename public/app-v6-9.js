@@ -88,7 +88,10 @@ const norm = (value) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
-const ars = (value) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value || 0);
+const priceFormatter = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+const productCollator = new Intl.Collator("es", { sensitivity: "base", numeric: true });
+const brandCollator = new Intl.Collator("es", { sensitivity: "base" });
+const ars = (value) => priceFormatter.format(value || 0);
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
 const url = (path) => `${BASE}${path}`;
 const absoluteUrl = (path) => new URL(url(path), PUBLIC_SITE_ORIGIN).href;
@@ -576,6 +579,7 @@ function searchClause(index, term) {
 
 function compileSearchPlan(products, query) {
   const terms = searchTerms(query);
+  if (!terms.length) return { terms, clauses: [], productIds: new Set() };
   const index = searchIndex(products);
   const clauses = terms.map((term) => searchClause(index, term));
   let productIds = new Set(index.allIds);
@@ -878,8 +882,8 @@ function offerSaving(product) {
 
 function productTie(left, right) {
   return (
-    String(left?.name || "").localeCompare(String(right?.name || ""), "es", { sensitivity: "base", numeric: true }) ||
-    String(left?.publicId || "").localeCompare(String(right?.publicId || ""), "es", { sensitivity: "base", numeric: true })
+    productCollator.compare(String(left?.name || ""), String(right?.name || "")) ||
+    productCollator.compare(String(left?.publicId || ""), String(right?.publicId || ""))
   );
 }
 
@@ -890,8 +894,8 @@ function availabilityRank(product) {
 }
 
 function sorted(products) {
-  const plan = compileSearchPlan(products, S.q);
-  const entries = products.map((product) => ({ product, relevance: searchRelevance(product, plan) }));
+  const plan = S.sort === "relevancia" ? compileSearchPlan(products, S.q) : null;
+  const entries = products.map((product) => ({ product, relevance: plan?.terms.length ? searchRelevance(product, plan) : [] }));
   if (S.sort === "disponibilidad") {
     entries.sort(
       (left, right) =>
@@ -920,7 +924,7 @@ function sorted(products) {
   } else if (S.sort === "marca") {
     entries.sort(
       (left, right) =>
-        brandName(left.product).localeCompare(brandName(right.product), "es", { sensitivity: "base" }) ||
+        brandCollator.compare(brandName(left.product), brandName(right.product)) ||
         productTie(left.product, right.product),
     );
   } else if (S.sort === "nombre") {
@@ -1007,19 +1011,38 @@ function catalogCopy() {
   return { mode: "Ofertas", title: "Oportunidades de hoy", context: "Los mejores descuentos disponibles primero.", nav: "ofertas" };
 }
 
+let resultCache = null;
+let renderedResult = null;
+let renderedCount = 0;
+
+function currentResults() {
+  const key = JSON.stringify([S.q, S.brand, S.need, S.view, S.scope, S.sort]);
+  if (resultCache?.catalog === S.all && resultCache.key === key) return resultCache.items;
+  const hasQuery = Boolean(norm(S.q));
+  const searchIds = hasQuery ? new Set(filterProductsBySearch(S.all, S.q).map((product) => product.publicId)) : new Set();
+  const items = sorted(S.all.filter((product) => matches(product, searchIds, hasQuery)));
+  resultCache = { catalog: S.all, key, items };
+  return items;
+}
+
 function render(historyMode = "replace") {
   document.body.classList.toggle("v69-fragrances", S.view === "perfumes-fragancias" || S.need === "fragancias");
   const hasOffers = S.all.some(isOffer);
   if (S.scope === "ofertas" && !hasOffers) S.scope = "todo";
   const offersEmpty = $("#offersEmptyV69");
   if (offersEmpty) offersEmpty.hidden = hasOffers;
-  const searchIds = new Set(filterProductsBySearch(S.all, S.q).map((product) => product.publicId));
-  const hasQuery = Boolean(norm(S.q));
-  const items = sorted(S.all.filter((product) => matches(product, searchIds, hasQuery)));
+  const items = currentResults();
   const shown = Math.min(S.limit, items.length);
-  $("#gridV69").innerHTML = items.length
-    ? items.slice(0, shown).map((product, index) => card(product, index === 0)).join("")
-    : `<div class="v66-empty"><strong>No encontramos coincidencias.</strong><span>Probá otra palabra o limpiá los filtros.</span></div>`;
+  const grid = $("#gridV69");
+  if (items === renderedResult && shown >= renderedCount && items.length) {
+    if (shown > renderedCount) grid.insertAdjacentHTML("beforeend", items.slice(renderedCount, shown).map((product) => card(product)).join(""));
+  } else {
+    grid.innerHTML = items.length
+      ? items.slice(0, shown).map((product, index) => card(product, index === 0)).join("")
+      : `<div class="v66-empty"><strong>No encontramos coincidencias.</strong><span>Probá otra palabra o limpiá los filtros.</span></div>`;
+  }
+  renderedResult = items;
+  renderedCount = shown;
   $("#countV69").textContent = items.length ? `${shown} de ${items.length}` : "Sin resultados";
   const availability = items.reduce(
     (counts, product) => {
