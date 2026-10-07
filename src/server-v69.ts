@@ -1,4 +1,5 @@
 import type http from "node:http";
+import { encodeCatalogV69 } from "../scripts/catalog-codec-v69.mjs";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import type { CatalogV69 } from "./data-v69.js";
 import { assertCatalogPublicationV69 } from "./catalog-validation-v69.js";
@@ -61,6 +62,7 @@ type SnapshotResponseCacheV69 = {
   presented?: CatalogV69;
   publicCatalog?: ReturnType<typeof publicCatalogV69>;
   publicCatalogBody?: EncodedResponseV69;
+  compactCatalogBody?: EncodedResponseV69;
   sitemapBody?: EncodedResponseV69;
   html: Map<string, EncodedResponseV69>;
   htmlPending: Map<string, Promise<EncodedResponseV69>>;
@@ -364,10 +366,17 @@ export async function handleV69Request(
 
   if (pathname === "/api/catalog-v6-9") {
     responseCache.publicCatalog ||= publicCatalogV69(catalog, policy);
-    responseCache.publicCatalogBody ||= encodedResponseV69(JSON.stringify(responseCache.publicCatalog));
+    const compact = url.searchParams.get("format") === "compact-v1";
+    if (compact) {
+      responseCache.compactCatalogBody ||= encodedResponseV69(JSON.stringify(
+        encodeCatalogV69(responseCache.publicCatalog, `${catalog.commerceSyncedAt}:${policyRevision}`),
+      ));
+    } else {
+      responseCache.publicCatalogBody ||= encodedResponseV69(JSON.stringify(responseCache.publicCatalog));
+    }
     sendEncodedV69(
       response,
-      responseCache.publicCatalogBody,
+      (compact ? responseCache.compactCatalogBody : responseCache.publicCatalogBody)!,
       200,
       headersV69({
         "content-type": "application/json; charset=utf-8",

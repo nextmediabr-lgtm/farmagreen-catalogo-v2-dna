@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { decodeCatalogV69 } from "../scripts/catalog-codec-v69.mjs";
 import {
+  activatePreparedCatalogV69,
   catalogV69Data,
   isExcludedV69,
   loadExclusionsV69,
@@ -282,7 +284,7 @@ test("fallback sin verificación real queda no verificado y un snapshot atómico
     products: [sample],
   };
   await writeFile(catalogFile, JSON.stringify(initial));
-
+  let server: ReturnType<typeof app> | undefined;
   try {
     resetCatalogV69CacheForTests();
     const environment = {
@@ -294,6 +296,13 @@ test("fallback sin verificación real queda no verificado y un snapshot atómico
     assert.equal(before.products[0].availability, "unknown");
     assert.equal(before.products[0].availabilityCheckedAt, null);
     assert.equal(before.availabilityReferenceAt, null);
+    server = app({ ...environment, NODE_ENV: "test", V69_LOCAL_PREVIEW: "1" });
+    const origin = await listen(server);
+    const compactBefore = await fetch(`${origin}/api/catalog-v6-9?format=compact-v1`).then(r => r.json());
+    assert.deepEqual(decodeCatalogV69(compactBefore), await fetch(`${origin}/api/catalog-v6-9`).then(r => r.json()));
+    // The HTTP runtime activates its snapshot; return to the file loader for
+    // the atomic-file check, without clearing the server response cache.
+    resetCatalogV69CacheForTests();
 
     const checkedAt = new Date().toISOString();
     const nextFile = `${catalogFile}.next`;
@@ -313,7 +322,14 @@ test("fallback sin verificación real queda no verificado y un snapshot atómico
     assert.equal(after.products[0].availabilityCheckedAt, checkedAt);
     assert.equal(after.commerceSyncedAt, checkedAt);
     assert.equal(catalogHealthV69(after, new Date(checkedAt)).status, "ready");
+    activatePreparedCatalogV69(after);
+    const compactAfter = await fetch(`${origin}/api/catalog-v6-9?format=compact-v1`).then(r => r.json());
+    assert.notEqual(compactAfter.revision, compactBefore.revision);
+    const publicAfter = await fetch(`${origin}/api/catalog-v6-9`).then(r => r.json());
+    assert.deepEqual(decodeCatalogV69(compactAfter), publicAfter);
+    assert.equal(publicAfter.commerceSyncedAt, checkedAt);
   } finally {
+    if (server) await new Promise<void>(resolve => server!.close(() => resolve()));
     resetCatalogV69CacheForTests();
     await rm(directory, { recursive: true, force: true });
   }
@@ -500,7 +516,7 @@ test("SSR V6.9 respeta los órdenes, filtra sin stock y mantiene marca/necesidad
       assert.doesNotMatch(html, /Disponible para Entrega/);
     }
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-16\.js/);
+    assert.match(html, /app-v6-9-17\.js/);
     assert.match(html, /styles-v6-9-4\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -879,7 +895,7 @@ test("los activos versionados V6.9 usan Brotli y caché inmutable fuera del prev
   const origin = await listen(server);
   try {
     const [appResponse, cssResponse, logoResponse] = await Promise.all([
-      fetch(`${origin}/app-v6-9-16.js`, { headers: { "accept-encoding": "br" } }),
+      fetch(`${origin}/app-v6-9-17.js`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/styles-v6-9-4.css`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/logo_farmagreen-v69-1.png`, { headers: { "accept-encoding": "br" } }),
     ]);
@@ -939,7 +955,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-16.js`),
+      fetch(`${origin}/app-v6-9-17.js`),
       fetch(`${origin}/analytics-v69-4.js`),
       fetch(`${origin}/meta-pixel-v69-3.js`),
       fetch(`${origin}/styles-v6-9-4.css`),
@@ -983,6 +999,14 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     const robots = await robotsResponse.text();
     const sitemap = await sitemapResponse.text();
     const api = JSON.parse(apiText) as ReturnType<typeof publicCatalogV69>;
+    const compactResponse = await fetch(`${origin}/api/catalog-v6-9?format=compact-v1`);
+    assert.equal(compactResponse.status, 200);
+    assert.equal(compactResponse.headers.get("cache-control"), apiResponse.headers.get("cache-control"));
+    const compactText = await compactResponse.text();
+    assert.doesNotMatch(compactText, /gpsfarma|provider|"sku"|"source"/i);
+    assert.deepEqual(decodeCatalogV69(JSON.parse(compactText)), api);
+    assert.ok(compactText.length < apiText.length);
+    assert.deepEqual(await fetch(`${origin}/api/catalog-v6-9?format=unknown`).then(r => r.json()), api);
     assert.equal(api.totalProducts, base.products.length - fixture.excludedIds.length);
     assert.deepEqual(api.availabilitySummary, publicAvailabilitySummary(api.products));
     assert.deepEqual(Object.keys(api).sort(), [
@@ -1051,10 +1075,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-4\.css/);
     assert.match(root, /measurement-loader-v69-1\.js/);
-    assert.match(root, /app-v6-9-16\.js/);
+    assert.match(root, /app-v6-9-17\.js/);
     assert.match(root, /data-analytics-src="\/analytics-v69-4\.js"/);
     assert.match(root, /data-meta-src="\/meta-pixel-v69-3\.js"/);
-    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-16.js"));
+    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-17.js"));
     assert.equal((root.match(/logo_farmagreen-v69-1\.png/g) || []).length >= 2, true);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
@@ -1063,7 +1087,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.doesNotMatch(html, /"products":\[/);
     assert.equal(bootPayload(root).totalProducts, api.totalProducts);
     assert.equal(bootPayload(root).catalogRoute, "/");
-    assert.equal(bootPayload(html).dataEndpoint, "/api/catalog-v6-9");
+    assert.equal(bootPayload(html).dataEndpoint, "/api/catalog-v6-9?format=compact-v1");
     assert.equal(bootPayload(html).catalogRoute, "/catalogo");
     assert.ok(Buffer.byteLength(root) < 180_000, "La portada-catálogo no debe incrustar todos los productos.");
     assert.ok(Buffer.byteLength(html) < 180_000, "El catálogo no debe volver a incrustar todos los productos.");

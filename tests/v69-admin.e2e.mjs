@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { chromium } from "playwright-core";
 import { app } from "../dist/server.js";
+import { decodeCatalogV69 } from "../scripts/catalog-codec-v69.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const executablePath = [
@@ -66,6 +67,8 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     assert.match(await page.locator("#adminContent").innerText(), /Productos Saludables/);
     assert.equal(await page.locator('[data-action="add-brand"][data-name="L\'Oréal Revitalift"]').count(), 0);
     const publicBeforeBrandExclusion = await page.request.get(`${origin}/api/catalog-v6-9`).then((response) => response.json());
+    const compactBefore = await page.request.get(`${origin}/api/catalog-v6-9?format=compact-v1`).then(r => r.json());
+    assert.deepEqual(decodeCatalogV69(compactBefore), publicBeforeBrandExclusion);
     const disableBrand = page.locator('[data-action="disable-brand"]').first();
     const disabledBrandSlug = await disableBrand.getAttribute("data-slug");
     const disabledBrandName = await disableBrand.getAttribute("data-name");
@@ -97,6 +100,9 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
     await page.waitForFunction(() => document.querySelector("#adminContent")?.textContent?.includes("14 habilitadas"));
     assert.doesNotMatch(await page.request.get(`${origin}/catalogo-v6-9?scope=todo`).then((response) => response.text()), /option value="sin-stock"/);
     const publicAfterBrandExclusion = await page.request.get(`${origin}/api/catalog-v6-9`).then((response) => response.json());
+    const compactAfter = await page.request.get(`${origin}/api/catalog-v6-9?format=compact-v1`).then(r => r.json());
+    assert.notEqual(compactAfter.revision, compactBefore.revision);
+    assert.deepEqual(decodeCatalogV69(compactAfter), publicAfterBrandExclusion, "El compacto invalida la caché con la política: exclusiones y promociones no quedan congeladas.");
     assert.equal(publicAfterBrandExclusion.products.some((product) => product.publicId === disabledBrandProduct.publicId), false);
     assert.equal(publicAfterBrandExclusion.products.some((product) => product.brand.name === "Dermaglos" && product.discountPercent > 0), true);
     assert.equal(publicAfterBrandExclusion.products.some((product) => product.brand.name === "Eucerin" && product.discountPercent > 0), false);
@@ -134,6 +140,8 @@ test("el panel V6.9 gobierna navegación y EAN, recuerda cambios y nunca desplie
       headers: { authorization: "Bearer admin-e2e-token" },
     }).then((response) => response.json());
     assert.equal(eanState.policy.eanRules.exclude.find((entry) => entry.ean === "3337875694469")?.note, "");
+    const fullAfterEan = await page.request.get(`${origin}/api/catalog-v6-9`).then(r => r.json());
+    assert.deepEqual(decodeCatalogV69(await page.request.get(`${origin}/api/catalog-v6-9?format=compact-v1`).then(r => r.json())), fullAfterEan);
 
     await page.locator('[data-tab="operations"]').click();
     assert.match(await page.locator(".admin-no-deploy").innerText(), /no despliega/i);

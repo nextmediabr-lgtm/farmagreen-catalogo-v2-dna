@@ -356,6 +356,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     );
     await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");
     assert.equal(catalogApiRequests.length, 1, "La primera interacción debe cargar el DTO una sola vez.");
+    assert.equal(new URL(catalogApiRequests[0]).searchParams.get("format"), "compact-v1");
     const cardWhatsappText = new URL(await page.locator("#gridV69 .v66-ask").first().getAttribute("href")).searchParams.get("text") || "";
     assert.match(cardWhatsappText, /https:\/\/farmagreenrosario\.web\.app\/p\/[a-f0-9]+/);
     assert.doesNotMatch(cardWhatsappText, /127\.0\.0\.1|localhost/);

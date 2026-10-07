@@ -1214,7 +1214,8 @@ async function loadCatalogProducts() {
     headers: { accept: "application/json" },
   });
   if (!response.ok) throw new Error(`No se pudo cargar el catálogo (${response.status}).`);
-  const payload = await response.json();
+  const wire = await response.json();
+  const payload = typeof decodeCatalogV69 === "function" ? decodeCatalogV69(wire) : wire;
   if (!Array.isArray(payload.products) || !payload.products.length) {
     throw new Error("El catálogo público llegó vacío.");
   }

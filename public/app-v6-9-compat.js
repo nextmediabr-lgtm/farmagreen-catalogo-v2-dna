@@ -1,4 +1,53 @@
 /* Generado por scripts/build-v69-client.mjs. No editar. */
+function decodeCatalogV69(payload) {
+    // An old server/cache can still return the full DTO during a rolling release.
+    if (!(payload === null || payload === void 0 ? void 0 : payload.format))
+        return payload;
+    if (payload.format !== "farmagreen-catalog-v69/1")
+        throw new Error("Formato de catálogo incompatible.");
+    const { tables } = payload;
+    // Keep Safari support without Object.fromEntries or an extra polyfill.
+    const fromEntries = entries => {
+        const result = {};
+        for (const [key, value] of entries)
+            Object.defineProperty(result, key, { value, enumerable: true, writable: true, configurable: true });
+        return result;
+    };
+    const get = (key, index) => {
+        if (!Array.isArray(tables === null || tables === void 0 ? void 0 : tables[key]) || !Number.isInteger(index) || index < 0 || index >= tables[key].length)
+            throw new Error("Referencia de catálogo inválida.");
+        return tables[key][index];
+    };
+    const imageValue = value => {
+        if (typeof value === "string" && value.startsWith("@")) {
+            if (value.startsWith("@@"))
+                return value.slice(1);
+            const match = value.match(/^@(\d+):([\s\S]*)$/);
+            if (!match)
+                throw new Error("Referencia de imagen inválida.");
+            return get("prefixes", Number(match[1])) + match[2];
+        }
+        if (Array.isArray(value))
+            return value.map(imageValue);
+        if (value && typeof value === "object")
+            return fromEntries(Object.entries(value).map(([k, v]) => [k, imageValue(v)]));
+        return value;
+    };
+    return Object.assign(Object.assign({}, payload.metadata), { products: payload.products.map(product => {
+            const expanded = Object.assign(Object.assign({}, product), { brand: get("brands", product.brand) });
+            if (product.magentoCategories)
+                expanded.magentoCategories = product.magentoCategories.map(index => get("categories", index));
+            if (product.catalogViews)
+                expanded.catalogViews = product.catalogViews.map(index => get("views", index));
+            if (product.images) {
+                const images = Object.assign({}, product.images);
+                if (images.responsive)
+                    images.responsive = fromEntries(Object.entries(images.responsive).map(([kind, index]) => [kind, get("variants", index)]));
+                expanded.images = imageValue(images);
+            }
+            return expanded;
+        }) });
+}
 const BOOT = (() => {
     var _a;
     try {
@@ -1194,7 +1243,8 @@ async function loadCatalogProducts() {
     });
     if (!response.ok)
         throw new Error(`No se pudo cargar el catálogo (${response.status}).`);
-    const payload = await response.json();
+    const wire = await response.json();
+    const payload = typeof decodeCatalogV69 === "function" ? decodeCatalogV69(wire) : wire;
     if (!Array.isArray(payload.products) || !payload.products.length) {
         throw new Error("El catálogo público llegó vacío.");
     }
