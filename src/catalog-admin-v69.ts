@@ -91,6 +91,8 @@ export class CatalogAdminRuntimeV69 {
   readonly #verifyAdminToken: (token: string) => Promise<CatalogAdminActorV69>;
   #cache: CatalogAdminStoreValueV69 | null = null;
   #cacheAt = 0;
+  #readInFlight: Promise<CatalogAdminStoreValueV69> | null = null;
+  #cacheEpoch = 0;
 
   constructor(
     environment: CatalogAdminEnvironmentV69 = process.env,
@@ -125,15 +127,30 @@ export class CatalogAdminRuntimeV69 {
   async current(force = false): Promise<CatalogAdminStoreValueV69> {
     const nowMs = this.#now().getTime();
     if (!force && this.#cache && nowMs - this.#cacheAt < CACHE_MS) return this.#cache;
+    if (!force && this.#readInFlight) return this.#readInFlight;
+    // Forced administrative reads stay independent: publication still checks the
+    // current storage generation, rather than joining an older public read.
+    const epoch = ++this.#cacheEpoch;
+    const pending = this.#readCurrent(epoch);
+    if (force) return pending;
+    this.#readInFlight = pending;
+    try { return await pending; }
+    finally { if (this.#readInFlight === pending) this.#readInFlight = null; }
+  }
+
+  async #readCurrent(epoch: number): Promise<CatalogAdminStoreValueV69> {
     const loaded = this.#store ? await this.#store.load() : null;
-    this.#cache = loaded
+    const value = loaded
       ? {
           document: validateCatalogAdminDocumentV69(loaded.document),
           generation: loaded.generation,
         }
       : { document: await defaultCatalogAdminDocumentFromEnvironmentV69(this.#environment, this.#now()), generation: "0" };
-    this.#cacheAt = nowMs;
-    return this.#cache;
+    if (epoch === this.#cacheEpoch) {
+      this.#cache = value;
+      this.#cacheAt = this.#now().getTime();
+    }
+    return this.#cache || value;
   }
 
   async authorize(header: string | undefined) {
@@ -185,6 +202,7 @@ export class CatalogAdminRuntimeV69 {
       ].slice(-MAX_MEMORY),
     });
     const saved = await this.#store.save(next, current.generation);
+    this.#cacheEpoch++;
     this.#cache = saved;
     this.#cacheAt = this.#now().getTime();
     return saved;
@@ -245,6 +263,7 @@ export class CatalogAdminRuntimeV69 {
       ].slice(-MAX_MEMORY),
     });
     const saved = await this.#store.save(next, current.generation);
+    this.#cacheEpoch++;
     this.#cache = saved;
     this.#cacheAt = this.#now().getTime();
     return saved;

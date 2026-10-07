@@ -7,6 +7,8 @@ import {
   type PublicAvailabilityV69,
 } from "./data-v69.js";
 import type { ResponsiveImageSet } from "./data.js";
+import { isPreparedPublicationV69 } from "./catalog-validation-v69.js";
+import { brandUnionV69 } from "../scripts/catalog-brand-union-v69.mjs";
 import { FRAGRANCES_AVAILABILITY_LABEL_V69, FRAGRANCES_COLLECTION_V69, isFragranceProductV69 } from "../scripts/catalog-collections-v69.mjs";
 import {
   applyCatalogPolicyV69,
@@ -167,7 +169,7 @@ export function publicCatalogV69(
     },
     magentoCategoryPaths: presented.magentoCategoryPaths || {},
     navigation: {
-      brands: navigationBrandsV69(presented, policy),
+      brands: publicNavigationV69(presented, policy),
       needs: [...policy.navigation.needs],
       defaultSort: policy.navigation.defaultSort,
       showOutOfStockSort: policy.navigation.showOutOfStockSort,
@@ -313,7 +315,7 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
       totalProducts: presented.totalProducts,
       initialResultCount: initial.length,
       navigation: {
-        brands: navigationBrandsV69(presented, policy),
+        brands: publicNavigationV69(presented, policy),
         needs: policy.navigation.needs,
         defaultSort: policy.navigation.defaultSort,
         showOutOfStockSort: policy.navigation.showOutOfStockSort,
@@ -345,7 +347,7 @@ function discoveryPanelV69(
   route = CATALOG_ROUTE,
   policy: CatalogPolicyV69 = defaultCatalogPolicyV69(),
 ) {
-  const brands = navigationBrandsV69(catalog, policy);
+  const brands = publicNavigationV69(catalog, policy);
   const offers = dealProducts(catalog.products);
   const brandStats = brands.map((brand) => ({
     ...brand,
@@ -439,7 +441,7 @@ export function homePageV69(
 ) {
   const presented = publicPresentationV69(catalog, policy);
   const hasPromotions = presented.products.some(isOfferV69);
-  const brands = navigationBrandsV69(presented, policy);
+  const brands = publicNavigationV69(presented, policy);
   const homeContext = pageContext(presented, new URLSearchParams({ scope: "todo" }), policy);
   const sections = brands
     .map((brand, brandIndex) => {
@@ -479,7 +481,7 @@ export function homePageV69(
       page: "home",
       totalProducts: presented.totalProducts,
       navigation: {
-        brands: navigationBrandsV69(presented, policy),
+        brands: publicNavigationV69(presented, policy),
         needs: policy.navigation.needs,
         defaultSort: policy.navigation.defaultSort,
         showOutOfStockSort: policy.navigation.showOutOfStockSort,
@@ -721,7 +723,7 @@ function pageContext(
   query: URLSearchParams,
   policy: CatalogPolicyV69 = defaultCatalogPolicyV69(),
 ): PageContext {
-  const navigation = navigationBrandsV69(catalog, policy);
+  const navigation = publicNavigationV69(catalog, policy);
   const availableBrands = new Set(navigation.filter((entry) => entry.kind === "brand").map((entry) => entry.name));
   const availableViews = new Map<string, string>();
   for (const product of catalog.products) {
@@ -765,7 +767,7 @@ function pageContext(
   if (q) {
     const categoryPath = exactCategoryPathV69(catalog, q);
     mode = categoryPath ? "" : "Resultados";
-    title = categoryPath || `Resultados para “${q}”`;
+    title = categoryPath || `Resultados para “${q.replace(/\s*\+\s*/g, " + ")}”`;
     copy = "Coincidencias por producto, marca o necesidad.";
   } else if (brand !== "Todas") {
     mode = "Marca";
@@ -918,6 +920,7 @@ type SearchIndexV69 = {
 };
 
 export type SearchPlanV69 = {
+  brandUnion?: boolean;
   terms: string[];
   clauses: Array<{
     term: string;
@@ -1088,6 +1091,8 @@ function searchClauseV69(index: SearchIndexV69, term: string) {
 }
 
 export function compileSearchPlanV69(products: ProductV69[], query: string): SearchPlanV69 {
+  const union = brandUnionV69(products, query);
+  if (union) return { ...union, clauses: [], brandUnion: true };
   const terms = normalizeQueryTermsV69(query);
   const index = searchIndexV69(products);
   const clauses = terms.map((term) => searchClauseV69(index, term));
@@ -1127,7 +1132,7 @@ function filteredProducts(products: ProductV69[], state: QueryState) {
     .filter((product) => state.view === "Todas" || (product.catalogFacets || []).some((view) => view.kind === "collection" && view.slug === state.view))
     .filter((product) => state.sort !== "sin-stock" || product.availability === "out_of_stock")
     .filter((product) => !hasQuery || searchIds.has(product.publicId));
-  return sortProductsV69(filtered, state.sort, state.q);
+  return sortProductsV69(filtered, state.sort, brandUnionV69(products, state.q) ? "" : state.q);
 }
 
 type SearchClauseV69 = SearchPlanV69["clauses"][number];
@@ -1148,6 +1153,7 @@ function phraseMatchV69(text: string, phrase: string) {
 }
 
 export function searchRelevanceV69(product: ProductV69, plan: SearchPlanV69) {
+  if (plan.brandUnion) return [];
   const fullQuery = plan.terms.join(" ");
   const needs = safeList(product.needs);
   const fields = {
@@ -1223,6 +1229,11 @@ export function sortProductsV69(products: ProductV69[], sort: SortV69, query = "
     );
   }
   if (sort === "nombre") return copy.sort(tie);
+  // Empty relevance vectors are all zero; avoid compiling the whole search
+  // index while retaining exactly the existing offer/saving/lexical tie order.
+  if (!query.trim()) return copy.sort((left, right) =>
+    offerRankV69(right) - offerRankV69(left) ||
+    offerSavingV69(right) - offerSavingV69(left) || tie(left, right));
   const plan = compileSearchPlanV69(copy, query);
   const entries = copy.map((product) => ({ product, relevance: searchRelevanceV69(product, plan) }));
   entries.sort(
@@ -1278,7 +1289,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-4.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-17.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-4.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-1.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-4.js")}" data-meta-src="${u("/meta-pixel-v69-3.js")}"></script><script defer src="${u("/app-v6-9-18.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
 }
 
 function cardV69(product: ProductV69, _origin = "http://127.0.0.1:8109", priority = false) {
@@ -1452,14 +1463,39 @@ function publicProductTextV69(product: ProductV69): ProductV69 {
   };
 }
 
+const presentationCacheV69 = new WeakMap<CatalogV69, { policyKey: string; catalog: CatalogV69 }>();
+const navigationCacheV69 = new WeakMap<CatalogV69, { policyKey: string; brands: NavigationBrandV69[] }>();
+const cachedPresentationsV69 = new WeakSet<CatalogV69>();
+
+function publicNavigationV69(catalog: CatalogV69, policy: CatalogPolicyV69): NavigationBrandV69[] {
+  if (!cachedPresentationsV69.has(catalog)) return navigationBrandsV69(catalog, policy);
+  const policyKey = JSON.stringify(policy);
+  const cached = navigationCacheV69.get(catalog);
+  if (cached?.policyKey === policyKey) return cached.brands.map(entry => ({ ...entry }));
+  const brands = navigationBrandsV69(catalog, policy);
+  navigationCacheV69.set(catalog, { policyKey, brands });
+  return brands.map(entry => ({ ...entry }));
+}
+
 function publicPresentationV69(catalog: CatalogV69, policy: CatalogPolicyV69): CatalogV69 {
+  // One policy per immutable snapshot; replaced policies and snapshots cannot
+  // reuse stale counts, exclusions, promotions or public product text.
+  const cacheable = isPreparedPublicationV69(catalog);
+  const policyKey = cacheable ? JSON.stringify(policy) : "";
+  const cached = cacheable ? presentationCacheV69.get(catalog) : undefined;
+  if (cached?.policyKey === policyKey) return cached.catalog;
   const presented = applyCatalogPolicyV69(catalog, policy);
-  return {
+  const result = {
     ...presented,
     magentoCategoryPaths: Object.fromEntries(Object.entries(presented.magentoCategoryPaths || {})
       .map(([id, names]) => [id, publicSourceTextListV69(names)])),
     products: presented.products.map(publicProductTextV69),
   };
+  if (cacheable) {
+    presentationCacheV69.set(catalog, { policyKey, catalog: result });
+    cachedPresentationsV69.add(result);
+  }
+  return result;
 }
 
 function brandName(product: Partial<ProductV69> | undefined) {

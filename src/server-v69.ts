@@ -225,9 +225,15 @@ export async function handleV69Request(
     return true;
   }
 
-  try {
-    await commerceRuntime.ensureCurrent();
-  } catch {
+  const parallelPolicyRead = pathname !== "/internal/catalog-v6-9/refresh" &&
+    pathname !== "/admin-v6-9" && !pathname.startsWith("/api/admin-v69/");
+  // Both promises are observed even on failure; no background rejection leaks.
+  // Administrative writes retain their independent forced generation checks.
+  const preparation = await Promise.allSettled([
+    commerceRuntime.ensureCurrent(),
+    parallelPolicyRead ? adminRuntime.current() : Promise.resolve(null),
+  ]);
+  if (preparation[0].status === "rejected") {
     sendTextV69(response, "V6.9 no pudo inicializarse.", 503);
     return true;
   }
@@ -257,7 +263,9 @@ export async function handleV69Request(
     sendTextV69(response, "V6.9 todavía no está habilitada para esta ejecución.", 503);
     return true;
   }
-  const adminCurrent = await adminRuntime.current();
+  const policyRead = preparation[1];
+  if (policyRead.status === "rejected") throw policyRead.reason;
+  const adminCurrent = policyRead.value || await adminRuntime.current();
   const policy = adminCurrent.document.policy;
   const policyRevision = adminCurrent.document.revision;
   const responseCache = snapshotResponseCacheV69(catalog, policyRevision, policy);

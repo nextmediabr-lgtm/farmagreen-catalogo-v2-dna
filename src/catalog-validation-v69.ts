@@ -4,6 +4,20 @@ import { sourceImageV69 } from "./render-v69.js";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
+// Only preparation can register an immutable, fully validated snapshot. Mutable
+// candidates still receive all checks on every call, including stricter flags.
+const preparedSnapshots = new WeakMap<CatalogV69, string>();
+export function isPreparedPublicationV69(catalog: CatalogV69) {
+  return preparedSnapshots.has(catalog);
+}
+const validationKey = (environment: Environment) => ["V69_REQUIRE_MAGENTO_TAXONOMY", "V691_REQUIRE_RESPONSIVE_IMAGES", "V691_REQUIRE_JPEG_RESPONSIVE_IMAGES"].map(key => environment[key] === "1" ? "1" : "0").join("");
+function freezeSnapshot(value: unknown, seen = new WeakSet<object>()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  for (const child of Object.values(value)) freezeSnapshot(child, seen);
+  Object.freeze(value);
+}
+
 export function gcsImageV69(value: unknown) {
   try {
     const url = new URL(String(value || ""));
@@ -35,6 +49,9 @@ export function responsiveImagesReadyV691(product: CatalogV69["products"][number
 }
 
 export function assertCatalogPublicationV69(catalog: CatalogV69, environment: Environment) {
+  const validated = preparedSnapshots.get(catalog);
+  const requested = validationKey(environment);
+  if (validated && [...requested].every((flag, index) => flag === "0" || validated[index] === "1")) return;
   if (catalog.version !== 6.9 || !catalog.products.length || !catalog.commerceSyncedAt) {
     throw new Error("Catálogo publicable incompleto.");
   }
@@ -89,8 +106,12 @@ export async function preparePublicationV69(value: unknown, environment: Environ
   // even when an older Job definition omitted one of the feature flags.
   const required = { ...environment, V69_REQUIRE_EXCLUSIONS: "1", V69_REQUIRE_MAGENTO_TAXONOMY: "1",
     V691_REQUIRE_RESPONSIVE_IMAGES: "1", V691_REQUIRE_JPEG_RESPONSIVE_IMAGES: "1" };
-  const catalog = await prepareCatalogV69Data(value, required);
+  // The sync runtime still owns its mutable raw candidate. Freeze only our
+  // publication copy, never shared nested images or source metadata.
+  const catalog = await prepareCatalogV69Data(structuredClone(value), required);
   assertCatalogPublicationV69(catalog, required);
+  freezeSnapshot(catalog);
+  preparedSnapshots.set(catalog, validationKey(required));
   return catalog;
 }
 

@@ -48,6 +48,34 @@ function decodeCatalogV69(payload) {
             return expanded;
         }) });
 }
+function brandUnionV69(products, query) {
+    var _a, _b;
+    if (!String(query).includes("+"))
+        return null;
+    const normalizeBrand = value => String(value || "").normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const terms = String(query).split("+").map(normalizeBrand);
+    if (terms.length < 2 || terms.some(term => !term))
+        return null;
+    const byBrand = new Map();
+    for (const product of products) {
+        for (const name of [(_a = product.brand) === null || _a === void 0 ? void 0 : _a.name, ...(((_b = product.brand) === null || _b === void 0 ? void 0 : _b.aliases) || [])]) {
+            const key = normalizeBrand(name);
+            if (!key)
+                continue;
+            const ids = byBrand.get(key) || new Set();
+            ids.add(product.publicId);
+            byBrand.set(key, ids);
+        }
+    }
+    if (terms.some(term => !byBrand.has(term)))
+        return null;
+    const productIds = new Set();
+    for (const term of terms)
+        for (const id of byBrand.get(term))
+            productIds.add(id);
+    return { terms: [...new Set(terms)], productIds };
+}
 const BOOT = (() => {
     var _a;
     try {
@@ -597,6 +625,9 @@ function searchClause(index, term) {
     return { term, kind: "unresolved", targets: [norm(term)], productIds: new Set() };
 }
 function compileSearchPlan(products, query) {
+    const union = brandUnionV69(products, query);
+    if (union)
+        return Object.assign(Object.assign({}, union), { clauses: [], brandUnion: true });
     const terms = searchTerms(query);
     if (!terms.length)
         return { terms, clauses: [], productIds: new Set() };
@@ -653,6 +684,8 @@ function phraseMatch(text, phrase) {
 }
 function searchRelevance(product, plan) {
     var _a;
+    if (plan.brandUnion)
+        return [];
     const fullQuery = plan.terms.join(" ");
     const needs = product.needs || [];
     const fields = {
@@ -915,7 +948,7 @@ function availabilityRank(product) {
     return 2;
 }
 function sorted(products) {
-    const plan = S.sort === "relevancia" ? compileSearchPlan(products, S.q) : null;
+    const plan = S.sort === "relevancia" && !brandUnionV69(S.all, S.q) ? compileSearchPlan(products, S.q) : null;
     const entries = products.map((product) => ({ product, relevance: (plan === null || plan === void 0 ? void 0 : plan.terms.length) ? searchRelevance(product, plan) : [] }));
     if (S.sort === "disponibilidad") {
         entries.sort((left, right) => availabilityRank(left.product) - availabilityRank(right.product) ||
@@ -1006,7 +1039,7 @@ function catalogCopy() {
         const exactCategoryPath = /^\d+$/.test(S.q.trim()) ? (_a = BOOT.magentoCategoryPaths) === null || _a === void 0 ? void 0 : _a[S.q.trim()] : null;
         return {
             mode: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? "" : "Resultados",
-            title: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? exactCategoryPath.join(" › ") : `Resultados para “${S.q.trim()}”`,
+            title: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? exactCategoryPath.join(" › ") : `Resultados para “${S.q.trim().replace(/\s*\+\s*/g, " + ")}”`,
             context: "Coincidencias por producto, marca o necesidad.",
             nav: "buscar",
         };
