@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after } from "node:test";
 import type http from "node:http";
+import { spawnSync } from "node:child_process";
 import { CatalogAdminRuntimeV69, defaultCatalogAdminDocumentV69 } from "../src/catalog-admin-v69.js";
 import { assertCatalogPublicationV69, preparePublicationV69 } from "../src/catalog-validation-v69.js";
 import { activatePreparedCatalogV69 } from "../src/data-v69.js";
@@ -164,6 +165,40 @@ test("validación memoizada sólo para snapshots inmutables; no congela el candi
   assert.throws(() => assertCatalogPublicationV69(corrupt, environment), /Precios/);
 });
 
+test("copia publicable mantiene acotada la memoria de variantes con claves numéricas", async () => {
+  // Real snapshots are JSON. Numeric image-width keys must not grow into large
+  // sparse backing stores when copied, even though their values are identical.
+  const file = path.join(directory, "memory-catalog.json");
+  await writeFile(file, JSON.stringify({ ...raw, products: Array.from({ length: 2_400 }, (_, i) => ({
+    ...raw.products[0], publicId: `memory-${i}`, sku: `memory-${i}`,
+  })) }));
+  const result = spawnSync(process.execPath, ["--expose-gc", "--max-old-space-size=256", "--import", "tsx",
+    "--input-type=module", "-e", `
+      import assert from 'node:assert/strict';
+      import fs from 'node:fs';
+      import { preparePublicationV69 } from './src/catalog-validation-v69.ts';
+      import { publicCatalogV69 } from './src/render-v69.ts';
+      const raw = JSON.parse(fs.readFileSync(process.env.V69_MEMORY_FIXTURE, 'utf8'));
+      global.gc(); const before = process.memoryUsage().heapUsed;
+      const prepared = await preparePublicationV69(raw, process.env);
+      global.gc(); const increase = process.memoryUsage().heapUsed - before;
+      assert.equal(prepared.products.length, raw.products.length);
+      assert.ok(Object.isFrozen(prepared.products[0].images));
+      assert.ok(!Object.isFrozen(raw.products[0].images));
+      assert.deepEqual(prepared.products[0].images, raw.products[0].images);
+      assert.ok(increase < 64 * 1024 * 1024, 'Publication copy retained ' + Math.round(increase / 1048576) + ' MiB');
+      const dtoBefore = process.memoryUsage().heapUsed;
+      const dto = publicCatalogV69(prepared);
+      global.gc(); const dtoIncrease = process.memoryUsage().heapUsed - dtoBefore;
+      assert.equal(dto.products.length, raw.products.length);
+      assert.deepEqual(dto.products[0].images.responsive, raw.products[0].images.responsive);
+      assert.ok(dtoIncrease < 64 * 1024 * 1024, 'Public DTO retained ' + Math.round(dtoIncrease / 1048576) + ' MiB');
+      console.log(JSON.stringify({ retainedCopyMiB: increase / 1048576 }));
+    `], { encoding: "utf8", timeout: 30_000, env: { ...process.env, V69_MEMORY_FIXTURE: file,
+      V69_EXCLUSIONS_FILE: exclusionsFile, V69_MAGENTO_TAXONOMY_FILE: taxonomyFile } });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
 test("otra publicación y cambios de exclusión/promociones invalidan la presentación", async () => {
   const { catalog, document, environment } = await fixture();
   const policy = structuredClone(document.policy);
@@ -184,4 +219,3 @@ test("otra publicación y cambios de exclusión/promociones invalidan la present
   assert.ok(changed.products.every(p => p.discountPercent === 0 && !p.promotion));
   assert.deepEqual(changed, publicCatalogV69(structuredClone(next), policy));
 });
-

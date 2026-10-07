@@ -106,9 +106,11 @@ export async function preparePublicationV69(value: unknown, environment: Environ
   // even when an older Job definition omitted one of the feature flags.
   const required = { ...environment, V69_REQUIRE_EXCLUSIONS: "1", V69_REQUIRE_MAGENTO_TAXONOMY: "1",
     V691_REQUIRE_RESPONSIVE_IMAGES: "1", V691_REQUIRE_JPEG_RESPONSIVE_IMAGES: "1" };
-  // The sync runtime still owns its mutable raw candidate. Freeze only our
-  // publication copy, never shared nested images or source metadata.
-  const catalog = await prepareCatalogV69Data(structuredClone(value), required);
+  // Stored candidates are JSON; keep the sync runtime's raw candidate mutable.
+  // structuredClone expands numeric image-width maps in V8 and exhausted the
+  // 256 MiB heap in Cloud Run. JSON copying preserves the snapshot contract
+  // and its compact representation before freezing this publication copy.
+  const catalog = await prepareCatalogV69Data(JSON.parse(JSON.stringify(value)), required);
   assertCatalogPublicationV69(catalog, required);
   freezeSnapshot(catalog);
   preparedSnapshots.set(catalog, validationKey(required));

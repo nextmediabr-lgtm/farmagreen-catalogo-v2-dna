@@ -1613,7 +1613,9 @@ function safeVariantMapV69(value: unknown) {
     .map(([width, url]) => [positiveInteger(width), String(url || "")] as const)
     .filter(([width, url]) => width && safePublicImageUrlV69(url))
     .sort((left, right) => left[0] - right[0]);
-  return entries.length ? Object.fromEntries(entries.map(([width, url]) => [String(width), url])) : undefined;
+  // Numeric width keys create sparse V8 backing stores with fromEntries.
+  // Keep identical JSON/URLs without retaining those stores in the DTO cache.
+  return entries.length ? JSON.parse(JSON.stringify(Object.fromEntries(entries))) : undefined;
 }
 
 function safePublicImageUrlV69(value: string) {
