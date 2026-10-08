@@ -24,6 +24,11 @@ test("transporte compacto conserva 64 fichas ante error y reintenta con DTO anti
     bad.products[0].brand = 999999;
     let mode = "invalid", requests = 0;
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    // Exercise explicitly deferred transport while automatic preparation is
+    // tested separately, including its failure/retry behavior.
+    await page.addInitScript(() => Object.defineProperty(navigator, "connection", {
+      value: { saveData: true, effectiveType: "4g" }, configurable: true,
+    }));
     const pageErrors = [];
     page.on("pageerror", error => pageErrors.push(error.message));
     await page.route("**/*", async route => {

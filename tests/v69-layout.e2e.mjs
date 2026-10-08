@@ -256,6 +256,14 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.addInitScript(() => {
       window.__metaEvents = [];
       window.fbq = (...args) => window.__metaEvents.push(args);
+      window.__catalogRequestPhasesV69 = [];
+      const originalFetch = window.fetch;
+      window.fetch = (...args) => {
+        if (new URL(String(args[0]), location.href).pathname === "/api/catalog-v6-9") {
+          window.__catalogRequestPhasesV69.push(document.readyState);
+        }
+        return originalFetch(...args);
+      };
     });
     const providerRequests = [];
     const catalogApiRequests = [];
@@ -322,8 +330,9 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.goto(`${runtime.origin}/?scope=todo`, { waitUntil: "domcontentloaded" });
     assert.doesNotMatch(await page.content(), /gps[\s._-]*farma/i);
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
-    assert.equal(await page.evaluate(() => document.body.dataset.v69CatalogLoaded), "false");
-    assert.equal(catalogApiRequests.length, 0, "La carga inicial no debe descargar el DTO completo.");
+    assert.ok(catalogApiRequests.length <= 1, "La preparación automática nunca duplica el DTO.");
+    assert.equal(await page.evaluate(() => window.__catalogRequestPhasesV69.every(phase => phase === "complete")), true,
+      "La preparación automática no comienza antes de load.");
     assert.equal(await page.locator("#gridV69 .v66-card").count(), 64, "PC debe renderizar 64 fichas sin descargar todo el catálogo.");
     assert.equal(await page.locator("#fg69-data").evaluate((data) => JSON.parse(data.textContent).pageSize), 64);
     await page.waitForFunction(() => window.__metaEvents.some(([command, event]) => command === "track" && event === "PageView"));
@@ -355,7 +364,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       () => location.pathname === "/" && new URL(location.href).searchParams.get("q") === "eucerin",
     );
     await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");
-    assert.equal(catalogApiRequests.length, 1, "La primera interacción debe cargar el DTO una sola vez.");
+    assert.equal(catalogApiRequests.length, 1, "Precarga e interacción deben compartir la única descarga del DTO.");
     assert.equal(new URL(catalogApiRequests[0]).searchParams.get("format"), "compact-v1");
     const cardWhatsappText = new URL(await page.locator("#gridV69 .v66-ask").first().getAttribute("href")).searchParams.get("text") || "";
     assert.match(cardWhatsappText, /https:\/\/farmagreenrosario\.web\.app\/p\/[a-f0-9]+/);
@@ -1202,7 +1211,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
   }
 });
 
-test("V6.9 difiere catálogo y medición hasta una interacción real", { timeout: 60_000 }, async () => {
+test("V6.9 deja SSR intacto y anticipa catálogo por intención sin adelantar medición", { timeout: 60_000 }, async () => {
   assert.ok(executablePath, "No se encontró Chrome/Chromium para la prueba de red diferida.");
   const runtime = await runtimeTarget();
   let browser;
@@ -1251,7 +1260,9 @@ test("V6.9 difiere catálogo y medición hasta una interacción real", { timeout
     }));
     assert.equal(requests.some((value) => value.includes("/analytics-v69-4.js")), true);
     assert.equal(requests.some((value) => value.includes("/meta-pixel-v69-3.js")), true);
-    assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 0);
+    await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");
+    assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 1,
+      "Tocar el filtro anticipa el catálogo incluso con idle retenido.");
 
     await page.locator("#searchV69").fill("eucerin");
     await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");

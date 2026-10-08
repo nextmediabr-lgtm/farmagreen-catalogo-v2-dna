@@ -1253,6 +1253,38 @@ async function ensureCatalogReady() {
   return catalogLoadPromise;
 }
 
+function prepareCatalogAfterFirstPaint() {
+  if (!BOOT.prefetchCatalog || !BOOT.dataEndpoint || S.all.length) return;
+  const discovery = $("#buscar-v69");
+  // Real intent can use the same in-flight request before automatic preparation.
+  const onIntent = () => { void ensureCatalogReady(); };
+  discovery?.addEventListener("focusin", onIntent, { once: true });
+  discovery?.addEventListener("pointerdown", onIntent, { once: true, passive: true });
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType || "")) return;
+  const prepare = () => {
+    if (document.visibilityState === "hidden" || S.all.length || catalogLoadPromise ||
+        document.body.dataset.v69CatalogLoaded === "error") return;
+    const onIdle = () => {
+      if (document.visibilityState !== "hidden" && document.body.dataset.v69CatalogLoaded !== "error") onIntent();
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(onIdle, { timeout: 1500 });
+    } else {
+      window.setTimeout(onIdle, 0);
+    }
+  };
+  // Leave the initial cards and images on the critical path; never rerender them.
+  const afterLoad = () => {
+    window.setTimeout(prepare, 250);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden") prepare();
+    });
+  };
+  if (document.readyState === "complete") afterLoad();
+  else window.addEventListener("load", afterLoad, { once: true });
+}
+
 function syncInitialCatalogUi() {
   const copy = catalogCopy();
   const resultCount = Number(BOOT.initialResultCount || 0);
@@ -1434,6 +1466,7 @@ async function boot() {
 
   wireFilterMenus();
   syncInitialCatalogUi();
+  prepareCatalogAfterFirstPaint();
   if ((Number.parseInt(params.get("pagina") || "1", 10) || 1) > 1) {
     void ensureCatalogReady().then((ready) => {
       if (ready) render();

@@ -197,6 +197,7 @@ function bootPayload(html: string) {
     products?: Array<Record<string, unknown>>;
     totalProducts?: number;
     dataEndpoint?: string;
+    prefetchCatalog?: boolean;
     catalogRoute?: string;
     initialResultCount?: number;
   };
@@ -516,7 +517,7 @@ test("SSR V6.9 respeta los órdenes, filtra sin stock y mantiene marca/necesidad
       assert.doesNotMatch(html, /Disponible para Entrega/);
     }
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-18\.js/);
+    assert.match(html, /app-v6-9-19\.js/);
     assert.match(html, /styles-v6-9-4\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -895,7 +896,7 @@ test("los activos versionados V6.9 usan Brotli y caché inmutable fuera del prev
   const origin = await listen(server);
   try {
     const [appResponse, cssResponse, logoResponse] = await Promise.all([
-      fetch(`${origin}/app-v6-9-18.js`, { headers: { "accept-encoding": "br" } }),
+      fetch(`${origin}/app-v6-9-19.js`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/styles-v6-9-4.css`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/logo_farmagreen-v69-1.png`, { headers: { "accept-encoding": "br" } }),
     ]);
@@ -955,7 +956,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-18.js`),
+      fetch(`${origin}/app-v6-9-19.js`),
       fetch(`${origin}/analytics-v69-4.js`),
       fetch(`${origin}/meta-pixel-v69-3.js`),
       fetch(`${origin}/styles-v6-9-4.css`),
@@ -1075,10 +1076,10 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-4\.css/);
     assert.match(root, /measurement-loader-v69-1\.js/);
-    assert.match(root, /app-v6-9-18\.js/);
+    assert.match(root, /app-v6-9-19\.js/);
     assert.match(root, /data-analytics-src="\/analytics-v69-4\.js"/);
     assert.match(root, /data-meta-src="\/meta-pixel-v69-3\.js"/);
-    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-18.js"));
+    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-19.js"));
     assert.equal((root.match(/logo_farmagreen-v69-1\.png/g) || []).length >= 2, true);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
@@ -1088,6 +1089,8 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.equal(bootPayload(root).totalProducts, api.totalProducts);
     assert.equal(bootPayload(root).catalogRoute, "/");
     assert.equal(bootPayload(html).dataEndpoint, "/api/catalog-v6-9?format=compact-v1");
+    assert.equal(bootPayload(root).prefetchCatalog, true);
+    assert.equal(bootPayload(html).prefetchCatalog, true);
     assert.equal(bootPayload(html).catalogRoute, "/catalogo");
     assert.ok(Buffer.byteLength(root) < 180_000, "La portada-catálogo no debe incrustar todos los productos.");
     assert.ok(Buffer.byteLength(html) < 180_000, "El catálogo no debe volver a incrustar todos los productos.");

@@ -36,7 +36,7 @@
     "test:unit:v69": "node --import tsx --test tests/smoke.test.ts tests/v67-local.test.ts tests/v68-*.test.ts tests/v69-*.test.ts",
     "test:v7-beta": "node --import tsx --test tests/v7-beta-local.test.ts tests/v7-beta-vercel.test.ts",
     "test:layout:v68": "node --test tests/v68-layout.e2e.mjs",
-    "test:layout:v69": "node --test tests/v69-layout.e2e.mjs tests/v69-admin.e2e.mjs tests/v69-resilience.e2e.mjs tests/v69-brand-union.e2e.mjs",
+    "test:layout:v69": "node --test tests/v69-layout.e2e.mjs tests/v69-admin.e2e.mjs tests/v69-resilience.e2e.mjs tests/v69-brand-union.e2e.mjs tests/v69-prefetch.e2e.mjs",
     "test:sync:v69": "node --test tests/v69-commerce-sync.test.mjs tests/v69-gcp-preparation.test.mjs tests/v69-jpeg-backfill.test.mjs tests/v69-deploy-receipt.test.mjs tests/v69-release.test.mjs",
     "verify:v69": "npm run build && npm run test:unit:v69 && npm run test:sync:v69 && npm run test:layout:v69",
     "verify:fallback:v69": "node scripts/verify-packaged-fallback-v69.mjs",
