@@ -24,6 +24,7 @@ const W = "5493417234000";
 const PUBLIC_SITE_ORIGIN = "https://farmagreenrosario.web.app";
 const SOCIAL_IMAGE = "https://farmagreenrosario.web.app/farmagreen-social-preview-v69-social-2.png";
 const SOCIAL_DESCRIPTION = "Farmacia y Dermocosmetica, Catalogo de Precios y Promociones";
+const PUBLIC_CATALOG_TITLE = "Farmagreen Rosario - Catalogo de Ofertas Online";
 const HOME_ROUTE = "/";
 const CATALOG_ROUTE = "/catalogo";
 const CATALOG_PAGE_SIZE_V69 = 64;
@@ -469,7 +470,7 @@ export function homePageV69(
     .join("");
 
   return shell69(
-    "Farmagreen Rosario | Marcas y productos",
+    PUBLIC_CATALOG_TITLE,
     SOCIAL_DESCRIPTION,
     `<h1 class="v67-visually-hidden">Farmagreen Rosario: catálogo de precios y promociones</h1>
     ${discoveryPanelV69(presented, homeContext, presented.totalProducts, CATALOG_ROUTE, policy)}
@@ -792,7 +793,7 @@ function pageContext(
     copy = "Explorá el catálogo completo.";
   }
   const filtered = filteredProducts(catalog.products, state);
-  const metaTitle = brand !== "Todas" ? `${brand} | Catálogo Farmagreen V6.9` : need !== "Todas" || view !== "Todas" ? `${title} | Catálogo Farmagreen V6.9` : q ? `${title} | Farmagreen` : "Farmagreen Rosario | Catálogo V6.9";
+  const metaTitle = brand !== "Todas" ? `${brand} | Catálogo Farmagreen` : need !== "Todas" || view !== "Todas" ? `${title} | Catálogo Farmagreen` : q ? `${title} | Farmagreen` : PUBLIC_CATALOG_TITLE;
   const metaDescription = brand !== "Todas" ? `${filtered.length} productos disponibles de ${brand} para consultar por WhatsApp.` : need !== "Todas" || view !== "Todas" ? `Productos para ${title.toLowerCase()} disponibles en Farmagreen Rosario.` : "Catálogo FarmaGreen con marcas, necesidades y consulta directa por WhatsApp.";
   const contextual = Boolean(q || brand !== "Todas" || need !== "Todas" || view !== "Todas");
   return { ...state, state, mode, title, copy, metaTitle, metaDescription, ogImage: contextual ? safeImage(filtered[0], "card") || SOCIAL_IMAGE : SOCIAL_IMAGE };

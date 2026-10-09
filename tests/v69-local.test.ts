@@ -92,6 +92,34 @@ async function baseCatalog() {
   });
 }
 
+test("preview público usa el título acordado sin versión en ambas URL y conserva las fichas", async () => {
+  const catalog = await baseCatalog();
+  const title = "Farmagreen Rosario - Catalogo de Ofertas Online";
+  const metadataTitle = (html: string) => html.match(/<title>(.*?)<\/title>/)?.[1];
+  const ogTitle = (html: string) => html.match(/<meta property="og:title" content="([^"]*)">/)?.[1];
+  for (const origin of ["https://farmagreenrosario.com.ar", "https://farmagreenrosario.web.app"]) {
+    for (const query of ["", "scope=todo"]) {
+      const html = catalogPageV69(catalog, new URLSearchParams(query), origin);
+      assert.equal(metadataTitle(html), title);
+      assert.equal(ogTitle(html), title);
+      assert.match(html, /<meta property="og:description" content="Catálogo FarmaGreen con marcas, necesidades y consulta directa por WhatsApp\.">/);
+    }
+    const home = homePageV69(catalog, origin);
+    assert.equal(metadataTitle(home), title);
+    assert.equal(ogTitle(home), title);
+    for (const query of ["scope=todo&marca=Eucerin", "scope=todo&need=manchas"]) {
+      const html = catalogPageV69(catalog, new URLSearchParams(query), origin);
+      assert.doesNotMatch(metadataTitle(html) || "", /V6\.9/);
+      assert.equal(ogTitle(html), metadataTitle(html));
+    }
+    const product = catalog.products.find((entry) => entry.publicId === "fcbd59a2511f");
+    assert.ok(product);
+    const detail = productPageV69(product, [], origin);
+    assert.equal(metadataTitle(detail), `${product.name} | Farmagreen Rosario`);
+    assert.equal(ogTitle(detail), metadataTitle(detail));
+  }
+});
+
 function availabilityCounts(products: Pick<ProductV69, "availability">[]) {
   return products.reduce(
     (counts, product) => {
