@@ -35,6 +35,7 @@ import { app } from "../src/server.js";
 import {
   catalogHealthV69,
   catalogReadyForRuntimeV69,
+  metaEventOriginsV69,
   normalizeMetaEventV69,
   responsiveJpegImagesReadyV691,
   responsiveImagesReadyV691,
@@ -80,6 +81,38 @@ test("V6.9 normaliza eventos CAPI sin aceptar orígenes, eventos ni datos arbitr
   assert.throws(
     () => normalizeMetaEventV69({ ...normalized, event_name: "Purchase" }, "https://farmagreenrosario.web.app"),
     /Evento no permitido/,
+  );
+});
+
+test("V6.9 acepta CAPI sólo desde los dos orígenes públicos configurados", () => {
+  const origins = metaEventOriginsV69("https://internal.invalid", {
+    NODE_ENV: "production",
+    PUBLIC_ORIGIN: "https://farmagreenrosario.web.app",
+    META_CAPI_ALLOWED_ORIGINS: "https://farmagreenrosario.com.ar",
+  });
+  assert.deepEqual([...origins], [
+    "https://farmagreenrosario.web.app",
+    "https://farmagreenrosario.com.ar",
+  ]);
+
+  const event = {
+    event_name: "Contact",
+    event_time: 1_787_350_000,
+    event_id: "fg-v69:custom-domain",
+    event_source_url: "https://farmagreenrosario.com.ar/p/producto",
+  };
+  assert.equal(normalizeMetaEventV69(event, origins, 1_787_350_000).event_source_url, event.event_source_url);
+  assert.throws(
+    () => normalizeMetaEventV69({ ...event, event_source_url: "https://example.com/" }, origins, 1_787_350_000),
+    /Origen de evento inválido/,
+  );
+  assert.throws(
+    () => metaEventOriginsV69("https://internal.invalid", {
+      NODE_ENV: "production",
+      PUBLIC_ORIGIN: "https://farmagreenrosario.web.app",
+      META_CAPI_ALLOWED_ORIGINS: "https://*.farmagreenrosario.com.ar",
+    }),
+    /orígenes HTTPS exactos/,
   );
 });
 
@@ -545,7 +578,7 @@ test("SSR V6.9 respeta los órdenes, filtra sin stock y mantiene marca/necesidad
       assert.doesNotMatch(html, /Disponible para Entrega/);
     }
     assert.match(html, /id="sortV69" name="orden"/);
-    assert.match(html, /app-v6-9-19\.js/);
+    assert.match(html, /app-v6-9-20\.js/);
     assert.match(html, /styles-v6-9-4\.css/);
     assert.equal((html.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.doesNotMatch(html, /app-v6-8\.js|styles-v6-8\.css/i);
@@ -924,7 +957,7 @@ test("los activos versionados V6.9 usan Brotli y caché inmutable fuera del prev
   const origin = await listen(server);
   try {
     const [appResponse, cssResponse, logoResponse] = await Promise.all([
-      fetch(`${origin}/app-v6-9-19.js`, { headers: { "accept-encoding": "br" } }),
+      fetch(`${origin}/app-v6-9-20.js`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/styles-v6-9-4.css`, { headers: { "accept-encoding": "br" } }),
       fetch(`${origin}/logo_farmagreen-v69-1.png`, { headers: { "accept-encoding": "br" } }),
     ]);
@@ -984,9 +1017,9 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
       fetch(`${origin}/catalogo-v6-9/`),
       fetch(`${origin}/api/catalog-v6-9`),
       fetch(`${origin}/api/catalog-v6-9/health`),
-      fetch(`${origin}/app-v6-9-19.js`),
-      fetch(`${origin}/analytics-v69-4.js`),
-      fetch(`${origin}/meta-pixel-v69-3.js`),
+      fetch(`${origin}/app-v6-9-20.js`),
+      fetch(`${origin}/analytics-v69-5.js`),
+      fetch(`${origin}/meta-pixel-v69-4.js`),
       fetch(`${origin}/styles-v6-9-4.css`),
       fetch(`${origin}/farmagreen-social-preview-v69-social-2.png`),
       fetch(`${origin}/robots.txt`),
@@ -1103,11 +1136,11 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(home, /farmagreen-social-preview-v69-social-2\.png/);
     assert.equal((root.match(/<link rel="stylesheet"/g) || []).length, 1);
     assert.match(root, /styles-v6-9-4\.css/);
-    assert.match(root, /measurement-loader-v69-1\.js/);
-    assert.match(root, /app-v6-9-19\.js/);
-    assert.match(root, /data-analytics-src="\/analytics-v69-4\.js"/);
-    assert.match(root, /data-meta-src="\/meta-pixel-v69-3\.js"/);
-    assert.ok(root.indexOf("measurement-loader-v69-1.js") < root.indexOf("app-v6-9-19.js"));
+    assert.match(root, /measurement-loader-v69-2\.js/);
+    assert.match(root, /app-v6-9-20\.js/);
+    assert.match(root, /data-analytics-src="\/analytics-v69-5\.js"/);
+    assert.match(root, /data-meta-src="\/meta-pixel-v69-4\.js"/);
+    assert.ok(root.indexOf("measurement-loader-v69-2.js") < root.indexOf("app-v6-9-20.js"));
     assert.equal((root.match(/logo_farmagreen-v69-1\.png/g) || []).length >= 2, true);
     assert.match(robots, new RegExp(`Sitemap: ${origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/sitemap\\.xml`));
     assert.equal((sitemap.match(/<url>/g) || []).length, api.totalProducts + 2);
@@ -1144,7 +1177,7 @@ test("servidor V6.9 local publica API mínima, PDP de disponibilidad y rechaza p
     assert.match(appSource, /trackMeta\("ViewContent"/);
     assert.match(appSource, /trackMeta\("Search"/);
     assert.match(appSource, /trackMeta\("Contact"/);
-    assert.match(appSource, /trackMeta\("Lead"/);
+    assert.doesNotMatch(appSource, /trackMeta\("Lead"/);
     assert.match(appSource, /trackMeta\("CatalogFilterOpen"/);
     assert.match(appSource, /trackMeta\("CatalogFilterSelect"/);
     assert.match(appSource, /trackGa\("filter_open"/);

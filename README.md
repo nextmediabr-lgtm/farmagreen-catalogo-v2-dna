@@ -277,6 +277,46 @@ Contratos: [escritura condicional GCS](https://docs.cloud.google.com/storage/doc
 [uptime](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.uptimeCheckConfigs),
 [políticas de alerta](https://docs.cloud.google.com/monitoring/alerts/policies-in-json).
 
+## Atribución WhatsApp publicada en V6.9 — 12 de octubre de 2026
+
+La mejora del catálogo está publicada. El estado por superficie y las UTMs
+preparadas viven en [meta-whatsapp-attribution-candidate.json](meta-whatsapp-attribution-candidate.json).
+GA4 conserva `generate_lead` como evento clave y `contact` quedó desmarcado;
+el cambio se confirmó después de recargar la interfaz.
+
+El cliente captura UTMs y `fbclid` antes de iniciar las etiquetas diferidas,
+conserva su contexto en `sessionStorage` entre fichas y recargas, y recupera
+`fbc` con el timestamp original. La recuperación entre páginas caduca a los
+30 minutos sin una nueva carga. Google Ads con etiquetado automático no hereda
+la campaña de Meta.
+
+Cada clic WhatsApp emite únicamente `generate_lead` en GA4 y `Contact` en Meta.
+Píxel y CAPI comparten `event_id`. El clic representa intención de consulta;
+no confirma un mensaje recibido y no envía valor monetario ni eventos de venta.
+El historial anterior conserva sus eventos originales. Los assets publicados
+son `app-v6-9-20.js`, `analytics-v69-5.js`, `meta-pixel-v69-4.js` y
+`measurement-loader-v69-2.js`.
+
+El receptor CAPI admite únicamente el origen canónico de `PUBLIC_ORIGIN` y los
+orígenes HTTPS exactos enumerados en `META_CAPI_ALLOWED_ORIGINS`. Producción usa
+`https://farmagreenrosario.com.ar` como origen adicional para que el dominio
+público y `https://farmagreenrosario.web.app` compartan la misma medición sin
+aceptar solicitudes de terceros.
+
+Cloud Build aprobó 195 pruebas unitarias y 64 de integración/empaquetado.
+La candidata se verificó a 0% antes de promoverla. En producción se confirmó
+catálogo público idéntico (1.614 productos, 445 ofertas, cero disponibilidades
+sin verificar), HTML idéntico salvo los nombres de assets de seguimiento,
+ficha y búsqueda por código de barras, hashes de assets coincidentes y recursos
+conservados. El recibo post-deploy está persistido en la memoria operativa.
+Este corte verifica la publicación web; no certifica una nueva ejecución de discovery.
+
+Pendiente: agregar las UTMs al anuncio actual. Ads Manager deriva la edición a
+Instagram y la interfaz web de esa promoción deja su destino en sólo lectura.
+Las UTMs no se guardaron en esa promoción y no se creó un anuncio de reemplazo.
+La recepción y atribución de nuevas consultas reales se comprobará cuando
+ocurran; las pruebas de clic se realizaron con receptores locales.
+
 ## Estado y continuidad: referencia histórica de agosto de 2026
 
 Los conteos siguientes documentan aquel despliegue, no el inventario vivo actual;

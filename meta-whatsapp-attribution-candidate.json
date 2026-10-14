@@ -1,0 +1,22 @@
+{
+  "status": "catalog_deployed_ad_utms_pending",
+  "adId": "120250554898740477",
+  "campaignId": "120250554896890477",
+  "destination": "https://farmagreenrosario.web.app/",
+  "urlParameters": "utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign=fg_catalogo_whatsapp_202610&utm_id={{campaign.id}}&utm_content={{ad.id}}&utm_source_platform=meta",
+  "instagramPreviewUrl": "https://farmagreenrosario.web.app/?utm_source=ig&utm_medium=paid_social&utm_campaign=fg_catalogo_whatsapp_202610&utm_id=120250554896890477&utm_content=120250554898740477&utm_source_platform=meta",
+  "ga4Event": "generate_lead",
+  "ga4KeyEventChanges": {
+    "keep": "generate_lead",
+    "unmark": "contact",
+    "applied": true
+  },
+  "metaEvent": "Contact",
+  "meaning": "whatsapp_click_intent",
+  "confirmation": "A received WhatsApp message remains a separate outcome.",
+  "salesTracking": false,
+  "adUrlParametersApplied": false,
+  "adUrlParametersBlocker": "The existing Instagram promotion has a read-only destination in the available Ads Manager and Instagram web interfaces.",
+  "deploymentEvidence": ".gcp-v69/whatsapp-release-20261012-hsshulnx/production-verification.json",
+  "rollbackEvidence": ".gcp-v69/whatsapp-release-20261012-hsshulnx/rollback.json"
+}

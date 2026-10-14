@@ -396,7 +396,7 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       link.click();
     });
     assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Contact").length), 1);
-    assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Lead").length), 1);
+    assert.equal(await page.evaluate(() => window.__metaEvents.filter(([, event]) => event === "Lead").length), 0);
     await page.waitForFunction(() => window.dataLayer?.some((entry) => {
       const values = Array.from(entry);
       return values[0] === "event" && values[1] === "generate_lead" && values[2]?.lead_type === "product" && values[2]?.method === "WhatsApp";
@@ -1243,8 +1243,8 @@ test("V6.9 deja SSR intacto y anticipa catálogo por intención sin adelantar me
     await page.waitForFunction(() => document.body.dataset.v69CatalogState === "ready");
     assert.equal(await page.evaluate(() => document.body.dataset.v69CatalogLoaded), "false");
     assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 0);
-    assert.equal(requests.some((value) => value.includes("/analytics-v69-4.js")), false);
-    assert.equal(requests.some((value) => value.includes("/meta-pixel-v69-3.js")), false);
+    assert.equal(requests.some((value) => value.includes("/analytics-v69-5.js")), false);
+    assert.equal(requests.some((value) => value.includes("/meta-pixel-v69-4.js")), false);
     assert.equal(requests.some((value) => /googletagmanager\.com|connect\.facebook\.net/.test(value)), false);
     assert.equal(await page.locator("#gridV69 .v66-card").count(), 64, "Móvil debe conservar las mismas 64 fichas iniciales que PC.");
     assert.equal(await page.locator("#fg69-data").evaluate((data) => JSON.parse(data.textContent).pageSize), 64);
@@ -1258,8 +1258,8 @@ test("V6.9 deja SSR intacto y anticipa catálogo por intención sin adelantar me
       const values = Array.from(entry);
       return values[0] === "event" && values[1] === "filter_open" && values[2]?.filter_type === "brand";
     }));
-    assert.equal(requests.some((value) => value.includes("/analytics-v69-4.js")), true);
-    assert.equal(requests.some((value) => value.includes("/meta-pixel-v69-3.js")), true);
+    assert.equal(requests.some((value) => value.includes("/analytics-v69-5.js")), true);
+    assert.equal(requests.some((value) => value.includes("/meta-pixel-v69-4.js")), true);
     await page.waitForFunction(() => document.body.dataset.v69CatalogLoaded === "true");
     assert.equal(requests.filter((value) => new URL(value).pathname === "/api/catalog-v6-9").length, 1,
       "Tocar el filtro anticipa el catálogo incluso con idle retenido.");

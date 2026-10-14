@@ -284,11 +284,7 @@ function wireConversionTracking() {
             return;
         const product = productForWhatsAppLink(link);
         trackMeta("Contact", Object.assign({ contact_method: "WhatsApp" }, (product ? metaProductParameters(product) : {})));
-        trackGa("contact", Object.assign({ method: "WhatsApp" }, (product ? { item_id: String(product.publicId || ""), item_name: product.name || "Producto Farmagreen" } : {})));
-        trackGa("generate_lead", Object.assign({ method: "WhatsApp", lead_type: product ? "product" : "general" }, (product ? gaProductParameters(product) : {})));
-        if (product) {
-            trackMeta("Lead", metaProductParameters(product));
-        }
+        trackGa("generate_lead", Object.assign({ method: "WhatsApp", lead_type: product ? "product" : "general", lead_stage: "intent" }, (product ? { item_id: String(product.publicId || ""), item_name: product.name || "Producto Farmagreen" } : {})));
     });
 }
 function brandName(product) {

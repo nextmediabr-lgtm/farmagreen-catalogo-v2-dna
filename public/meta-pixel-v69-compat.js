@@ -35,13 +35,14 @@ function metaCookieV69(name) {
         .find((part) => part.startsWith(prefix))) === null || _a === void 0 ? void 0 : _a.slice(prefix.length)) || "";
 }
 function sendMetaServerEventV69(eventName, parameters, eventId) {
+    var _a, _b;
     const body = {
         event_name: eventName,
         event_time: Math.floor(Date.now() / 1000),
         event_id: eventId,
-        event_source_url: location.href,
+        event_source_url: ((_a = window.fgAttributionV69) === null || _a === void 0 ? void 0 : _a.pageUrl()) || location.href,
         fbp: metaCookieV69("_fbp"),
-        fbc: metaCookieV69("_fbc"),
+        fbc: ((_b = window.fgAttributionV69) === null || _b === void 0 ? void 0 : _b.metaFbc(metaCookieV69("_fbc"))) || metaCookieV69("_fbc"),
         custom_data: parameters,
     };
     fetch(META_CAPI_ENDPOINT_V69, {

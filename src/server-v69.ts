@@ -181,6 +181,34 @@ export function publicOriginV69(requestOrigin: string, environment: Environment 
   return parsed.origin;
 }
 
+export function metaEventOriginsV69(requestOrigin: string, environment: Environment = process.env) {
+  const origins = new Set([publicOriginV69(requestOrigin, environment)]);
+  const configured = String(environment.META_CAPI_ALLOWED_ORIGINS || "").trim();
+  if (!configured) return origins;
+
+  const entries = configured.split(",").map((value) => value.trim()).filter(Boolean);
+  if (entries.length > 8) throw new Error("META_CAPI_ALLOWED_ORIGINS admite hasta 8 orígenes.");
+
+  for (const entry of entries) {
+    const parsed = new URL(entry);
+    const normalizedEntry = entry.endsWith("/") ? entry.slice(0, -1) : entry;
+    const allowedProtocol =
+      parsed.protocol === "https:" ||
+      (environment.NODE_ENV !== "production" && parsed.protocol === "http:");
+    if (
+      !allowedProtocol ||
+      entry.includes("*") ||
+      parsed.username ||
+      parsed.password ||
+      normalizedEntry !== parsed.origin
+    ) {
+      throw new Error("META_CAPI_ALLOWED_ORIGINS debe contener orígenes HTTPS exactos.");
+    }
+    origins.add(parsed.origin);
+  }
+  return origins;
+}
+
 export async function handleV69Request(
   response: http.ServerResponse,
   url: URL,
@@ -470,7 +498,7 @@ type MetaCustomDataV69 = Record<string, string | number | string[]>;
 
 export function normalizeMetaEventV69(
   input: MetaEventInputV69,
-  expectedOrigin: string,
+  expectedOrigins: string | ReadonlySet<string>,
   nowSeconds = Math.floor(Date.now() / 1_000),
 ) {
   const eventName = cleanTextV69(input.event_name, 64);
@@ -485,7 +513,10 @@ export function normalizeMetaEventV69(
   } catch {
     throw new Error("Origen de evento inválido.");
   }
-  if (eventSourceUrl.origin !== expectedOrigin) throw new Error("Origen de evento inválido.");
+  const allowedOrigins = typeof expectedOrigins === "string"
+    ? new Set([expectedOrigins])
+    : expectedOrigins;
+  if (!allowedOrigins.has(eventSourceUrl.origin)) throw new Error("Origen de evento inválido.");
 
   const suppliedTime = Number(input.event_time);
   const eventTime =
@@ -516,9 +547,9 @@ async function handleMetaEventV69(
     return;
   }
 
-  const expectedOrigin = publicOriginV69(url.origin, environment);
+  const expectedOrigins = metaEventOriginsV69(url.origin, environment);
   const requestOrigin = headerV69(request, "origin").trim();
-  if (environment.NODE_ENV === "production" && requestOrigin !== expectedOrigin) {
+  if (environment.NODE_ENV === "production" && !expectedOrigins.has(requestOrigin)) {
     sendJsonV69(response, { error: "Origen no permitido." }, 403, { "cache-control": "no-store" });
     return;
   }
@@ -543,7 +574,7 @@ async function handleMetaEventV69(
 
   let event;
   try {
-    event = normalizeMetaEventV69(input, expectedOrigin);
+    event = normalizeMetaEventV69(input, expectedOrigins);
   } catch (error) {
     sendJsonV69(
       response,
@@ -655,7 +686,7 @@ function cleanTokenV69(value: unknown, maximumLength: number) {
 
 function cleanMetaCookieV69(value: unknown) {
   const cookie = String(value || "").trim();
-  return /^fb\.1\.\d{10,16}\.[A-Za-z0-9_-]{1,160}$/.test(cookie) ? cookie : "";
+  return /^fb\.1\.\d{10,16}\.[A-Za-z0-9_-]{1,512}$/.test(cookie) ? cookie : "";
 }
 
 function clientIpV69(request: http.IncomingMessage) {

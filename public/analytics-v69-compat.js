@@ -9,12 +9,22 @@ window.fgTrackGaV69 = function trackGaV69(eventName, parameters = {}) {
     window.gtag("event", eventName, parameters);
 };
 window.gtag("js", new Date());
-window.gtag("config", GA4_MEASUREMENT_ID_V69, {
+const gaConfigV69 = {
     send_page_view: true,
     anonymize_ip: true,
     allow_google_signals: false,
     allow_ad_personalization_signals: false,
-});
+};
+if (window.fgAttributionV69) {
+    const campaign = window.fgAttributionV69.campaign();
+    const fields = { utm_source: "campaign_source", utm_medium: "campaign_medium", utm_campaign: "campaign_name", utm_id: "campaign_id", utm_content: "campaign_content", utm_term: "campaign_term" };
+    for (const key of Object.keys(fields)) {
+        if (campaign[key])
+            gaConfigV69[fields[key]] = campaign[key];
+    }
+    gaConfigV69.page_location = window.fgAttributionV69.pageUrl();
+}
+window.gtag("config", GA4_MEASUREMENT_ID_V69, gaConfigV69);
 window.gtag("config", GOOGLE_ADS_TAG_ID_V69, {
     allow_google_signals: false,
     allow_ad_personalization_signals: false,

@@ -39,9 +39,9 @@ function sendMetaServerEventV69(eventName, parameters, eventId) {
     event_name: eventName,
     event_time: Math.floor(Date.now() / 1_000),
     event_id: eventId,
-    event_source_url: location.href,
+    event_source_url: window.fgAttributionV69?.pageUrl() || location.href,
     fbp: metaCookieV69("_fbp"),
-    fbc: metaCookieV69("_fbc"),
+    fbc: window.fgAttributionV69?.metaFbc(metaCookieV69("_fbc")) || metaCookieV69("_fbc"),
     custom_data: parameters,
   };
   fetch(META_CAPI_ENDPOINT_V69, {

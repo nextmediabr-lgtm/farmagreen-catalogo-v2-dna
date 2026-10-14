@@ -217,18 +217,12 @@ function wireConversionTracking() {
       contact_method: "WhatsApp",
       ...(product ? metaProductParameters(product) : {}),
     });
-    trackGa("contact", {
-      method: "WhatsApp",
-      ...(product ? { item_id: String(product.publicId || ""), item_name: product.name || "Producto Farmagreen" } : {}),
-    });
     trackGa("generate_lead", {
       method: "WhatsApp",
       lead_type: product ? "product" : "general",
-      ...(product ? gaProductParameters(product) : {}),
+      lead_stage: "intent",
+      ...(product ? { item_id: String(product.publicId || ""), item_name: product.name || "Producto Farmagreen" } : {}),
     });
-    if (product) {
-      trackMeta("Lead", metaProductParameters(product));
-    }
   });
 }
 

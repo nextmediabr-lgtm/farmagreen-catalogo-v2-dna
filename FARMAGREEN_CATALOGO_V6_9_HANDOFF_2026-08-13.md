@@ -1,8 +1,8 @@
 # FarmaGreen Catálogo V6.9 — handoff canónico de producción
 
 Creado: 13 de agosto de 2026
-Última actualización: 15 de septiembre de 2026
-Estado: V6.9 desplegada y saludable; cron semanal reparado, servicio y Job alineados en una única imagen.
+Última actualización: 12 de octubre de 2026
+Estado: V6.9 web desplegada y saludable con intención de consulta WhatsApp; UTMs del anuncio existente pendientes por destino no editable.
 Propósito: punto único de continuidad para código, datos, GCP, búsqueda, taxonomía, exclusiones, navegación, imágenes y analítica.
 
 Este documento describe estado; no amplía autorizaciones. Commit, push, deploy,
@@ -10,6 +10,11 @@ refresh, IAM, Scheduler y cualquier mutación futura requieren una autorización
 explícita en el turno correspondiente.
 
 ## 1. Punto de entrada exacto
+
+La tabla siguiente conserva el corte histórico del 15/9/2026. El estado del
+despliegue web del 12/10/2026 y sus comprobantes se enrutan desde
+`meta-whatsapp-attribution-candidate.json` y el README. Este corte no modifica
+ni certifica una nueva ejecución del Job semanal.
 
 | Superficie | Valor verificado |
 | --- | --- |
@@ -382,6 +387,12 @@ CTA WhatsApp verde y respeto de safe area; requiere nueva autorización.
 
 ## 11. Medición digital y cuentas correctas
 
+Corte del 12/10/2026: seguimiento WhatsApp publicado en V6.9 y conteo único
+confirmado en GA4. El estado vigente por superficie y la evidencia privada del
+despliegue se enrutan desde `meta-whatsapp-attribution-candidate.json` y el README.
+Las UTMs de la promoción existente siguen pendientes por destino no editable.
+Las identidades de despliegue de los cortes anteriores de este handoff son históricas.
+
 ### Identificadores
 
 | Plataforma | Cuenta/propiedad correcta | ID |
@@ -408,7 +419,7 @@ No usar:
 | PDP | `ViewContent` | `view_item` |
 | Búsqueda | `Search` | `search` |
 | WhatsApp general | `Contact` | `generate_lead` (`lead_type=general`) |
-| WhatsApp de producto | `Contact` + `Lead` | `generate_lead` (`lead_type=product`) |
+| WhatsApp de producto | `Contact` | `generate_lead` (`lead_type=product`, intención de consulta) |
 | Abrir filtro/orden | `CatalogFilterOpen` | `filter_open` |
 | Seleccionar filtro/orden | `CatalogFilterSelect` | `filter_select` |
 
