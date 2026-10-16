@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { decodeCatalogV69 } from "./catalog-codec-v69.mjs";
 import { brandUnionV69 } from "./catalog-brand-union-v69.mjs";
+import { FRAGRANCE_AUDIENCE_OPTIONS_V69, fragranceAudienceV69 } from "./catalog-collections-v69.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TARGETS = [
@@ -22,7 +23,9 @@ for (const [sourceName, outputName] of TARGETS) {
   const sourcePath = path.join(ROOT, sourceName);
   const outputPath = path.join(ROOT, outputName);
   const original = await fs.readFile(sourcePath, "utf8");
-  const source = sourceName === "public/app-v6-9.js" ? `${decodeCatalogV69.toString()}\n${brandUnionV69.toString()}\n${original}` : original;
+  const source = sourceName === "public/app-v6-9.js"
+    ? `${decodeCatalogV69.toString()}\n${brandUnionV69.toString()}\nconst FRAGRANCE_AUDIENCE_OPTIONS_V69 = ${JSON.stringify(FRAGRANCE_AUDIENCE_OPTIONS_V69)};\n${fragranceAudienceV69.toString()}\n${original}`
+    : original;
   const result = ts.transpileModule(source, {
     fileName: sourceName,
     compilerOptions: {

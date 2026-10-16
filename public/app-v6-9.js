@@ -12,7 +12,8 @@ const ROUTE = BOOT.catalogRoute || "/catalogo";
 const PDP = "/p/";
 const CONTEXT = BOOT.context || {};
 const NAVIGATION = BOOT.navigation || {};
-const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", ...(NAVIGATION.showOutOfStockSort ? ["sin-stock"] : []), ...(NAVIGATION.hasPromotions === false ? [] : ["descuento"]), "precio-asc", "precio-desc", "nombre"]);
+const FRAGRANCE_SORT_VALUES = new Set(FRAGRANCE_AUDIENCE_OPTIONS_V69.map(option => option.value));
+const SORT_VALUES = new Set(["relevancia", "marca", "disponibilidad", ...(NAVIGATION.showOutOfStockSort ? ["sin-stock"] : []), ...(NAVIGATION.hasPromotions === false ? [] : ["descuento"]), "precio-asc", "precio-desc", "nombre", ...FRAGRANCE_SORT_VALUES]);
 const DEFAULT_SORT = SORT_VALUES.has(NAVIGATION.defaultSort) ? NAVIGATION.defaultSort : "relevancia";
 const S = {
   all: BOOT.products || [],
@@ -601,6 +602,8 @@ function filterProductsBySearch(products, query) {
 }
 
 function matches(product, searchIds, hasQuery) {
+  const audience = FRAGRANCE_AUDIENCE_OPTIONS_V69.find(option => option.value === S.sort);
+  if (audience && fragranceAudienceV69(product) !== audience.group) return false;
   if (S.scope === "ofertas" && !isOffer(product)) return false;
   if (S.sort === "sin-stock" && product?.availability !== "unavailable_reference") return false;
   if (S.brand !== "Todas" && brandName(product) !== S.brand) return false;
@@ -1022,7 +1025,33 @@ function currentResults() {
   return items;
 }
 
+function isFragranceContext() {
+  return S.view === "perfumes-fragancias" || S.need === "fragancias";
+}
+
+function normalizeFragranceSort() {
+  if (!isFragranceContext() && FRAGRANCE_SORT_VALUES.has(S.sort)) S.sort = DEFAULT_SORT;
+}
+
+function syncFragranceSortOptions() {
+  normalizeFragranceSort();
+  const select = $("#sortV69");
+  if (!select) return;
+  select.querySelectorAll("[data-fragrance-audience]").forEach(option => option.remove());
+  if (isFragranceContext()) {
+    for (const audience of FRAGRANCE_AUDIENCE_OPTIONS_V69) {
+      const option = document.createElement("option");
+      option.value = audience.value;
+      option.textContent = audience.label;
+      option.setAttribute("data-fragrance-audience", "");
+      select.appendChild(option);
+    }
+  }
+  select.value = S.sort;
+}
+
 function render(historyMode = "replace") {
+  syncFragranceSortOptions();
   document.body.classList.toggle("v69-fragrances", S.view === "perfumes-fragancias" || S.need === "fragancias");
   const hasOffers = S.all.some(isOffer);
   if (S.scope === "ofertas" && !hasOffers) S.scope = "todo";
@@ -1066,7 +1095,8 @@ function render(historyMode = "replace") {
   mode.textContent = copy.mode;
   mode.hidden = !copy.mode;
   const catalogTitle = $("#catalogTitleV69");
-  catalogTitle.textContent = copy.title;
+  const audience = FRAGRANCE_AUDIENCE_OPTIONS_V69.find(option => option.value === S.sort);
+  catalogTitle.textContent = copy.title + (audience ? ` · ${audience.label}` : "");
   catalogTitle.classList.toggle("v69-title-all", copy.title === "Todos los productos");
   catalogTitle.classList.toggle("v69-title-compact", copy.title === "Oportunidades de hoy");
   $("#countV69").hidden = copy.nav !== "productos";
@@ -1138,6 +1168,7 @@ function applyParams(params) {
   } else if (S.brand !== "Todas" && S.need !== "Todas") {
     S.need = "Todas";
   }
+  normalizeFragranceSort();
   S.scope =
     S.sort === "sin-stock" || S.q || S.brand !== "Todas" || S.need !== "Todas" || S.view !== "Todas"
       ? "todo"
@@ -1280,6 +1311,7 @@ function prepareCatalogAfterFirstPaint() {
 }
 
 function syncInitialCatalogUi() {
+  syncFragranceSortOptions();
   const copy = catalogCopy();
   const resultCount = Number(BOOT.initialResultCount || 0);
   $$('[data-nav]').forEach((link) => link.classList.toggle("is-active", link.dataset.nav === copy.nav));
