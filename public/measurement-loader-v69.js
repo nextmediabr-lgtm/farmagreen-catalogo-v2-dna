@@ -1,4 +1,8 @@
 (function deferFarmagreenMeasurementV69() {
+  // These URLs contain per-recipient references. Keep them out of third-party tags.
+  if (/^[A-Z0-9][A-Z0-9-]{2,31}$/.test(new URL(window.location.href).searchParams.get("cupon") || "")) {
+    return;
+  }
   // Capture the landing before deferred tags or navigation can remove its query.
   var storageKey = "fg-v69-attribution";
   var idleLimitMs = 30 * 60 * 1000;

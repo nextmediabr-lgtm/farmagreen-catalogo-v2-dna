@@ -95,6 +95,16 @@ const brandCollator = new Intl.Collator("es", { sensitivity: "base" });
 const ars = (value) => priceFormatter.format(value || 0);
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
 const url = (path) => `${BASE}${path}`;
+const currentCoupon = () => couponCodeV69(new URLSearchParams(location.search).get("cupon"));
+function preserveCouponLinks() {
+  const code = currentCoupon();
+  if (!code) return;
+  document.querySelectorAll("a[href]:not([download])").forEach((link) => {
+    const href = link.getAttribute("href");
+    const next = couponContextUrlV69(href, code, location.href, BASE);
+    if (next !== href) link.setAttribute("href", next);
+  });
+}
 const absoluteUrl = (path) => new URL(url(path), PUBLIC_SITE_ORIGIN).href;
 const wa = (product) =>
   `https://wa.me/5493417234000?text=${encodeURIComponent(
@@ -943,6 +953,7 @@ function sorted(products) {
 
 function writeUrl(mode = "replace") {
   const params = new URLSearchParams();
+  if (currentCoupon()) params.set("cupon", currentCoupon());
   if (S.scope !== "ofertas") params.set("scope", S.scope);
   if (S.q) params.set("q", S.q);
   if (S.brand !== "Todas") params.set("marca", S.brand);
@@ -1113,6 +1124,7 @@ function render(historyMode = "replace") {
   $$('[data-view]').forEach((link) => link.classList.toggle("is-active", link.dataset.view === S.view));
   syncFilterMenuSummaries(items.length);
   writeUrl(historyMode);
+  preserveCouponLinks();
   refreshFloatingWhatsapp();
 }
 
@@ -1182,6 +1194,7 @@ function applyParams(params) {
 
 function openCatalogFromHome({ q = "", brand = "Todas", need = "Todas", view = "Todas", sort = DEFAULT_SORT } = {}) {
   const params = new URLSearchParams({ scope: "todo" });
+  if (currentCoupon()) params.set("cupon", currentCoupon());
   if (q.trim()) params.set("q", q.trim());
   if (brand !== "Todas") params.set("marca", brand);
   if (need !== "Todas") params.set("need", need);
@@ -1518,6 +1531,7 @@ function wireHistoryBack() {
 }
 
 wireImageFallbacks();
+preserveCouponLinks();
 wireHistoryBack();
 wireConversionTracking();
 void boot();

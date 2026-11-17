@@ -89,6 +89,42 @@ function fragranceAudienceV69(product) {
         return "infantiles";
     return groups.length === 1 ? groups[0].group : "";
 }
+function couponCodeV69(value) {
+    return typeof value === "string" && /^[A-Z0-9][A-Z0-9-]{2,31}$/.test(value) ? value : "";
+}
+function couponContextUrlV69(href, value, base, basePath = "") {
+    const code = couponCodeV69(value);
+    if (!code || !href || href.startsWith("#"))
+        return href;
+    let target, current;
+    try {
+        current = new URL(base);
+        target = new URL(href, current);
+    }
+    catch (_a) {
+        return href;
+    }
+    if (target.origin === current.origin) {
+        const prefix = basePath.replace(/\/$/, "");
+        if (prefix && !target.pathname.startsWith(prefix + "/") && target.pathname !== prefix)
+            return href;
+        const route = target.pathname.slice(prefix.length) || "/";
+        if (!/^\/(?:catalogo(?:-v6-9)?|p\/[^/]+|marcas(?:\/[^/]+)?|buscar|productos|ofertas)?\/?$/.test(route))
+            return href;
+        target.searchParams.set("cupon", code);
+        return href.startsWith("/") ? target.pathname + target.search + target.hash : target.href;
+    }
+    if (target.protocol === "https:" && target.hostname === "wa.me") {
+        const text = target.searchParams.get("text") || "";
+        const marker = "Cupón: " + code;
+        if (!text.split("\n").includes(marker)) {
+            const original = text.replace(/(?:\n|^)Cupón: [A-Z0-9][A-Z0-9-]{2,31}(?=\n|$)/g, "");
+            target.searchParams.set("text", original + (original ? "\n" : "") + marker);
+        }
+        return target.href;
+    }
+    return href;
+}
 const BOOT = (() => {
     var _a;
     try {
@@ -184,6 +220,18 @@ const brandCollator = new Intl.Collator("es", { sensitivity: "base" });
 const ars = (value) => priceFormatter.format(value || 0);
 const esc = (value) => String(value !== null && value !== void 0 ? value : "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
 const url = (path) => `${BASE}${path}`;
+const currentCoupon = () => couponCodeV69(new URLSearchParams(location.search).get("cupon"));
+function preserveCouponLinks() {
+    const code = currentCoupon();
+    if (!code)
+        return;
+    document.querySelectorAll("a[href]:not([download])").forEach((link) => {
+        const href = link.getAttribute("href");
+        const next = couponContextUrlV69(href, code, location.href, BASE);
+        if (next !== href)
+            link.setAttribute("href", next);
+    });
+}
 const absoluteUrl = (path) => new URL(url(path), PUBLIC_SITE_ORIGIN).href;
 const wa = (product) => `https://wa.me/5493417234000?text=${encodeURIComponent(`Hola Farmagreen Rosario, quiero consultar por ${brandName(product)} - ${(product === null || product === void 0 ? void 0 : product.name) || "Producto Farmagreen"}. Link: ${absoluteUrl(`${PDP}${(product === null || product === void 0 ? void 0 : product.publicId) || ""}`)}`)}`;
 const META_SEARCH_DELAY_MS = 700;
@@ -1000,6 +1048,8 @@ function sorted(products) {
 }
 function writeUrl(mode = "replace") {
     const params = new URLSearchParams();
+    if (currentCoupon())
+        params.set("cupon", currentCoupon());
     if (S.scope !== "ofertas")
         params.set("scope", S.scope);
     if (S.q)
@@ -1179,6 +1229,7 @@ function render(historyMode = "replace") {
     $$('[data-view]').forEach((link) => link.classList.toggle("is-active", link.dataset.view === S.view));
     syncFilterMenuSummaries(items.length);
     writeUrl(historyMode);
+    preserveCouponLinks();
     refreshFloatingWhatsapp();
 }
 function showAll() {
@@ -1251,6 +1302,8 @@ function applyParams(params) {
 }
 function openCatalogFromHome({ q = "", brand = "Todas", need = "Todas", view = "Todas", sort = DEFAULT_SORT } = {}) {
     const params = new URLSearchParams({ scope: "todo" });
+    if (currentCoupon())
+        params.set("cupon", currentCoupon());
     if (q.trim())
         params.set("q", q.trim());
     if (brand !== "Todas")
@@ -1606,6 +1659,7 @@ function wireHistoryBack() {
     }));
 }
 wireImageFallbacks();
+preserveCouponLinks();
 wireHistoryBack();
 wireConversionTracking();
 void boot();

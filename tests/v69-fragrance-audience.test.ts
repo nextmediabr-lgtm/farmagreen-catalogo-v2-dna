@@ -35,7 +35,7 @@ test("SSR y cliente filtran las cuatro ramas sin alterar metadatos, precios ni f
       const query = new URLSearchParams(`scope=todo&${selector}&orden=${option.value}`);
       const expected = dto.products.filter(p => fragranceAudienceV69(p) === option.group).map(p => p.publicId);
       const html = catalogPageV69(catalog, query);
-      assert.match(html, /src="\/app-v6-9-21\.js"/);
+      assert.match(html, /src="\/app-v6-9-22\.js"/);
       const boot = JSON.parse(html.match(/id="fg69-data">([\s\S]*?)<\/script>/)![1]);
       assert.equal(boot.initialResultCount, expected.length);
       assert.equal(boot.context.sort, option.value);
