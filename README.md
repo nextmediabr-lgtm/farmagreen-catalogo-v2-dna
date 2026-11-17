@@ -373,3 +373,22 @@ de publicación están en
 - [V6.8](./FARMAGREEN_CATALOGO_V6_8_HANDOVER_2026-07-25.md)
 - [V6.9 — corte 3/8](./FARMAGREEN_CATALOGO_V6_9_ESTADO_2026-08-03.md)
 - [V6.9 — handoff 4/8](./FARMAGREEN_CATALOGO_V6_9_HANDOFF_2026-08-04.md)
+
+### Publicación del código individual — 16/11/2026
+
+Código desplegado `b7b2b8f65b78274480e1962fdc800181b44aa90e`, revisión
+`farmagreen-v69-preprod-coupon-1117-b7b2b8f`, build
+`7309d89b-7964-49d1-9fec-20b4ff28aa69`, con 100% del tráfico y health ready.
+La revisión anterior heredaba la identidad de la base; ahora el SHA observado
+identifica el código del cupón. El fallback usa el snapshot productivo vigente,
+sin waiver de antigüedad. Los 1.640 productos públicos y 494 ofertas conservan
+exactamente el DTO previo. El Job semanal se define con el mismo digest y ambos
+Scheduler conservan horarios/estado; no se ejecutó refresh/discovery manual ni se
+acredita una ejecución del Job con esta revisión.
+
+`npm run verify:v69`: 278 pruebas PASS; fallback reciente validado. QA del dominio
+público con referencia sintética: portada, búsqueda, producto, regreso y recarga
+conservan cupon; WhatsApp preparado contiene el código, sin enviar. A 390px no
+hay overflow horizontal; cero errores de consola y ningún tag externo de medición
+en la visita con código individual. No cambia diseño, datos comerciales ni destino
+WhatsApp. Comprobante post-deploy persistido y leído del almacenamiento administrativo.
