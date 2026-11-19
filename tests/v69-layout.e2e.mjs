@@ -522,8 +522,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       waitUntil: "domcontentloaded",
     });
     await page.locator("#gridV69 .v66-card").first().waitFor();
-    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-4\.css$/);
-    const localCssResponse = await page.request.get(`${runtime.origin}/styles-v6-9-4.css`);
+    assert.match(await page.locator('link[rel="stylesheet"]').getAttribute("href"), /styles-v6-9-5\.css$/);
+    const localCssResponse = await page.request.get(`${runtime.origin}/styles-v6-9-5.css`);
     assert.equal(localCssResponse.status(), 200);
     if (!remoteOrigin) assert.equal(localCssResponse.headers()["cache-control"], "no-store");
     assert.equal(await firstRowColumns(page), 5);
@@ -1108,6 +1108,8 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       .slice(0, 64)
       .map((product) => product.publicId);
     await page.locator("#searchV69").fill(brandQuery);
+    // Wait for the debounced search to settle before exercising a separate sort action.
+    await page.waitForFunction(query => new URL(location.href).searchParams.get("q") === query, brandQuery);
     await page.locator("#sortV69").selectOption("marca");
     await page.waitForFunction(
       ({ query, firstId }) =>

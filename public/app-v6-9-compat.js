@@ -76,6 +76,39 @@ function brandUnionV69(products, query) {
             productIds.add(id);
     return { terms: [...new Set(terms)], productIds };
 }
+function categoryKeysV69(query) {
+    if (!/^\s*\d+\s*(?:\+\s*\d+\s*)*$/.test(String(query)))
+        return null;
+    const keys = String(query).split('+').map(term => Number(term.trim()));
+    if (keys.some(key => !Number.isSafeInteger(key) || key <= 0))
+        return null;
+    return [...new Set(keys.map(String))];
+}
+function categoryUnionV69(products, query) {
+    if (!String(query).includes('+'))
+        return null;
+    const terms = categoryKeysV69(query);
+    if (!terms)
+        return null;
+    const selected = new Set(terms);
+    const productIds = new Set(products.filter(product => (product.magentoCategories || []).some(category => selected.has(String(category.id)))).map(product => product.publicId));
+    return { terms, productIds };
+}
+function categoryQueryTitleV69(query, paths = {}) {
+    const keys = categoryKeysV69(query);
+    if (!keys)
+        return '';
+    const selected = keys.map(key => Array.isArray(paths[key]) && paths[key].length ? paths[key] : [`Categoría ${key}`]);
+    if (selected.length === 1)
+        return Array.isArray(paths[keys[0]]) && paths[keys[0]].length ? selected[0].join(' › ') : '';
+    let common = 0;
+    while (selected.every(path => common < path.length - 1 && path[common] === selected[0][common]))
+        common++;
+    const leaves = selected.map(path => path[path.length - 1]);
+    const labels = selected.map((path, index) => leaves.filter(leaf => leaf === leaves[index]).length > 1
+        ? path.slice(common).join(' › ') : leaves[index]);
+    return [...selected[0].slice(0, common), labels.join(' + ')].join(' › ');
+}
 const FRAGRANCE_AUDIENCE_OPTIONS_V69 = [{ "value": "fragancias-femeninas", "group": "femeninas", "label": "Femeninas", "categoryIds": ["7025", "7028", "7145", "7148", "7682"] }, { "value": "fragancias-masculinas", "group": "masculinas", "label": "Masculinas", "categoryIds": ["7385", "7388", "7247", "7751", "9662"] }, { "value": "fragancias-unisex", "group": "unisex", "label": "Unisex", "categoryIds": ["9077", "9080", "8774"] }, { "value": "fragancias-infantiles", "group": "infantiles", "label": "Infantiles", "categoryIds": ["7805", "7808", "7946", "7988", "8948"] }];
 function fragranceAudienceV69(product) {
     const views = [...((product === null || product === void 0 ? void 0 : product.catalogFacets) || []), ...((product === null || product === void 0 ? void 0 : product.catalogViews) || [])];
@@ -683,6 +716,9 @@ function searchClause(index, term) {
     return { term, kind: "unresolved", targets: [norm(term)], productIds: new Set() };
 }
 function compileSearchPlan(products, query) {
+    const categories = categoryUnionV69(products, query);
+    if (categories)
+        return Object.assign(Object.assign({}, categories), { clauses: [], categoryUnion: true });
     const union = brandUnionV69(products, query);
     if (union)
         return Object.assign(Object.assign({}, union), { clauses: [], brandUnion: true });
@@ -745,7 +781,7 @@ function phraseMatch(text, phrase) {
 }
 function searchRelevance(product, plan) {
     var _a;
-    if (plan.brandUnion)
+    if (plan.brandUnion || plan.categoryUnion)
         return [];
     const fullQuery = plan.terms.join(" ");
     const needs = product.needs || [];
@@ -1009,7 +1045,7 @@ function availabilityRank(product) {
     return 2;
 }
 function sorted(products) {
-    const plan = S.sort === "relevancia" && !brandUnionV69(S.all, S.q) ? compileSearchPlan(products, S.q) : null;
+    const plan = S.sort === "relevancia" && !brandUnionV69(S.all, S.q) && !categoryUnionV69(S.all, S.q) ? compileSearchPlan(products, S.q) : null;
     const entries = products.map((product) => ({ product, relevance: (plan === null || plan === void 0 ? void 0 : plan.terms.length) ? searchRelevance(product, plan) : [] }));
     if (S.sort === "disponibilidad") {
         entries.sort((left, right) => availabilityRank(left.product) - availabilityRank(right.product) ||
@@ -1097,12 +1133,12 @@ function refreshFloatingWhatsapp() {
         .forEach((element) => floatingCtaObserver.observe(element));
 }
 function catalogCopy() {
-    var _a, _b;
+    var _a;
     if (S.q) {
-        const exactCategoryPath = /^\d+$/.test(S.q.trim()) ? (_a = BOOT.magentoCategoryPaths) === null || _a === void 0 ? void 0 : _a[S.q.trim()] : null;
+        const categoryTitle = categoryQueryTitleV69(S.q.trim(), BOOT.magentoCategoryPaths);
         return {
-            mode: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? "" : "Resultados",
-            title: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? exactCategoryPath.join(" › ") : `Resultados para “${S.q.trim().replace(/\s*\+\s*/g, " + ")}”`,
+            mode: categoryTitle ? "" : "Resultados",
+            title: categoryTitle || `Resultados para “${S.q.trim().replace(/\s*\+\s*/g, " + ")}”`,
             context: "Coincidencias por producto, marca o necesidad.",
             nav: "buscar",
         };
@@ -1114,7 +1150,7 @@ function catalogCopy() {
         return { mode: "Necesidad", title: label, context: `Selección para ${String(label).toLowerCase()}.`, nav: "buscar" };
     }
     if (S.view !== "Todas") {
-        const view = (((_b = BOOT.navigation) === null || _b === void 0 ? void 0 : _b.brands) || []).find((entry) => entry.kind === "collection" && entry.slug === S.view) ||
+        const view = (((_a = BOOT.navigation) === null || _a === void 0 ? void 0 : _a.brands) || []).find((entry) => entry.kind === "collection" && entry.slug === S.view) ||
             S.all.flatMap((product) => product.catalogViews || []).find((entry) => entry.slug === S.view);
         const label = (view === null || view === void 0 ? void 0 : view.name) || S.view;
         return { mode: "Marca", title: label, context: `Selección paraguas de ${label}.`, nav: "marcas" };
@@ -1213,6 +1249,7 @@ function render(historyMode = "replace") {
     const catalogTitle = $("#catalogTitleV69");
     const audience = FRAGRANCE_AUDIENCE_OPTIONS_V69.find(option => option.value === S.sort);
     catalogTitle.textContent = copy.title + (audience ? ` · ${audience.label}` : "");
+    catalogTitle.classList.toggle("v69-title-categories", Boolean(categoryUnionV69(S.all, S.q)));
     catalogTitle.classList.toggle("v69-title-all", copy.title === "Todos los productos");
     catalogTitle.classList.toggle("v69-title-compact", copy.title === "Oportunidades de hoy");
     $("#countV69").hidden = copy.nav !== "productos";

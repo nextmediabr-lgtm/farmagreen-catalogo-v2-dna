@@ -8,6 +8,7 @@ import {
 } from "./data-v69.js";
 import type { ResponsiveImageSet } from "./data.js";
 import { isPreparedPublicationV69 } from "./catalog-validation-v69.js";
+import { categoryUnionV69, categoryQueryTitleV69 } from "../scripts/catalog-category-union-v69.mjs";
 import { brandUnionV69 } from "../scripts/catalog-brand-union-v69.mjs";
 import { FRAGRANCES_AVAILABILITY_LABEL_V69, FRAGRANCES_COLLECTION_V69, FRAGRANCE_AUDIENCE_OPTIONS_V69, fragranceAudienceV69, isFragranceProductV69 } from "../scripts/catalog-collections-v69.mjs";
 import {
@@ -288,7 +289,7 @@ ${discoveryPanelV69(presented, context, initial.length, route, policy)}
   <div class="v65-head v66-catalog-head">
     <div>
       <p class="v65-k" id="modeV69"${context.mode ? "" : " hidden"}>${e(context.mode)}</p>
-      <h1 id="catalogTitleV69"${context.title === "Todos los productos" ? ' class="v69-title-all"' : context.title === "Oportunidades de hoy" ? ' class="v69-title-compact"' : ""}>${e(context.title)}</h1>
+      <h1 id="catalogTitleV69"${categoryUnionV69(catalog.products, context.q) ? ' class="v69-title-categories"' : context.title === "Todos los productos" ? ' class="v69-title-all"' : context.title === "Oportunidades de hoy" ? ' class="v69-title-compact"' : ""}>${e(context.title)}</h1>
       <p class="v66-context" id="contextV69" hidden>${e(context.copy)}</p>
       <p class="v69-availability-summary" id="availabilityV69" hidden>${availabilitySummaryTextV69(initialAvailability.available, initialAvailability.unavailable, initialAvailability.unverified)}</p>
       <p class="v69-availability-note" id="availabilityNoteV69" hidden>${presented.commerceSyncedAt ? `Estado comercial en Rosario verificado ${e(shortDateV69(presented.commerceSyncedAt))}. Confirmamos disponibilidad por WhatsApp.` : presented.availabilityReferenceAt ? `Verificación parcial en Rosario actualizada ${e(shortDateV69(presented.availabilityReferenceAt))}. Confirmamos disponibilidad por WhatsApp.` : "Estado comercial en Rosario pendiente de sincronización. Confirmamos disponibilidad por WhatsApp."}</p>
@@ -806,9 +807,7 @@ function pageContext(
 }
 
 function exactCategoryPathV69(catalog: CatalogV69, query: string) {
-  if (!/^\d+$/.test(query)) return "";
-  const path = catalog.magentoCategoryPaths?.[query];
-  return Array.isArray(path) && path.length ? path.join(" › ") : "";
+  return categoryQueryTitleV69(query, catalog.magentoCategoryPaths);
 }
 
 export function normalizeQueryTermsV69(value: string) {
@@ -929,6 +928,7 @@ type SearchIndexV69 = {
 
 export type SearchPlanV69 = {
   brandUnion?: boolean;
+  categoryUnion?: boolean;
   terms: string[];
   clauses: Array<{
     term: string;
@@ -1099,6 +1099,8 @@ function searchClauseV69(index: SearchIndexV69, term: string) {
 }
 
 export function compileSearchPlanV69(products: ProductV69[], query: string): SearchPlanV69 {
+  const categories = categoryUnionV69(products, query);
+  if (categories) return { ...categories, clauses: [], categoryUnion: true };
   const union = brandUnionV69(products, query);
   if (union) return { ...union, clauses: [], brandUnion: true };
   const terms = normalizeQueryTermsV69(query);
@@ -1142,7 +1144,7 @@ function filteredProducts(products: ProductV69[], state: QueryState) {
     .filter((product) => state.sort !== "sin-stock" || product.availability === "out_of_stock")
     .filter((product) => !audience || fragranceAudienceV69(product) === audience.group)
     .filter((product) => !hasQuery || searchIds.has(product.publicId));
-  return sortProductsV69(filtered, state.sort, brandUnionV69(products, state.q) ? "" : state.q);
+  return sortProductsV69(filtered, state.sort, brandUnionV69(products, state.q) || categoryUnionV69(products, state.q) ? "" : state.q);
 }
 
 type SearchClauseV69 = SearchPlanV69["clauses"][number];
@@ -1163,7 +1165,7 @@ function phraseMatchV69(text: string, phrase: string) {
 }
 
 export function searchRelevanceV69(product: ProductV69, plan: SearchPlanV69) {
-  if (plan.brandUnion) return [];
+  if (plan.brandUnion || plan.categoryUnion) return [];
   const fullQuery = plan.terms.join(" ");
   const needs = safeList(product.needs);
   const fields = {
@@ -1299,7 +1301,7 @@ function shell69(title: string, description: string, body: string, options: Shel
     ? `<meta property="og:image" content="${e(ogImage)}">${ogImage.startsWith("https://") ? `<meta property="og:image:secure_url" content="${e(ogImage)}">` : ""}${options.ogImageType ? `<meta property="og:image:type" content="${e(options.ogImageType)}">` : ""}${options.ogImageWidth ? `<meta property="og:image:width" content="${options.ogImageWidth}">` : ""}${options.ogImageHeight ? `<meta property="og:image:height" content="${options.ogImageHeight}">` : ""}${options.ogImageAlt ? `<meta property="og:image:alt" content="${e(options.ogImageAlt)}">` : ""}`
     : "";
   const og = `<meta property="og:type" content="${e(options.ogType || "website")}"><meta property="og:title" content="${e(title)}"><meta property="og:description" content="${e(description)}"><meta property="og:site_name" content="Farmagreen Rosario"><meta property="og:locale" content="es_AR">${canonicalUrl ? `<meta property="og:url" content="${e(canonicalUrl)}">` : ""}${ogImageMeta}<meta name="twitter:card" content="${ogImage ? "summary_large_image" : "summary"}">${ogImage ? `<meta name="twitter:image" content="${e(ogImage)}">` : ""}${options.ogImageAlt ? `<meta name="twitter:image:alt" content="${e(options.ogImageAlt)}">` : ""}`;
-  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-4.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-3.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-5.js")}" data-meta-src="${u("/meta-pixel-v69-4.js")}"></script><script defer src="${u("/app-v6-9-22.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
+  return `<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="index,follow"><title>${e(title)}</title><meta name="description" content="${e(description)}">${canonical}${og}<link rel="icon" href="${u("/logo_farmagreen-v69-1.png")}"><link rel="stylesheet" href="${u("/styles-v6-9-5.css")}"></head><body${options.bodyClass ? ` class="${e(options.bodyClass)}"` : ""}><header class="top"><a href="${u(homeHref)}" class="brandmark" aria-label="Ir al inicio de Farmagreen"><img src="${u("/logo_farmagreen-v69-1.png")}" alt="Farmagreen" width="640" height="122"></a><div class="toplinks">${links.map((link) => `<a href="${u(link.href)}"${link.active ? ' class="is-active"' : ""}${link.nav ? ` data-nav="${e(link.nav)}"` : ""}${link.historyBack ? ' data-history-back aria-label="Volver a la página anterior"' : ""}>${e(link.label)}</a>`).join("")}</div><a class="topwa" href="${wa("Hola Farmagreen Rosario, quiero consultar.")}" aria-label="Abrir WhatsApp de Farmagreen">${waIcon()}<span>WhatsApp</span></a></header><main>${body}</main>${footerV69()}<a class="float" href="${wa("Hola Farmagreen Rosario, quiero hacer una consulta.")}" aria-label="Consultar por WhatsApp">${waIcon()}</a><script defer src="${u("/measurement-loader-v69-3.js")}" data-fg-measurement-v69 data-analytics-src="${u("/analytics-v69-5.js")}" data-meta-src="${u("/meta-pixel-v69-4.js")}"></script><script defer src="${u("/app-v6-9-23.js")}"></script><noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=1198250568817946&amp;ev=PageView&amp;noscript=1" alt=""></noscript></body></html>`;
 }
 
 function cardV69(product: ProductV69, _origin = "http://127.0.0.1:8109", priority = false) {

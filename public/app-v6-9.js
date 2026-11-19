@@ -583,6 +583,8 @@ function searchClause(index, term) {
 }
 
 function compileSearchPlan(products, query) {
+  const categories = categoryUnionV69(products, query);
+  if (categories) return { ...categories, clauses: [], categoryUnion: true };
   const union = brandUnionV69(products, query);
   if (union) return { ...union, clauses: [], brandUnion: true };
   const terms = searchTerms(query);
@@ -638,7 +640,7 @@ function phraseMatch(text, phrase) {
 }
 
 function searchRelevance(product, plan) {
-  if (plan.brandUnion) return [];
+  if (plan.brandUnion || plan.categoryUnion) return [];
   const fullQuery = plan.terms.join(" ");
   const needs = product.needs || [];
   const fields = {
@@ -904,7 +906,7 @@ function availabilityRank(product) {
 }
 
 function sorted(products) {
-  const plan = S.sort === "relevancia" && !brandUnionV69(S.all, S.q) ? compileSearchPlan(products, S.q) : null;
+  const plan = S.sort === "relevancia" && !brandUnionV69(S.all, S.q) && !categoryUnionV69(S.all, S.q) ? compileSearchPlan(products, S.q) : null;
   const entries = products.map((product) => ({ product, relevance: plan?.terms.length ? searchRelevance(product, plan) : [] }));
   if (S.sort === "disponibilidad") {
     entries.sort(
@@ -998,10 +1000,10 @@ function refreshFloatingWhatsapp() {
 
 function catalogCopy() {
   if (S.q) {
-    const exactCategoryPath = /^\d+$/.test(S.q.trim()) ? BOOT.magentoCategoryPaths?.[S.q.trim()] : null;
+    const categoryTitle = categoryQueryTitleV69(S.q.trim(), BOOT.magentoCategoryPaths);
     return {
-      mode: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? "" : "Resultados",
-      title: Array.isArray(exactCategoryPath) && exactCategoryPath.length ? exactCategoryPath.join(" › ") : `Resultados para “${S.q.trim().replace(/\s*\+\s*/g, " + ")}”`,
+      mode: categoryTitle ? "" : "Resultados",
+      title: categoryTitle || `Resultados para “${S.q.trim().replace(/\s*\+\s*/g, " + ")}”`,
       context: "Coincidencias por producto, marca o necesidad.",
       nav: "buscar",
     };
@@ -1108,6 +1110,7 @@ function render(historyMode = "replace") {
   const catalogTitle = $("#catalogTitleV69");
   const audience = FRAGRANCE_AUDIENCE_OPTIONS_V69.find(option => option.value === S.sort);
   catalogTitle.textContent = copy.title + (audience ? ` · ${audience.label}` : "");
+  catalogTitle.classList.toggle("v69-title-categories", Boolean(categoryUnionV69(S.all, S.q)));
   catalogTitle.classList.toggle("v69-title-all", copy.title === "Todos los productos");
   catalogTitle.classList.toggle("v69-title-compact", copy.title === "Oportunidades de hoy");
   $("#countV69").hidden = copy.nav !== "productos";

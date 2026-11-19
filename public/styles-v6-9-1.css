@@ -1970,3 +1970,15 @@ body.v69.v69-fragrances .v66-pdp{
   background:#fff;
   box-shadow:0 18px 40px rgba(0,0,0,.18);
 }
+
+/* Additive numeric categories: compact heading, mobile first. */
+body.v69 #catalogTitleV69.v69-title-categories{
+  font-size:clamp(1.35rem,5.2vw,1.75rem);
+  line-height:1.18;
+  letter-spacing:-.025em;
+  overflow-wrap:anywhere;
+  min-width:0;
+}
+@media(min-width:768px){
+  body.v69 #catalogTitleV69.v69-title-categories{font-size:clamp(1.75rem,3vw,2.6rem)}
+}

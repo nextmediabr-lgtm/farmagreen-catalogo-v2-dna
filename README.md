@@ -21,6 +21,14 @@ npm run dev:v69
 
 Vista local: <http://127.0.0.1:8109/>.
 
+## Categorías aditivas en el buscador
+
+Una clave numérica conserva la categoría y su título jerárquico. Varias claves
+separadas por `+`, por ejemplo `6551+6338+6614`, unen los productos de cualquiera
+de esas categorías, sin duplicar fichas. El título combina sus nombres y usa
+un tamaño menor, empezando por móvil. Se conservan filtros, orden y paginación.
+La suma de marcas (`Eucerin+Vichy`) y la búsqueda normal siguen siendo independientes.
+
 ## Administración V6.9
 
 La consola integral productiva vive en `/admin-v6-9` dentro de la misma app de
