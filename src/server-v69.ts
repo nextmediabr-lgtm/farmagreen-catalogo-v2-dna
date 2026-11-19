@@ -16,6 +16,7 @@ import {
 } from "./commerce-runtime-v69.js";
 import {
   catalogPageV69,
+  couponConsultationV69,
   catalogV69,
   homePageV69,
   isPrivateSourceImageV69,
@@ -220,6 +221,26 @@ export async function handleV69Request(
 ) {
   const publicAliasesEnabled =
     environment.V69_ENABLE_PRODUCTION === "1" || environment.V69_LOCAL_PREVIEW === "1";
+  // This route opens WhatsApp directly; it never renders the catalog or loads tags.
+  if (pathname === "/consulta" && publicAliasesEnabled) {
+    const method = request?.method || "GET";
+    const codes = url.searchParams.getAll("cupon");
+    const target = codes.length === 1 ? couponConsultationV69(codes[0]) : "";
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Referrer-Policy", "no-referrer");
+    response.setHeader("X-Robots-Tag", "noindex, nofollow");
+    if (method !== "GET" && method !== "HEAD") {
+      response.statusCode = 405;
+      response.setHeader("Allow", "GET, HEAD");
+    } else if (!target) {
+      response.statusCode = 400;
+    } else {
+      response.statusCode = 302;
+      response.setHeader("Location", target);
+    }
+    response.end();
+    return true;
+  }
   const servesPublicHome = pathname === "/" && publicAliasesEnabled;
   const servesPublicCatalog = pathname === "/catalogo" && publicAliasesEnabled;
   const servesShortProduct = pathname.startsWith("/p/") && publicAliasesEnabled;

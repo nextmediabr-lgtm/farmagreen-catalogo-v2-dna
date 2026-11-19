@@ -1735,6 +1735,12 @@ function instagramIcon() {
 const u = (value: string) => `${BASE}${value}`;
 const absolute = (origin: string, value: string) => new URL(u(value), origin).toString();
 const wa = (message: string) => `https://wa.me/${W}?text=${encodeURIComponent(message)}`;
+
+export function couponConsultationV69(code: string): string {
+  if (!/^FG-D[A-F0-9]{12}$/.test(code)) return "";
+  return wa("Hola, quiero consultar por Todo Dermo y Solares.\nCupón: " + code);
+}
+
 const e = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character);
 const xml = (value: unknown) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&apos;", '"': "&quot;" })[character] || character);
 const json = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
