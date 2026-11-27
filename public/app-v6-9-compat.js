@@ -1068,7 +1068,8 @@ function sorted(products) {
         entries.sort((left, right) => currentPrice(right.product) - currentPrice(left.product) || productTie(left.product, right.product));
     }
     else if (S.sort === "marca") {
-        entries.sort((left, right) => brandCollator.compare(brandName(left.product), brandName(right.product)) ||
+        entries.sort((left, right) => Number(isOffer(right.product)) - Number(isOffer(left.product)) ||
+            brandCollator.compare(brandName(left.product), brandName(right.product)) ||
             productTie(left.product, right.product));
     }
     else if (S.sort === "nombre") {

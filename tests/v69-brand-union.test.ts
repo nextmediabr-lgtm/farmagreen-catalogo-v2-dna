@@ -52,6 +52,19 @@ test("SSR y cliente suman las marcas reales y mantienen todos los criterios de o
       assert.deepEqual(results.map(p => p.publicId).sort(), expectedIds, `${q}: ${sort}`);
       // An OR of brands gives equal textual relevance; the selected order is global.
       assert.deepEqual(sortProductsV69(raw, sort, q).map(p => p.publicId), sortProductsV69(raw, sort).map(p => p.publicId));
+      if (sort === "marca") {
+        const byBrand = expected.slice().sort((left, right) =>
+          left.brand.name.localeCompare(right.brand.name, "es", { sensitivity: "base" }),
+        );
+        const isOffer = (product: typeof dto.products[number]) =>
+          product.discountPercent > 0 || Boolean(product.promotion);
+        const offers = byBrand.filter(isOffer);
+        const regular = byBrand.filter(product => !isOffer(product));
+        assert.ok(offers.length && regular.length);
+        const expectedOrder = [...offers, ...regular].map(product => [product.brand.name, isOffer(product)]);
+        assert.deepEqual(results.map(product => [product.brand.name, isOffer(product)]), expectedOrder);
+        assert.deepEqual(sortProductsV69(raw, sort, q).map(product => product.publicId), results.map(product => product.publicId));
+      }
       if (sort.startsWith("precio-")) assert.ok(results.every((p, i) => !i ||
         (sort === "precio-asc" ? Math.round(results[i - 1].offerPrice) <= Math.round(p.offerPrice) : Math.round(results[i - 1].offerPrice) >= Math.round(p.offerPrice))));
     }

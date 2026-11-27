@@ -173,11 +173,12 @@ function expectedFirst(products, sort) {
         tie(left, right),
     );
   } else if (sort === "marca") {
-    copy.sort(
+    const offers = copy.filter(product => product.discountPercent > 0 || product.promotion);
+    return (offers.length ? offers : copy).sort(
       (left, right) =>
         left.brand.name.localeCompare(right.brand.name, "es", { sensitivity: "base" }) ||
         tie(left, right),
-    );
+    )[0];
   } else if (sort === "precio-asc") {
     copy.sort((left, right) => currentPrice(left) - currentPrice(right) || tie(left, right));
   } else if (sort === "precio-desc") {
@@ -1110,6 +1111,11 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
     await page.locator("#searchV69").fill(brandQuery);
     // Wait for the debounced search to settle before exercising a separate sort action.
     await page.waitForFunction(query => new URL(location.href).searchParams.get("q") === query, brandQuery);
+    const relevanceIds = await page.locator("#gridV69 .v65-hit").evaluateAll(links =>
+      links.slice(0, 10).map(link => new URL(link.href).pathname.split("/").filter(Boolean).pop()),
+    );
+    assert.equal(relevanceIds.length, 10);
+    assert.ok(relevanceIds.every(publicId => api.products.find(product => product.publicId === publicId)?.needs.includes("solares")));
     await page.locator("#sortV69").selectOption("marca");
     await page.waitForFunction(
       ({ query, firstId }) =>
@@ -1122,11 +1128,11 @@ test("V6.9 renderiza stock, orden, exclusividad y 5/2 columnas sin fuga del prov
       links.map((link) => link.getAttribute("href")?.match(/\/p\/([^/?#]+)/)?.[1]).filter(Boolean),
     );
     assert.deepEqual(browserBrandIds, expectedBrandIds);
-    assert.ok(
-      expectedBrandIds
-        .slice(0, 10)
-        .every((publicId) => api.products.find((product) => product.publicId === publicId)?.needs.includes("solares")),
-    );
+    const brandResults = browserBrandIds.map(publicId => api.products.find(product => product.publicId === publicId));
+    const hasOffer = product => product.discountPercent > 0 || Boolean(product.promotion);
+    assert.ok(brandResults[0] && hasOffer(brandResults[0]));
+    const firstRegular = brandResults.findIndex(product => !hasOffer(product));
+    if (firstRegular >= 0) assert.ok(brandResults.slice(firstRegular).every(product => !hasOffer(product)));
     await page.locator("#sortV69").selectOption("descuento");
 
     const typoQuery = "protetor solar bebe";

@@ -936,6 +936,7 @@ function sorted(products) {
   } else if (S.sort === "marca") {
     entries.sort(
       (left, right) =>
+        Number(isOffer(right.product)) - Number(isOffer(left.product)) ||
         brandCollator.compare(brandName(left.product), brandName(right.product)) ||
         productTie(left.product, right.product),
     );
